@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Publisher Demo - Traffic Cop Integration</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; }
+        .demo-section { margin: 30px 0; padding: 20px; border: 1px solid #ddd; border-radius: 8px; }
+        .ad-container { background: #f0f0f0; padding: 20px; margin: 10px 0; text-align: center; border: 2px dashed #ccc; }
+        .controls { margin: 20px 0; }
+        .controls button { margin: 5px; padding: 10px 15px; cursor: pointer; }
+        .stats { background: #e8f5e9; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .integration-code { background: #f8f9fa; padding: 15px; border-radius: 5px; font-family: monospace; }
+        .log { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0; max-height: 200px; overflow-y: auto; }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Traffic Cop - Publisher Integration Demo</h1>
+    
+    <div class="demo-section">
+        <h2>📊 Protection Status</h2>
+        <div id="protection-status" class="stats">
+            <p><strong>Status:</strong> <span id="status">Initializing...</span></p>
+            <p><strong>Mode:</strong> <span id="mode">-</span></p>
+            <p><strong>Sessions Analyzed:</strong> <span id="sessions">0</span></p>
+            <p><strong>Threats Blocked:</strong> <span id="blocked">0</span></p>
+            <p><strong>Block Rate:</strong> <span id="block-rate">0%</span></p>
+        </div>
+        
+        <div class="controls">
+            <button onclick="updateStats()">🔄 Refresh Stats</button>
+            <button onclick="reanalyze()">🔍 Re-analyze</button>
+            <button onclick="toggleMode()">⚙️ Toggle Mode</button>
+            <button onclick="showLogs()">📋 Show Logs</button>
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>📺 Simulated Ad Containers</h2>
+        <p>These represent ads on your website. Watch how Traffic Cop protects them:</p>
+        
+        <div class="ad-container adsbygoogle">
+            <h3>Google AdSense Ad #1</h3>
+            <p>This is a simulated AdSense advertisement</p>
+        </div>
+        
+        <div class="ad-container" id="ad-banner">
+            <h3>Banner Ad #2</h3>
+            <p>This is a simulated banner advertisement</p>
+        </div>
+        
+        <div class="ad-container advertisement">
+            <h3>Display Ad #3</h3>
+            <p>This is a simulated display advertisement</p>
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>🧪 Test Scenarios</h2>
+        <p>Test different scenarios to see how Traffic Cop responds:</p>
+        
+        <div class="controls">
+            <button onclick="simulateBot()">🤖 Simulate Bot Traffic</button>
+            <button onclick="simulateNormal()">👤 Simulate Normal User</button>
+            <button onclick="simulateRapidClicks()">⚡ Simulate Rapid Clicks</button>
+            <button onclick="forceBlock()">🚫 Force Block</button>
+            <button onclick="forceAllow()">✅ Force Allow</button>
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>📋 Integration Code</h2>
+        <p>Add this code to your website to integrate Traffic Cop:</p>
+        
+        <div class="integration-code">
+&lt;!-- Traffic Cop SDK --&gt;<br>
+&lt;script src="traffic-cop-sdk.js"&gt;&lt;/script&gt;<br>
+&lt;script&gt;<br>
+&nbsp;&nbsp;// Initialize Traffic Cop<br>
+&nbsp;&nbsp;TrafficCop.init('tc_test_123', {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;mode: 'block',&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// monitor, challenge, block<br>
+&nbsp;&nbsp;&nbsp;&nbsp;debug: true,&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;// Enable console logging<br>
+&nbsp;&nbsp;&nbsp;&nbsp;blockThreshold: 80,&nbsp;&nbsp;&nbsp;&nbsp;// Block at 80% risk<br>
+&nbsp;&nbsp;&nbsp;&nbsp;challengeThreshold: 60&nbsp;&nbsp;// Challenge at 60% risk<br>
+&nbsp;&nbsp;});<br>
+&lt;/script&gt;
+        </div>
+    </div>
+    
+    <div class="demo-section">
+        <h2>📊 Event Log</h2>
+        <div id="event-log" class="log">
+            <p>Events will appear here...</p>
+        </div>
+    </div>
+    
+    <!-- Load Traffic Cop SDK -->
+    <script src="traffic-cop-sdk.js"></script>
+    
+    <script>
+        // Initialize Traffic Cop with debug mode
+        const tc = TrafficCop.init('tc_test_123', {
+            mode: 'block',
+            debug: true,
+            blockThreshold: 80,
+            challengeThreshold: 60
+        });
+        
+        // Listen for Traffic Cop events
+        window.addEventListener('trafficCopAnalysis', function(event) {
+            logEvent('Analysis Complete', event.detail);
+            updateStats();
+        });
+        
+        window.addEventListener('trafficCopChallengePass', function(event) {
+            logEvent('Challenge Passed', 'User verified as human');
+        });
+        
+        // Update stats display
+        function updateStats() {
+            const stats = tc.getStats();
+            document.getElementById('status').textContent = stats.isCurrentlyBlocked ? 'PROTECTED (Ads Blocked)' : 'MONITORING';
+            document.getElementById('mode').textContent = tc.config.mode.toUpperCase();
+            document.getElementById('sessions').textContent = stats.totalSessions;
+            document.getElementById('blocked').textContent = stats.blockedSessions;
+            document.getElementById('block-rate').textContent = stats.blockRate + '%';
+        }
+        
+        // Test functions
+        function reanalyze() {
+            tc.reanalyze();
+            logEvent('Manual Re-analysis', 'Triggered by user');
+        }
+        
+        function toggleMode() {
+            const modes = ['monitor', 'challenge', 'block'];
+            const currentIndex = modes.indexOf(tc.config.mode);
+            const nextMode = modes[(currentIndex + 1) % modes.length];
+            tc.config.mode = nextMode;
+            logEvent('Mode Changed', `Switched to ${nextMode}`);
+            updateStats();
+        }
+        
+        function simulateBot() {
+            // Simulate bot-like behavior
+            for (let i = 0; i < 15; i++) {
+                setTimeout(() => {
+                    document.body.click();
+                }, i * 50);
+            }
+            logEvent('Bot Simulation', 'Rapid clicking pattern initiated');
+        }
+        
+        function simulateNormal() {
+            tc.reanalyze();
+            logEvent('Normal User Simulation', 'Re-analyzed as normal user');
+        }
+        
+        function simulateRapidClicks() {
+            for (let i = 0; i < 20; i++) {
+                setTimeout(() => {
+                    document.body.click();
+                }, i * 30);
+            }
+        }
+        
+        function forceBlock() {
+            tc.forceBlock();
+            updateStats();
+        }
+        
+        function forceAllow() {
+            tc.forceAllow();
+            updateStats();
+        }
+        
+        function logEvent(type, message) {
+            const log = document.getElementById('event-log');
+            const time = new Date().toLocaleTimeString();
+            const entry = document.createElement('div');
+            entry.innerHTML = `<strong>${time}</strong> - ${type}: ${JSON.stringify(message)}`;
+            log.appendChild(entry);
+            log.scrollTop = log.scrollHeight;
+        }
+        
+        function showLogs() {
+            const events = tc.getEvents();
+            const analytics = tc.getAnalytics();
+            console.log('Traffic Cop Events:', events);
+            console.log('Traffic Cop Analytics:', analytics);
+            alert(`Check console for detailed logs.\nEvents: ${events.length}\nAnalytics: ${analytics.length}`);
+        }
+        
+        // Initialize stats display
+        setTimeout(updateStats, 1000);
+    </script>
+</body>
+</html>

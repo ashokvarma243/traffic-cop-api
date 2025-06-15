@@ -1,0 +1,2678 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>My Traffic Detective Tool</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f0f0f0;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 15px 32px;
+            text-align: center;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        
+        .button:hover {
+            background-color: #45a049;
+        }
+        
+        .result-box {
+            margin: 20px 0;
+            padding: 15px;
+            border-radius: 5px;
+        }
+        
+        .safe {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+        
+        .danger {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+                /* Tab Navigation */
+        .tab-container {
+            display: flex;
+            border-bottom: 2px solid #ddd;
+            margin-bottom: 20px;
+        }
+
+        .tab-button {
+            background: none;
+            border: none;
+            padding: 15px 25px;
+            cursor: pointer;
+            font-size: 16px;
+            border-bottom: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .tab-button.active {
+            border-bottom-color: #4CAF50;
+            color: #4CAF50;
+            font-weight: bold;
+        }
+
+        .tab-button:hover {
+            background-color: #f5f5f5;
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Statistics Cards */
+        .stats-row {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            flex: 1;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+
+        .stat-card h3 {
+            margin: 0;
+            font-size: 2.5em;
+            font-weight: bold;
+        }
+
+        .stat-card p {
+            margin: 10px 0 0 0;
+            opacity: 0.9;
+        }
+
+        /* Analytics Grid */
+        .analytics-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .chart-container h3 {
+            margin-top: 0;
+            color: #333;
+            text-align: center;
+        }
+
+        /* Controls */
+        .controls {
+            margin-bottom: 20px;
+        }
+
+        .controls .button {
+            margin-right: 10px;
+        }
+
+        /* History Table */
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .history-table th,
+        .history-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .history-table th {
+            background-color: #f8f9fa;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .history-table tr:hover {
+            background-color: #f5f5f5;
+        }
+
+        /* Geographic Analysis */
+        .geo-analysis {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+
+        .country-stat {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .country-stat:last-child {
+            border-bottom: none;
+        }
+
+        .country-flag {
+            font-size: 1.5em;
+            margin-right: 10px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 768px) {
+            .stats-row {
+                flex-direction: column;
+            }
+            
+            .analytics-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .tab-container {
+                flex-wrap: wrap;
+            }
+            
+            .tab-button {
+                flex: 1;
+                min-width: 120px;
+            }
+        }
+
+                /* Protection Controls */
+        .protection-controls {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .control-group {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .control-group h3 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .control-group select,
+        .control-group input[type="range"] {
+            width: 100%;
+            margin: 10px 0;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+
+        .control-group label {
+            display: block;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+
+        /* Blocking Stats */
+        .blocking-stats {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 20px;
+            margin-top: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 8px;
+        }
+
+        .stat-number {
+            display: block;
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        /* ML Status */
+        .ml-status {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .status-indicator {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+
+        .status-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 10px;
+            background-color: #f44336;
+            animation: pulse 2s infinite;
+        }
+
+        .status-dot.active {
+            background-color: #4CAF50;
+        }
+
+        .status-dot.training {
+            background-color: #FF9800;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+
+        .ml-controls {
+            margin: 20px 0;
+        }
+
+        .ml-controls .button {
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        /* Feature Importance Chart */
+        .feature-importance {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+
+        .feature-bar {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+        }
+
+        .feature-name {
+            width: 150px;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+
+        .feature-bar-bg {
+            flex: 1;
+            height: 20px;
+            background-color: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .feature-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            transition: width 0.5s ease;
+        }
+
+        .feature-value {
+            margin-left: 10px;
+            font-weight: bold;
+            color: #666;
+        }
+
+        /* Live Threats */
+        .threat-alert {
+            background: #ffebee;
+            border: 1px solid #f5c6cb;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .threat-alert.blocked {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+        }
+
+        .threat-alert.challenged {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+            color: #856404;
+        }
+
+        /* Prediction Log */
+        .ml-predictions {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .prediction-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .prediction-item:last-child {
+            border-bottom: none;
+        }
+
+        .prediction-confidence {
+            font-weight: bold;
+            padding: 5px 10px;
+            border-radius: 15px;
+            color: white;
+        }
+
+        .prediction-confidence.high {
+            background-color: #4CAF50;
+        }
+
+        .prediction-confidence.medium {
+            background-color: #FF9800;
+        }
+
+        .prediction-confidence.low {
+            background-color: #f44336;
+        }
+
+        /* CAPTCHA Modal */
+        .captcha-modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+
+        .captcha-content {
+            background-color: white;
+            margin: 15% auto;
+            padding: 20px;
+            border-radius: 10px;
+            width: 400px;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+
+        .captcha-challenge {
+            font-size: 24px;
+            font-weight: bold;
+            color: #333;
+            margin: 20px 0;
+            padding: 20px;
+            background: #f5f5f5;
+            border-radius: 5px;
+        }
+
+        .captcha-input {
+            width: 100%;
+            padding: 10px;
+            font-size: 18px;
+            text-align: center;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            margin: 10px 0;
+        }
+
+        .captcha-buttons {
+            margin-top: 20px;
+        }
+
+        .captcha-buttons .button {
+            margin: 0 10px;
+        }
+
+                /* Enterprise Dashboard Styles */
+        .enterprise-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .enterprise-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            border-left: 4px solid #4CAF50;
+        }
+
+        .enterprise-card h3 {
+            margin-top: 0;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .scoring-controls, .workflow-controls {
+            margin-top: 15px;
+        }
+
+        .weight-slider {
+            margin: 15px 0;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .weight-slider span {
+            min-width: 120px;
+            font-weight: bold;
+        }
+
+        .weight-slider input[type="range"] {
+            flex: 1;
+            height: 8px;
+            border-radius: 5px;
+            background: #ddd;
+            outline: none;
+        }
+
+        .workflow-controls label {
+            display: block;
+            margin: 12px 0;
+            font-weight: 500;
+            cursor: pointer;
+        }
+
+        .workflow-controls input[type="checkbox"] {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+
+        .performance-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .metric {
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+        }
+
+        .metric-value {
+            display: block;
+            font-size: 1.8em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .metric-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        /* Advanced Analytics */
+        .advanced-analytics {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            margin-top: 20px;
+        }
+
+        .prediction-cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-top: 20px;
+        }
+
+        .prediction-card {
+            text-align: center;
+            padding: 20px;
+            border: 2px solid #f0f0f0;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .prediction-card:hover {
+            border-color: #4CAF50;
+            transform: translateY(-5px);
+        }
+
+        .prediction-card h4 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .prediction-card p {
+            margin-bottom: 0;
+            color: #666;
+            font-style: italic;
+        }
+
+        /* API Center Styles */
+        .api-section {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+        }
+
+        .api-section h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+        }
+
+        .api-endpoints {
+            display: grid;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .endpoint-card {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            padding: 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+        }
+
+        .endpoint-card:hover {
+            border-color: #4CAF50;
+            background-color: #f9f9f9;
+        }
+
+        .endpoint-method {
+            padding: 5px 12px;
+            border-radius: 4px;
+            font-weight: bold;
+            color: white;
+            min-width: 60px;
+            text-align: center;
+        }
+
+        .endpoint-method.post {
+            background-color: #4CAF50;
+        }
+
+        .endpoint-method.get {
+            background-color: #2196F3;
+        }
+
+        .endpoint-path {
+            font-family: 'Courier New', monospace;
+            font-weight: bold;
+            color: #333;
+            flex: 1;
+        }
+
+        .endpoint-description {
+            color: #666;
+            flex: 2;
+        }
+
+        .api-keys {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+        }
+
+        .api-key-card {
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            background: #f9f9f9;
+        }
+
+        .api-key-card h4 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .api-key-display {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 15px 0;
+        }
+
+        .api-key-display code {
+            background: #333;
+            color: #00ff00;
+            padding: 8px 12px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            flex: 1;
+        }
+
+        .code-examples {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 25px;
+            margin-top: 20px;
+        }
+
+        .code-example {
+            background: #f8f8f8;
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        .code-example h4 {
+            background: #333;
+            color: white;
+            margin: 0;
+            padding: 15px;
+        }
+
+        .code-example pre {
+            margin: 0;
+            padding: 20px;
+            background: #2d2d2d;
+            color: #f8f8f2;
+            overflow-x: auto;
+            font-size: 0.9em;
+            line-height: 1.4;
+        }
+
+        /* Threat Intelligence Styles */
+        .intel-overview {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+        }
+
+        .intel-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .intel-stat {
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+        }
+
+        .intel-feeds {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+        }
+
+        .feed-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .feed-card {
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+        }
+
+        .feed-card.active {
+            border-color: #4CAF50;
+            background: #f8fff8;
+        }
+
+        .feed-card h4 {
+            margin-top: 0;
+            color: #333;
+        }
+
+        .feed-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 10px 0;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .feed-stats {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        .threat-map {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+            margin-bottom: 25px;
+        }
+
+        .map-container {
+            position: relative;
+            margin-top: 20px;
+        }
+
+        .map-legend {
+            display: flex;
+            gap: 20px;
+            margin-top: 15px;
+            justify-content: center;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.9em;
+        }
+
+        .legend-color {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+        }
+
+        .legend-color.high-threat {
+            background: #f44336;
+        }
+
+        .legend-color.medium-threat {
+            background: #ff9800;
+        }
+
+        .legend-color.low-threat {
+            background: #4caf50;
+        }
+
+        .intel-alerts {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        }
+
+        .threat-alert-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            border-left: 4px solid #f44336;
+            background: #fff5f5;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+
+        .threat-alert-item.medium {
+            border-left-color: #ff9800;
+            background: #fff8e1;
+        }
+
+        .threat-alert-item.low {
+            border-left-color: #4caf50;
+            background: #f1f8e9;
+        }
+
+        .alert-time {
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        /* Responsive Design Updates */
+        @media (max-width: 768px) {
+            .enterprise-grid,
+            .prediction-cards,
+            .api-keys,
+            .code-examples,
+            .feed-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .endpoint-card {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .map-legend {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+
+                /* Enhanced Analytics Styles */
+        .analytics-enhanced {
+            margin-top: 20px;
+        }
+
+        .charts-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .insights-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .insight-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .insight-card h3 {
+            margin-top: 0;
+            color: #333;
+            border-bottom: 2px solid #f0f0f0;
+            padding-bottom: 10px;
+        }
+
+        .activity-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            margin: 5px 0;
+            border-radius: 5px;
+            font-size: 0.9em;
+        }
+
+        .activity-item.safe {
+            background: #e8f5e9;
+            border-left: 4px solid #4caf50;
+        }
+
+        .activity-item.warning {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+        }
+
+        .activity-item.danger {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+        }
+
+        .activity-time {
+            font-weight: bold;
+            color: #666;
+        }
+
+        .activity-action {
+            padding: 2px 8px;
+            border-radius: 3px;
+            color: white;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .activity-item.safe .activity-action {
+            background: #4caf50;
+        }
+
+        .activity-item.warning .activity-action {
+            background: #ff9800;
+        }
+
+        .activity-item.danger .activity-action {
+            background: #f44336;
+        }
+
+        .threat-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .threat-item:last-child {
+            border-bottom: none;
+        }
+
+        .threat-country {
+            font-weight: bold;
+            color: #333;
+        }
+
+        .threat-stats {
+            text-align: right;
+            font-size: 0.9em;
+            color: #666;
+        }
+
+        /* Animation for statistics updates */
+        .stat-card h3 {
+            transition: transform 0.2s ease;
+        }
+
+        @media (max-width: 768px) {
+            .charts-row,
+            .insights-row {
+                grid-template-columns: 1fr;
+            }
+        }
+
+
+
+    </style>
+</head>
+<body>
+    <body>
+        <div class="container">
+            <h1>🕵️ Traffic Cop Pro - Advanced Fraud Detection</h1>
+            
+            <!-- Navigation Tabs -->
+            <div class="tab-container">
+                <button class="tab-button active" onclick="showTab('detection')">🔍 Live Detection</button>
+                <button class="tab-button" onclick="showTab('analytics')">📊 Analytics</button>
+                <button class="tab-button" onclick="showTab('history')">📋 Session History</button>
+                <button class="tab-button" onclick="showTab('blocking')">🛡️ Protection</button>
+                <button class="tab-button" onclick="showTab('ml')">🤖 ML Engine</button>
+                <button class="tab-button" onclick="showTab('enterprise')">🏢 Enterprise</button>
+                <button class="tab-button" onclick="showTab('api')">🔌 API Center</button>
+                <button class="tab-button" onclick="showTab('intelligence')">🧠 Threat Intel</button>
+            </div>
+
+            
+            <!-- Live Detection Tab -->
+            <div id="detection-tab" class="tab-content active">
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <h3 id="total-sessions">0</h3>
+                        <p>Total Sessions</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="blocked-sessions">0</h3>
+                        <p>Blocked Sessions</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 id="block-rate">0%</h3>
+                        <p>Block Rate</p>
+                    </div>
+                </div>
+                
+                <button class="button" onclick="runDetection()">🔍 Analyze Current Visitor</button>
+                
+                <div class="container" style="background: #e3f2fd; margin: 20px 0; padding: 15px;">
+                    <h3>🖱️ Click Fraud Testing Zone</h3>
+                    <p>Click anywhere in this blue box multiple times to test click fraud detection:</p>
+                    <div id="clickTestArea" style="background: white; height: 200px; border: 2px dashed #2196F3; padding: 20px; cursor: pointer; text-align: center; line-height: 160px;">
+                        Click here multiple times! 👆
+                    </div>
+                    <button class="button" onclick="analyzeClicks()">📊 Analyze Click Patterns</button>
+                    <div id="clickResults"></div>
+                </div>
+                
+                <div id="results"></div>
+            </div>
+            
+            <!-- Analytics Tab -->
+            <div id="analytics-tab" class="tab-content">
+                <h2>📊 Fraud Detection Analytics</h2>
+                <div class="analytics-grid">
+                    <div class="chart-container">
+                        <h3>Detection Trends (Last 24 Hours)</h3>
+                        <canvas id="trendChart" width="400" height="200"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Risk Level Distribution</h3>
+                        <canvas id="riskChart" width="400" height="200"></canvas>
+                    </div>
+                </div>
+                                <!-- Add this to your analytics tab -->
+                <div class="analytics-enhanced">
+                    <div class="charts-row">
+                        <div class="chart-container">
+                            <h3>📈 Hourly Fraud Trends</h3>
+                            <canvas id="hourlyTrendsChart" width="400" height="200"></canvas>
+                        </div>
+                        <div class="chart-container">
+                            <h3>🎯 Risk Distribution</h3>
+                            <canvas id="riskDistributionChart" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                    
+                    <div class="insights-row">
+                        <div class="insight-card">
+                            <h3>🚨 Top Threat Sources</h3>
+                            <div id="top-threats"></div>
+                        </div>
+                        <div class="insight-card">
+                            <h3>🕒 Recent Activity</h3>
+                            <div id="recent-activity"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div id="geographic-analysis"></div>
+            </div>
+            
+            <!-- History Tab -->
+            <div id="history-tab" class="tab-content">
+                <h2>📋 Session History</h2>
+                <div class="controls">
+                    <button class="button" onclick="clearHistory()">🗑️ Clear History</button>
+                    <button class="button" onclick="exportData()">📥 Export Data</button>
+                </div>
+                <div id="session-history"></div>
+            </div>
+
+                    <!-- Blocking System Tab -->
+            <div id="blocking-tab" class="tab-content">
+                <h2>🛡️ Real-Time Protection System</h2>
+                
+                <div class="protection-controls">
+                    <div class="control-group">
+                        <h3>Protection Mode</h3>
+                        <select id="protection-mode" onchange="updateProtectionMode()">
+                            <option value="monitor">Monitor Only</option>
+                            <option value="challenge">Challenge Suspicious</option>
+                            <option value="block">Block High Risk</option>
+                            <option value="aggressive">Aggressive Blocking</option>
+                        </select>
+                    </div>
+                    
+                    <div class="control-group">
+                        <h3>Risk Thresholds</h3>
+                        <label>Block Threshold: <span id="block-threshold-value">80</span>%</label>
+                        <input type="range" id="block-threshold" min="50" max="100" value="80" onchange="updateThreshold('block')">
+                        
+                        <label>Challenge Threshold: <span id="challenge-threshold-value">60</span>%</label>
+                        <input type="range" id="challenge-threshold" min="30" max="80" value="60" onchange="updateThreshold('challenge')">
+                    </div>
+                    
+                    <div class="control-group">
+                        <h3>Auto-Learning</h3>
+                        <label>
+                            <input type="checkbox" id="auto-learning" checked onchange="toggleAutoLearning()">
+                            Enable Machine Learning Auto-Training
+                        </label>
+                    </div>
+                </div>
+                
+                <div class="blocking-stats">
+                    <h3>📊 Protection Statistics (Last 24 Hours)</h3>
+                    <div class="stats-grid">
+                        <div class="stat-item">
+                            <span class="stat-number" id="threats-blocked">0</span>
+                            <span class="stat-label">Threats Blocked</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-number" id="challenges-issued">0</span>
+                            <span class="stat-label">Challenges Issued</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-number" id="false-positives">0</span>
+                            <span class="stat-label">False Positives</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-number" id="ml-accuracy">0%</span>
+                            <span class="stat-label">ML Accuracy</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="live-threats"></div>
+            </div>
+            
+            <!-- Machine Learning Tab -->
+            <div id="ml-tab" class="tab-content">
+                <h2>🤖 Machine Learning Engine</h2>
+                
+                <div class="ml-status">
+                    <h3>Model Status</h3>
+                    <div class="status-indicator">
+                        <span id="ml-status" class="status-dot"></span>
+                        <span id="ml-status-text">Initializing...</span>
+                    </div>
+                    <p>Training Data Points: <span id="training-data-count">0</span></p>
+                    <p>Model Accuracy: <span id="model-accuracy">0%</span></p>
+                    <p>Last Updated: <span id="last-training">Never</span></p>
+                </div>
+                
+                <div class="ml-controls">
+                    <button class="button" onclick="trainModel()">🎯 Train Model</button>
+                    <button class="button" onclick="resetModel()">🔄 Reset Model</button>
+                    <button class="button" onclick="exportModel()">📥 Export Model</button>
+                </div>
+                
+                <div class="feature-importance">
+                    <h3>📈 Feature Importance</h3>
+                    <div id="feature-chart"></div>
+                </div>
+                
+                <div class="ml-predictions">
+                    <h3>🔮 Recent Predictions</h3>
+                    <div id="prediction-log"></div>
+                </div>
+            </div>
+
+                        <!-- Enterprise Dashboard Tab -->
+            <div id="enterprise-tab" class="tab-content">
+                <h2>🏢 Enterprise Control Center</h2>
+                
+                <div class="enterprise-grid">
+                    <div class="enterprise-card">
+                        <h3>🎯 Advanced Scoring Engine</h3>
+                        <div class="scoring-controls">
+                            <label>Ensemble Model Weight Distribution:</label>
+                            <div class="weight-slider">
+                                <span>ML Model: <span id="ml-weight">40</span>%</span>
+                                <input type="range" id="ml-weight-slider" min="0" max="100" value="40" onchange="updateWeights()">
+                            </div>
+                            <div class="weight-slider">
+                                <span>Behavioral: <span id="behavioral-weight">30</span>%</span>
+                                <input type="range" id="behavioral-weight-slider" min="0" max="100" value="30" onchange="updateWeights()">
+                            </div>
+                            <div class="weight-slider">
+                                <span>Threat Intel: <span id="intel-weight">20</span>%</span>
+                                <input type="range" id="intel-weight-slider" min="0" max="100" value="20" onchange="updateWeights()">
+                            </div>
+                            <div class="weight-slider">
+                                <span>Rules Engine: <span id="rules-weight">10</span>%</span>
+                                <input type="range" id="rules-weight-slider" min="0" max="100" value="10" onchange="updateWeights()">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="enterprise-card">
+                        <h3>🔄 Automated Workflows</h3>
+                        <div class="workflow-controls">
+                            <label>
+                                <input type="checkbox" id="auto-block-high-risk" checked>
+                                Auto-block high-risk traffic (>90% score)
+                            </label>
+                            <label>
+                                <input type="checkbox" id="auto-challenge-medium-risk" checked>
+                                Auto-challenge medium-risk traffic (60-90% score)
+                            </label>
+                            <label>
+                                <input type="checkbox" id="auto-whitelist-verified">
+                                Auto-whitelist CAPTCHA-verified users
+                            </label>
+                            <label>
+                                <input type="checkbox" id="threat-intel-sync" checked>
+                                Sync with external threat intelligence feeds
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div class="enterprise-card">
+                        <h3>📊 Performance Metrics</h3>
+                        <div class="performance-grid">
+                            <div class="metric">
+                                <span class="metric-value" id="detection-accuracy">94.2%</span>
+                                <span class="metric-label">Detection Accuracy</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-value" id="false-positive-rate">2.1%</span>
+                                <span class="metric-label">False Positive Rate</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-value" id="response-time">45ms</span>
+                                <span class="metric-label">Avg Response Time</span>
+                            </div>
+                            <div class="metric">
+                                <span class="metric-value" id="threats-prevented">1,247</span>
+                                <span class="metric-label">Threats Prevented (24h)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="advanced-analytics">
+                    <h3>📈 Predictive Analytics</h3>
+                    <div class="prediction-cards">
+                        <div class="prediction-card">
+                            <h4>Fraud Trend Forecast</h4>
+                            <canvas id="trendForecastChart" width="300" height="150"></canvas>
+                            <p>Predicted 15% increase in fraud attempts next week</p>
+                        </div>
+                        <div class="prediction-card">
+                            <h4>Risk Distribution Projection</h4>
+                            <canvas id="riskProjectionChart" width="300" height="150"></canvas>
+                            <p>Expected shift toward medium-risk traffic patterns</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- API Center Tab -->
+            <div id="api-tab" class="tab-content">
+                <h2>🔌 API Integration Center</h2>
+                
+                <div class="api-section">
+                    <h3>🚀 REST API Endpoints</h3>
+                    <div class="api-endpoints">
+                        <div class="endpoint-card">
+                            <div class="endpoint-method post">POST</div>
+                            <div class="endpoint-path">/api/v1/analyze</div>
+                            <div class="endpoint-description">Analyze visitor risk in real-time</div>
+                            <button class="button" onclick="testEndpoint('analyze')">Test Endpoint</button>
+                        </div>
+                        <div class="endpoint-card">
+                            <div class="endpoint-method get">GET</div>
+                            <div class="endpoint-path">/api/v1/sessions/{id}</div>
+                            <div class="endpoint-description">Retrieve session analysis details</div>
+                            <button class="button" onclick="testEndpoint('sessions')">Test Endpoint</button>
+                        </div>
+                        <div class="endpoint-card">
+                            <div class="endpoint-method post">POST</div>
+                            <div class="endpoint-path">/api/v1/feedback</div>
+                            <div class="endpoint-description">Submit fraud feedback for ML training</div>
+                            <button class="button" onclick="testEndpoint('feedback')">Test Endpoint</button>
+                        </div>
+                        <div class="endpoint-card">
+                            <div class="endpoint-method get">GET</div>
+                            <div class="endpoint-path">/api/v1/threats/live</div>
+                            <div class="endpoint-description">Get live threat intelligence feed</div>
+                            <button class="button" onclick="testEndpoint('threats')">Test Endpoint</button>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="api-section">
+                    <h3>🔑 API Key Management</h3>
+                    <div class="api-keys">
+                        <div class="api-key-card">
+                            <h4>Production API Key</h4>
+                            <div class="api-key-display">
+                                <code id="prod-api-key">tc_prod_xk7m9n2p4q8r1s5t</code>
+                                <button class="button" onclick="copyApiKey('prod')">Copy</button>
+                            </div>
+                            <p>Rate Limit: 10,000 requests/hour</p>
+                        </div>
+                        <div class="api-key-card">
+                            <h4>Development API Key</h4>
+                            <div class="api-key-display">
+                                <code id="dev-api-key">tc_dev_a3b6c9d2e5f8g1h4</code>
+                                <button class="button" onclick="copyApiKey('dev')">Copy</button>
+                            </div>
+                            <p>Rate Limit: 1,000 requests/hour</p>
+                        </div>
+                    </div>
+                    <button class="button" onclick="generateNewApiKey()">🔄 Generate New Key</button>
+                </div>
+                
+                <div class="api-section">
+                    <h3>📖 Integration Examples</h3>
+                    <div class="code-examples">
+                        <div class="code-example">
+                            <h4>JavaScript Integration</h4>
+                                                        <pre><code id="js-example">// Real-time fraud detection
+                                const response = await fetch('/api/v1/analyze', {
+                                method: 'POST',
+                                headers: {
+                                    'Authorization': 'Bearer tc_prod_xk7m9n2p4q8r1s5t',
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    ip: userIP,
+                                    userAgent: navigator.userAgent,
+                                    sessionId: sessionId,
+                                    fingerprint: deviceFingerprint
+                                })
+                                });
+
+                                const analysis = await response.json();
+                                if (analysis.riskScore > 80) {
+                                // Block or challenge user
+                                showCaptchaChallenge();
+                                }</code></pre>
+                                                    </div>
+                                                    <div class="code-example">
+                                                        <h4>Python Integration</h4>
+                                                        <pre><code id="python-example">import requests
+
+                                # Analyze visitor risk
+                                def analyze_visitor(ip, user_agent, session_id):
+                                    response = requests.post(
+                                        'https://your-domain.com/api/v1/analyze',
+                                        headers={
+                                            'Authorization': 'Bearer tc_prod_xk7m9n2p4q8r1s5t',
+                                            'Content-Type': 'application/json'
+                                        },
+                                        json={
+                                            'ip': ip,
+                                            'userAgent': user_agent,
+                                            'sessionId': session_id
+                                        }
+                                    )
+                                    
+                                    return response.json()
+
+                                # Usage
+                                result = analyze_visitor('192.168.1.1', 'Mozilla/5.0...', 'sess_123')
+                                print(f"Risk Score: {result['riskScore']}%")</code></pre>
+                        </div>
+                    </div>
+                </div>
+                
+                <div id="api-test-results"></div>
+            </div>
+            
+            <!-- Threat Intelligence Tab -->
+            <div id="intelligence-tab" class="tab-content">
+                <h2>🧠 Threat Intelligence Center</h2>
+                
+                <div class="intel-overview">
+                    <div class="intel-stats">
+                        <div class="intel-stat">
+                            <span class="stat-number" id="intel-sources">12</span>
+                            <span class="stat-label">Active Intel Sources</span>
+                        </div>
+                        <div class="intel-stat">
+                            <span class="stat-number" id="intel-indicators">2.4M</span>
+                            <span class="stat-label">Threat Indicators</span>
+                        </div>
+                        <div class="intel-stat">
+                            <span class="stat-number" id="intel-updates">847</span>
+                            <span class="stat-label">Updates Today</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="intel-feeds">
+                    <h3>📡 Threat Intelligence Feeds</h3>
+                    <div class="feed-grid">
+                        <div class="feed-card active">
+                            <h4>🛡️ IPQS Threat Feed</h4>
+                            <div class="feed-status">
+                                <span class="status-dot active"></span>
+                                <span>Active - Last Update: 2 min ago</span>
+                            </div>
+                            <p>High-risk IP addresses and proxy detection</p>
+                            <div class="feed-stats">
+                                <span>847 new indicators today</span>
+                            </div>
+                        </div>
+                        
+                        <div class="feed-card active">
+                            <h4>🔍 MaxMind minFraud</h4>
+                            <div class="feed-status">
+                                <span class="status-dot active"></span>
+                                <span>Active - Last Update: 5 min ago</span>
+                            </div>
+                            <p>Transaction risk scoring and geolocation data</p>
+                            <div class="feed-stats">
+                                <span>1.2K risk scores updated</span>
+                            </div>
+                        </div>
+                        
+                        <div class="feed-card">
+                            <h4>🌐 Netcraft Threat API</h4>
+                            <div class="feed-status">
+                                <span class="status-dot inactive"></span>
+                                <span>Inactive - Configure API Key</span>
+                            </div>
+                            <p>Phishing and malware detection feeds</p>
+                            <button class="button" onclick="configureFeed('netcraft')">Configure</button>
+                        </div>
+                        
+                        <div class="feed-card">
+                            <h4>🤖 Custom ML Feed</h4>
+                            <div class="feed-status">
+                                <span class="status-dot training"></span>
+                                <span>Training - 94% accuracy</span>
+                            </div>
+                            <p>Internal ML-generated threat indicators</p>
+                            <div class="feed-stats">
+                                <span>156 new patterns identified</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="threat-map">
+                    <h3>🗺️ Global Threat Map</h3>
+                    <div class="map-container">
+                        <canvas id="threatMap" width="800" height="400"></canvas>
+                        <div class="map-legend">
+                            <div class="legend-item">
+                                <span class="legend-color high-threat"></span>
+                                <span>High Threat (>80% block rate)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color medium-threat"></span>
+                                <span>Medium Threat (40-80% block rate)</span>
+                            </div>
+                            <div class="legend-item">
+                                <span class="legend-color low-threat"></span>
+                                <span>Low Threat (<40% block rate)</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="intel-alerts">
+                    <h3>🚨 Real-Time Threat Alerts</h3>
+                    <div id="threat-alerts-feed"></div>
+                </div>
+            </div>
+
+
+        </div>
+
+
+    <script>
+            // Complete Working Traffic Cop System
+            class TrafficCopPro {
+                constructor() {
+                    this.visitorInfo = null;
+                    this.clickTracker = new ClickFraudDetector();
+                    this.dataManager = new DataManager();
+                    this.initializeApp();
+                }
+                
+                async initializeApp() {
+                    this.visitorInfo = await this.gatherVisitorInfo();
+                    this.setupClickTracking();
+                    this.updateStatistics();
+                }
+                
+                async gatherVisitorInfo() {
+                    const basicInfo = {
+                        userAgent: navigator.userAgent,
+                        screenWidth: screen.width,
+                        screenHeight: screen.height,
+                        language: navigator.language,
+                        cookiesEnabled: navigator.cookieEnabled,
+                        pluginsCount: navigator.plugins.length,
+                        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                        onlineStatus: navigator.onLine,
+                        platform: navigator.platform,
+                        hardwareConcurrency: navigator.hardwareConcurrency || 'unknown',
+                        sessionId: this.generateSessionId(),
+                        timestamp: new Date().toISOString()
+                    };
+                    
+                    try {
+                        const locationData = await this.getLocationData();
+                        return { ...basicInfo, ...locationData };
+                    } catch (error) {
+                        console.log('Could not get location data:', error);
+                        return basicInfo;
+                    }
+                }
+                
+                async getLocationData() {
+                    try {
+                        const response = await fetch('https://ipapi.co/json/');
+                        const data = await response.json();
+                        return {
+                            ip: data.ip,
+                            country: data.country_name,
+                            countryCode: data.country_code,
+                            city: data.city,
+                            region: data.region,
+                            isp: data.org
+                        };
+                    } catch (error) {
+                        return {
+                            ip: 'Unknown',
+                            country: 'Unknown',
+                            countryCode: 'XX',
+                            city: 'Unknown'
+                        };
+                    }
+                }
+                
+                generateSessionId() {
+                    return 'session_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                }
+                
+                setupClickTracking() {
+                    const testArea = document.getElementById('clickTestArea');
+                    if (testArea) {
+                        testArea.addEventListener('click', (event) => {
+                            this.clickTracker.recordClick(event);
+                            this.updateClickDisplay();
+                        });
+                    }
+                    
+                    document.addEventListener('click', (event) => {
+                        if (event.target.id !== 'clickTestArea') {
+                            this.clickTracker.recordGlobalClick(event);
+                        }
+                    });
+                    
+                    document.addEventListener('mousemove', (event) => {
+                        this.clickTracker.recordMouseMovement(event);
+                    });
+                }
+                
+                updateClickDisplay() {
+                    const testArea = document.getElementById('clickTestArea');
+                    if (testArea) {
+                        testArea.innerHTML = `Clicks recorded: ${this.clickTracker.testAreaClicks.length}<br>Click to continue testing! 👆`;
+                    }
+                }
+                
+                async analyzeVisitor() {
+                    if (!this.visitorInfo) {
+                        this.visitorInfo = await this.gatherVisitorInfo();
+                    }
+                    
+                    const tests = [
+                        { name: 'Advanced Bot Detection', result: this.checkForBot() },
+                        { name: 'Screen Analysis', result: this.checkScreenSize() },
+                        { name: 'Plugin Verification', result: this.checkPlugins() },
+                        { name: 'Language Check', result: this.checkLanguage() },
+                        { name: 'Hardware Analysis', result: this.checkHardware() },
+                        { name: 'Geographic Risk Assessment', result: this.checkGeographicRisk() }
+                    ];
+                    
+                    let suspiciousCount = 0;
+                    let riskScore = 0;
+                    
+                    tests.forEach(test => {
+                        if (test.result.suspicious) {
+                            suspiciousCount++;
+                            if (test.result.severity === 'high') {
+                                riskScore += 25;
+                            } else if (test.result.severity === 'medium') {
+                                riskScore += 15;
+                            } else {
+                                riskScore += 5;
+                            }
+                        }
+                    });
+                    
+                    riskScore = Math.min(riskScore, 100);
+                    
+                    let overallRisk = 'SAFE';
+                    let riskClass = 'safe';
+                    let action = 'allow';
+                    
+                    if (riskScore >= 80) {
+                        overallRisk = 'HIGH RISK';
+                        riskClass = 'danger';
+                        action = 'block';
+                    } else if (riskScore >= 60) {
+                        overallRisk = 'MEDIUM RISK';
+                        riskClass = 'warning';
+                        action = 'challenge';
+                    } else if (riskScore >= 30) {
+                        overallRisk = 'LOW RISK';
+                        riskClass = 'warning';
+                        action = 'monitor';
+                    }
+                    
+                    const analysis = {
+                        tests: tests,
+                        overallRisk: overallRisk,
+                        riskClass: riskClass,
+                        riskScore: riskScore,
+                        action: action,
+                        sessionId: this.visitorInfo.sessionId,
+                        timestamp: new Date().toISOString(),
+                        visitorInfo: this.visitorInfo
+                    };
+                    
+                    this.dataManager.addSession(analysis);
+                    this.updateStatistics();
+                    
+                    return analysis;
+                }
+                
+                checkForBot() {
+                    const userAgent = this.visitorInfo.userAgent.toLowerCase();
+                    const botKeywords = ['bot', 'crawler', 'spider', 'scraper', 'headless', 'phantom', 'selenium'];
+                    
+                    let suspiciousIndicators = [];
+                    
+                    for (let keyword of botKeywords) {
+                        if (userAgent.includes(keyword)) {
+                            suspiciousIndicators.push(`Found "${keyword}" in browser signature`);
+                        }
+                    }
+                    
+                    if (typeof navigator.webdriver !== 'undefined') {
+                        suspiciousIndicators.push('WebDriver detected (automation tool)');
+                    }
+                    
+                    if (!window.chrome && userAgent.includes('chrome')) {
+                        suspiciousIndicators.push('Chrome user-agent but missing Chrome object');
+                    }
+                    
+                    if (suspiciousIndicators.length > 0) {
+                        return {
+                            suspicious: true,
+                            reason: suspiciousIndicators.join(', '),
+                            severity: 'high'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: 'Browser signature looks legitimate',
+                        severity: 'none'
+                    };
+                }
+                
+                checkScreenSize() {
+                    const width = this.visitorInfo.screenWidth;
+                    const height = this.visitorInfo.screenHeight;
+                    
+                    if (width < 100 || height < 100) {
+                        return {
+                            suspicious: true,
+                            reason: `Screen too small: ${width}x${height} (likely virtual display)`,
+                            severity: 'high'
+                        };
+                    }
+                    
+                    if (width > 8000 || height > 8000) {
+                        return {
+                            suspicious: true,
+                            reason: `Screen unusually large: ${width}x${height} (possible virtual environment)`,
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: `Screen size normal: ${width}x${height}`,
+                        severity: 'none'
+                    };
+                }
+                
+                checkPlugins() {
+                    const pluginCount = this.visitorInfo.pluginsCount;
+                    
+                    if (pluginCount === 0) {
+                        return {
+                            suspicious: true,
+                            reason: 'No browser plugins found (common in automated browsers)',
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    if (pluginCount > 50) {
+                        return {
+                            suspicious: true,
+                            reason: `Unusually high plugin count: ${pluginCount} (possible manipulation)`,
+                            severity: 'low'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: `Normal plugin count: ${pluginCount}`,
+                        severity: 'none'
+                    };
+                }
+                
+                checkLanguage() {
+                    const language = this.visitorInfo.language;
+                    
+                    if (!language || language === '') {
+                        return {
+                            suspicious: true,
+                            reason: 'No language setting found',
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: `Language set to: ${language}`,
+                        severity: 'none'
+                    };
+                }
+                
+                checkHardware() {
+                    const cores = this.visitorInfo.hardwareConcurrency;
+                    
+                    if (cores === 'unknown') {
+                        return {
+                            suspicious: true,
+                            reason: 'Hardware information unavailable (possible privacy mode or bot)',
+                            severity: 'low'
+                        };
+                    }
+                    
+                    if (cores === 1) {
+                        return {
+                            suspicious: true,
+                            reason: 'Single CPU core detected (common in virtual environments)',
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: `Normal hardware detected: ${cores} CPU cores`,
+                        severity: 'none'
+                    };
+                }
+                
+                checkGeographicRisk() {
+                    if (!this.visitorInfo.country || this.visitorInfo.country === 'Unknown') {
+                        return {
+                            suspicious: true,
+                            reason: 'Unable to determine geographic location',
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    const highRiskCountries = ['CN', 'RU', 'BD', 'PK', 'ID', 'VN'];
+                    const mediumRiskCountries = ['IN', 'PH', 'EG', 'NG', 'UA'];
+                    
+                    if (highRiskCountries.includes(this.visitorInfo.countryCode)) {
+                        return {
+                            suspicious: true,
+                            reason: `High-risk country for click fraud: ${this.visitorInfo.country}`,
+                            severity: 'high'
+                        };
+                    }
+                    
+                    if (mediumRiskCountries.includes(this.visitorInfo.countryCode)) {
+                        return {
+                            suspicious: true,
+                            reason: `Medium-risk country: ${this.visitorInfo.country}`,
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: `Geographic location normal: ${this.visitorInfo.country}`,
+                        severity: 'none'
+                    };
+                }
+                
+                updateStatistics() {
+                    const stats = this.dataManager.getStatistics();
+                    
+                    const elements = {
+                        'total-sessions': stats.totalSessions,
+                        'blocked-sessions': stats.blockedSessions,
+                        'block-rate': stats.blockRate + '%'
+                    };
+                    
+                    Object.entries(elements).forEach(([id, value]) => {
+                        const element = document.getElementById(id);
+                        if (element) element.textContent = value;
+                    });
+                }
+                
+                loadAnalytics() {
+                    // Placeholder for analytics loading
+                    console.log('Analytics loaded');
+                }
+                
+                loadSessionHistory() {
+                    // Placeholder for session history loading
+                    console.log('Session history loaded');
+                }
+
+                                // Add this method to your TrafficCopPro class
+                updateLiveStatistics() {
+                    const stats = this.dataManager.getStatistics();
+                    const recentSessions = this.dataManager.getRecentSessions(10);
+                    
+                    // Update main stats
+                    const elements = {
+                        'total-sessions': stats.totalSessions,
+                        'blocked-sessions': stats.blockedSessions,
+                        'block-rate': stats.blockRate + '%'
+                    };
+                    
+                    Object.entries(elements).forEach(([id, value]) => {
+                        const element = document.getElementById(id);
+                        if (element) {
+                            element.textContent = value;
+                            // Add animation effect
+                            element.style.transform = 'scale(1.1)';
+                            setTimeout(() => {
+                                element.style.transform = 'scale(1)';
+                            }, 200);
+                        }
+                    });
+                    
+                    // Update recent activity
+                    this.updateRecentActivity(recentSessions);
+                }
+
+                updateRecentActivity(sessions) {
+                    const container = document.getElementById('recent-activity');
+                    if (!container) return;
+                    
+                    let html = '<h4>🕒 Recent Activity</h4>';
+                    
+                    if (sessions.length === 0) {
+                        html += '<p>No recent sessions</p>';
+                    } else {
+                        sessions.slice(0, 5).forEach(session => {
+                            const time = new Date(session.timestamp).toLocaleTimeString();
+                            const riskClass = session.riskScore > 60 ? 'danger' : session.riskScore > 30 ? 'warning' : 'safe';
+                            
+                            html += `
+                                <div class="activity-item ${riskClass}">
+                                    <span class="activity-time">${time}</span>
+                                    <span class="activity-action">${session.action.toUpperCase()}</span>
+                                    <span class="activity-score">${session.riskScore}%</span>
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    container.innerHTML = html;
+                }
+
+                                // Add this method to TrafficCopPro class
+                drawAnalyticsCharts() {
+                    this.drawHourlyTrends();
+                    this.drawRiskDistribution();
+                    this.drawGeographicHeatmap();
+                }
+
+                drawHourlyTrends() {
+                    const canvas = document.getElementById('hourlyTrendsChart');
+                    if (!canvas) return;
+                    
+                    const ctx = canvas.getContext('2d');
+                    const hourlyData = this.dataManager.getHourlyData();
+                    
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    // Draw background grid
+                    ctx.strokeStyle = '#f0f0f0';
+                    ctx.lineWidth = 1;
+                    
+                    for (let i = 0; i <= 24; i++) {
+                        const x = (i / 24) * canvas.width;
+                        ctx.beginPath();
+                        ctx.moveTo(x, 0);
+                        ctx.lineTo(x, canvas.height);
+                        ctx.stroke();
+                    }
+                    
+                    for (let i = 0; i <= 10; i++) {
+                        const y = (i / 10) * canvas.height;
+                        ctx.beginPath();
+                        ctx.moveTo(0, y);
+                        ctx.lineTo(canvas.width, y);
+                        ctx.stroke();
+                    }
+                    
+                    // Draw trend line
+                    ctx.strokeStyle = '#4CAF50';
+                    ctx.lineWidth = 3;
+                    ctx.beginPath();
+                    
+                    hourlyData.forEach((dataPoint, index) => {
+                        const x = (index / (hourlyData.length - 1)) * canvas.width;
+                        const y = canvas.height - (dataPoint.fraudRate / 100) * canvas.height;
+                        
+                        if (index === 0) {
+                            ctx.moveTo(x, y);
+                        } else {
+                            ctx.lineTo(x, y);
+                        }
+                        
+                        // Draw data points
+                        ctx.fillStyle = '#4CAF50';
+                        ctx.beginPath();
+                        ctx.arc(x, y, 4, 0, 2 * Math.PI);
+                        ctx.fill();
+                    });
+                    
+                    ctx.stroke();
+                    
+                    // Add labels
+                    ctx.fillStyle = '#333';
+                    ctx.font = '12px Arial';
+                    ctx.fillText('Fraud Detection Rate (24h)', 10, 20);
+                }
+
+                drawRiskDistribution() {
+                    const canvas = document.getElementById('riskDistributionChart');
+                    if (!canvas) return;
+                    
+                    const ctx = canvas.getContext('2d');
+                    const distribution = this.dataManager.getRiskDistribution();
+                    
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    
+                    const centerX = canvas.width / 2;
+                    const centerY = canvas.height / 2;
+                    const radius = Math.min(centerX, centerY) - 30;
+                    
+                    let currentAngle = 0;
+                    const colors = ['#4CAF50', '#FF9800', '#F44336'];
+                    
+                    distribution.forEach((segment, index) => {
+                        const sliceAngle = (segment.percentage / 100) * 2 * Math.PI;
+                        
+                        // Draw slice
+                        ctx.beginPath();
+                        ctx.arc(centerX, centerY, radius, currentAngle, currentAngle + sliceAngle);
+                        ctx.lineTo(centerX, centerY);
+                        ctx.fillStyle = colors[index];
+                        ctx.fill();
+                        
+                        // Draw label
+                        const labelAngle = currentAngle + sliceAngle / 2;
+                        const labelX = centerX + Math.cos(labelAngle) * (radius * 0.7);
+                        const labelY = centerY + Math.sin(labelAngle) * (radius * 0.7);
+                        
+                        ctx.fillStyle = 'white';
+                        ctx.font = 'bold 14px Arial';
+                        ctx.textAlign = 'center';
+                        ctx.fillText(segment.percentage + '%', labelX, labelY);
+                        
+                        currentAngle += sliceAngle;
+                    });
+                    
+                    // Add legend
+                    ctx.textAlign = 'left';
+                    ctx.font = '12px Arial';
+                    const legendY = canvas.height - 60;
+                    
+                    distribution.forEach((segment, index) => {
+                        const legendX = 20 + (index * 80);
+                        
+                        ctx.fillStyle = colors[index];
+                        ctx.fillRect(legendX, legendY, 15, 15);
+                        
+                        ctx.fillStyle = '#333';
+                        ctx.fillText(segment.label, legendX + 20, legendY + 12);
+                    });
+                }
+
+
+            }
+
+            class ClickFraudDetector {
+                constructor() {
+                    this.testAreaClicks = [];
+                    this.globalClicks = [];
+                    this.mouseMovements = [];
+                    this.sessionStart = Date.now();
+                }
+                
+                recordClick(event) {
+                    const clickData = {
+                        timestamp: Date.now(),
+                        x: event.clientX,
+                        y: event.clientY,
+                        target: event.target.tagName,
+                        button: event.button,
+                        sessionTime: Date.now() - this.sessionStart
+                    };
+                    this.testAreaClicks.push(clickData);
+                }
+                
+                recordGlobalClick(event) {
+                    const clickData = {
+                        timestamp: Date.now(),
+                        x: event.clientX,
+                        y: event.clientY,
+                        target: event.target.tagName
+                    };
+                    this.globalClicks.push(clickData);
+                }
+                
+                recordMouseMovement(event) {
+                    if (this.mouseMovements.length % 10 === 0) {
+                        this.mouseMovements.push({
+                            timestamp: Date.now(),
+                            x: event.clientX,
+                            y: event.clientY
+                        });
+                    }
+                }
+                
+                analyzeClickPattern() {
+                    if (this.testAreaClicks.length < 2) {
+                        return {
+                            risk: 'INSUFFICIENT_DATA',
+                            riskClass: 'safe',
+                            details: 'Need at least 2 clicks to analyze patterns',
+                            tests: []
+                        };
+                    }
+                    
+                    const tests = [
+                        this.checkClickSpeed(),
+                        this.checkClickPositions(),
+                        this.checkClickTiming(),
+                        this.checkMouseMovement()
+                    ];
+                    
+                    let suspiciousCount = 0;
+                    tests.forEach(test => {
+                        if (test.suspicious) suspiciousCount++;
+                    });
+                    
+                    let risk = 'LOW';
+                    let riskClass = 'safe';
+                    
+                    if (suspiciousCount >= 3) {
+                        risk = 'HIGH';
+                        riskClass = 'danger';
+                    } else if (suspiciousCount >= 2) {
+                        risk = 'MEDIUM';
+                        riskClass = 'warning';
+                    } else if (suspiciousCount === 1) {
+                        risk = 'LOW';
+                        riskClass = 'warning';
+                    }
+                    
+                    return {
+                        risk: risk,
+                        riskClass: riskClass,
+                        details: `${suspiciousCount} suspicious patterns detected out of ${tests.length} tests`,
+                        tests: tests,
+                        clickCount: this.testAreaClicks.length
+                    };
+                }
+                
+                checkClickSpeed() {
+                    const intervals = [];
+                    for (let i = 1; i < this.testAreaClicks.length; i++) {
+                        const interval = this.testAreaClicks[i].timestamp - this.testAreaClicks[i-1].timestamp;
+                        intervals.push(interval);
+                    }
+                    
+                    const averageInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+                    const fastClicks = intervals.filter(interval => interval < 100).length;
+                    
+                    if (averageInterval < 150) {
+                        return {
+                            suspicious: true,
+                            reason: `Very fast clicking detected (avg: ${averageInterval.toFixed(0)}ms between clicks)`,
+                            severity: 'high'
+                        };
+                    }
+                    
+                    if (fastClicks > intervals.length * 0.5) {
+                        return {
+                            suspicious: true,
+                            reason: `${fastClicks} clicks faster than 100ms (${((fastClicks/intervals.length)*100).toFixed(0)}% of clicks)`,
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: `Normal click speed (avg: ${averageInterval.toFixed(0)}ms between clicks)`,
+                        severity: 'none'
+                    };
+                }
+                
+                checkClickPositions() {
+                    const positions = this.testAreaClicks.map(click => `${click.x},${click.y}`);
+                    const uniquePositions = new Set(positions);
+                    const duplicateRatio = (positions.length - uniquePositions.size) / positions.length;
+                    
+                    if (duplicateRatio > 0.7) {
+                        return {
+                            suspicious: true,
+                            reason: `${(duplicateRatio * 100).toFixed(0)}% of clicks in same positions (bot-like behavior)`,
+                            severity: 'high'
+                        };
+                    }
+                    
+                    if (duplicateRatio > 0.4) {
+                        return {
+                            suspicious: true,
+                            reason: `${(duplicateRatio * 100).toFixed(0)}% of clicks in same positions (suspicious pattern)`,
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: `Good position variety (${uniquePositions.size} unique positions out of ${positions.length} clicks)`,
+                        severity: 'none'
+                    };
+                }
+                
+                checkClickTiming() {
+                    if (this.testAreaClicks.length < 3) return { suspicious: false, reason: 'Not enough clicks for timing analysis', severity: 'none' };
+                    
+                    const intervals = [];
+                    for (let i = 1; i < this.testAreaClicks.length; i++) {
+                        intervals.push(this.testAreaClicks[i].timestamp - this.testAreaClicks[i-1].timestamp);
+                    }
+                    
+                    const intervalCounts = {};
+                    intervals.forEach(interval => {
+                        const rounded = Math.round(interval / 50) * 50;
+                        intervalCounts[rounded] = (intervalCounts[rounded] || 0) + 1;
+                    });
+                    
+                    const maxRepeats = Math.max(...Object.values(intervalCounts));
+                    const rhythmicRatio = maxRepeats / intervals.length;
+                    
+                    if (rhythmicRatio > 0.6) {
+                        return {
+                            suspicious: true,
+                            reason: `Rhythmic clicking pattern detected (${(rhythmicRatio * 100).toFixed(0)}% similar intervals)`,
+                            severity: 'high'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: 'Natural timing variation detected',
+                        severity: 'none'
+                    };
+                }
+                
+                checkMouseMovement() {
+                    if (this.mouseMovements.length < 5) {
+                        return {
+                            suspicious: true,
+                            reason: 'Very little mouse movement detected (possible bot)',
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    let movementDuringClicks = 0;
+                    this.testAreaClicks.forEach(click => {
+                        const nearbyMovements = this.mouseMovements.filter(move => 
+                            Math.abs(move.timestamp - click.timestamp) < 1000
+                        );
+                        if (nearbyMovements.length > 0) movementDuringClicks++;
+                    });
+                    
+                    const movementRatio = movementDuringClicks / this.testAreaClicks.length;
+                    
+                    if (movementRatio < 0.3) {
+                        return {
+                            suspicious: true,
+                            reason: `Little mouse movement during clicks (${(movementRatio * 100).toFixed(0)}% of clicks had nearby movement)`,
+                            severity: 'medium'
+                        };
+                    }
+                    
+                    return {
+                        suspicious: false,
+                        reason: `Good mouse movement pattern (${this.mouseMovements.length} movements recorded)`,
+                        severity: 'none'
+                    };
+                }
+            }
+
+            class DataManager {
+                constructor() {
+                    this.sessions = this.loadFromStorage();
+                }
+                
+                addSession(analysis) {
+                    this.sessions.push(analysis);
+                    
+                    if (this.sessions.length > 1000) {
+                        this.sessions = this.sessions.slice(-1000);
+                    }
+                    
+                    this.saveToStorage();
+                }
+                
+                getStatistics() {
+                    const total = this.sessions.length;
+                    const blocked = this.sessions.filter(s => s.action === 'block').length;
+                    const blockRate = total > 0 ? Math.round((blocked / total) * 100) : 0;
+                    
+                    return {
+                        totalSessions: total,
+                        blockedSessions: blocked,
+                        blockRate: blockRate
+                    };
+                }
+                
+                saveToStorage() {
+                    try {
+                        localStorage.setItem('trafficCopSessions', JSON.stringify(this.sessions));
+                    } catch (error) {
+                        console.warn('Could not save to localStorage:', error);
+                    }
+                }
+                
+                loadFromStorage() {
+                    try {
+                        const data = localStorage.getItem('trafficCopSessions');
+                        return data ? JSON.parse(data) : [];
+                    } catch (error) {
+                        console.warn('Could not load from localStorage:', error);
+                        return [];
+                    }
+                }
+
+                                // Add these methods to DataManager class
+                getHourlyData() {
+                    const hourlyStats = Array(24).fill().map((_, hour) => ({
+                        hour: hour,
+                        sessions: 0,
+                        fraudSessions: 0,
+                        fraudRate: 0
+                    }));
+                    
+                    this.sessions.forEach(session => {
+                        const sessionHour = new Date(session.timestamp).getHours();
+                        hourlyStats[sessionHour].sessions++;
+                        
+                        if (session.action === 'block' || session.riskScore > 70) {
+                            hourlyStats[sessionHour].fraudSessions++;
+                        }
+                    });
+                    
+                    hourlyStats.forEach(stat => {
+                        stat.fraudRate = stat.sessions > 0 ? 
+                            (stat.fraudSessions / stat.sessions) * 100 : 0;
+                    });
+                    
+                    return hourlyStats;
+                }
+
+                getRiskDistribution() {
+                    const total = this.sessions.length;
+                    if (total === 0) return [
+                        { label: 'Safe', percentage: 100 },
+                        { label: 'Medium', percentage: 0 },
+                        { label: 'High', percentage: 0 }
+                    ];
+                    
+                    const safe = this.sessions.filter(s => s.riskScore < 30).length;
+                    const medium = this.sessions.filter(s => s.riskScore >= 30 && s.riskScore < 70).length;
+                    const high = this.sessions.filter(s => s.riskScore >= 70).length;
+                    
+                    return [
+                        { label: 'Safe', percentage: Math.round((safe / total) * 100) },
+                        { label: 'Medium', percentage: Math.round((medium / total) * 100) },
+                        { label: 'High', percentage: Math.round((high / total) * 100) }
+                    ];
+                }
+
+                getRecentSessions(limit = 10) {
+                    return this.sessions.slice(-limit).reverse();
+                }
+
+                getTopThreats() {
+                    const threats = {};
+                    
+                    this.sessions.forEach(session => {
+                        if (session.riskScore > 50) {
+                            const country = session.visitorInfo.country || 'Unknown';
+                            
+                            if (!threats[country]) {
+                                threats[country] = {
+                                    country: country,
+                                    count: 0,
+                                    avgRisk: 0,
+                                    totalRisk: 0
+                                };
+                            }
+                            
+                            threats[country].count++;
+                            threats[country].totalRisk += session.riskScore;
+                            threats[country].avgRisk = threats[country].totalRisk / threats[country].count;
+                        }
+                    });
+                    
+                    return Object.values(threats)
+                        .sort((a, b) => b.count - a.count)
+                        .slice(0, 5);
+                }
+
+            }
+
+            // Initialize the system
+            let trafficCop;
+
+            // Wait for page to load before initializing
+            document.addEventListener('DOMContentLoaded', function() {
+                trafficCop = new TrafficCopPro();
+            });
+
+            // If DOMContentLoaded already fired, initialize immediately
+            if (document.readyState === 'loading') {
+                // Still loading, wait for DOMContentLoaded
+            } else {
+                // Already loaded
+                trafficCop = new TrafficCopPro();
+            }
+
+            // Main functions
+            async function runDetection() {
+                try {
+                    if (!trafficCop) {
+                        alert('System is still initializing, please wait...');
+                        return;
+                    }
+                    
+                    console.log('Starting analysis...');
+                    const analysis = await trafficCop.analyzeVisitor();
+                    
+                    const resultsDiv = document.getElementById('results');
+                    if (!resultsDiv) {
+                        alert('Results area not found!');
+                        return;
+                    }
+                    
+                    let html = `
+                        <div class="result-box ${analysis.riskClass}">
+                            <h2>🎯 Advanced Traffic Analysis</h2>
+                            <h3>Overall Assessment: ${analysis.overallRisk}</h3>
+                            <p>Risk Score: ${analysis.riskScore}%</p>
+                            <p>Recommended Action: <strong>${analysis.action.toUpperCase()}</strong></p>
+                            <p>Session ID: ${analysis.sessionId}</p>
+                        </div>
+                        
+                        <h3>📋 Detailed Test Results:</h3>
+                    `;
+                    
+                    analysis.tests.forEach(test => {
+                        const icon = test.result.suspicious ? '⚠️' : '✅';
+                        const status = test.result.suspicious ? 'SUSPICIOUS' : 'NORMAL';
+                        const cssClass = test.result.suspicious ? 'warning' : 'safe';
+                        
+                        html += `
+                            <div class="result-box ${cssClass}">
+                                <strong>${icon} ${test.name}: ${status}</strong><br>
+                                ${test.result.reason}
+                            </div>
+                        `;
+                    });
+                    
+                    html += `
+                        <h3>🔍 Visitor Information:</h3>
+                        <div class="result-box safe">
+                            <p><strong>Location:</strong> ${analysis.visitorInfo.city}, ${analysis.visitorInfo.country}</p>
+                            <p><strong>IP:</strong> ${analysis.visitorInfo.ip}</p>
+                            <p><strong>Screen:</strong> ${analysis.visitorInfo.screenWidth} x ${analysis.visitorInfo.screenHeight}</p>
+                            <p><strong>Browser:</strong> ${analysis.visitorInfo.language}</p>
+                            <p><strong>Plugins:</strong> ${analysis.visitorInfo.pluginsCount}</p>
+                            <p><strong>Hardware:</strong> ${analysis.visitorInfo.hardwareConcurrency} CPU cores</p>
+                        </div>
+                    `;
+                    
+                    resultsDiv.innerHTML = html;
+                    
+                } catch (error) {
+                    console.error('Error in runDetection:', error);
+                    alert('Analysis failed: ' + error.message);
+                }
+            }
+
+            function analyzeClicks() {
+                try {
+                    if (!trafficCop) {
+                        alert('System is still initializing, please wait...');
+                        return;
+                    }
+                    
+                    const analysis = trafficCop.clickTracker.analyzeClickPattern();
+                    const resultsDiv = document.getElementById('clickResults');
+                    
+                    if (!resultsDiv) {
+                        alert('Click results area not found!');
+                        return;
+                    }
+                    
+                    let html = `
+                        <div class="result-box ${analysis.riskClass}">
+                            <h3>🖱️ Click Fraud Analysis</h3>
+                            <h4>Risk Level: ${analysis.risk}</h4>
+                            <p>${analysis.details}</p>
+                            <p>Total clicks: ${analysis.clickCount}</p>
+                        </div>
+                    `;
+                    
+                    if (analysis.tests && analysis.tests.length > 0) {
+                        html += '<h4>Test Results:</h4>';
+                        analysis.tests.forEach(test => {
+                            const icon = test.suspicious ? '⚠️' : '✅';
+                            const status = test.suspicious ? 'SUSPICIOUS' : 'NORMAL';
+                            const cssClass = test.suspicious ? 'warning' : 'safe';
+                            
+                            html += `
+                                <div class="result-box ${cssClass}">
+                                    <strong>${icon} ${status}</strong><br>
+                                    ${test.reason}
+                                </div>
+                            `;
+                        });
+                    }
+                    
+                    resultsDiv.innerHTML = html;
+                    
+                } catch (error) {
+                    console.error('Error in analyzeClicks:', error);
+                    alert('Click analysis failed: ' + error.message);
+                }
+            }
+
+            // Tab navigation
+            function showTab(tabName) {
+                document.querySelectorAll('.tab-content').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                
+                document.querySelectorAll('.tab-button').forEach(button => {
+                    button.classList.remove('active');
+                });
+                
+                const targetTab = document.getElementById(tabName + '-tab');
+                if (targetTab) {
+                    targetTab.classList.add('active');
+                }
+                
+                if (event && event.target) {
+                    event.target.classList.add('active');
+                }
+                
+                // Load tab-specific content
+                if (tabName === 'analytics' && trafficCop) {
+                    trafficCop.loadAnalytics();
+                } else if (tabName === 'history' && trafficCop) {
+                    trafficCop.loadSessionHistory();
+                }
+            }
+
+            // Utility functions
+            function clearHistory() {
+                if (trafficCop && confirm('Clear all session history?')) {
+                    trafficCop.dataManager.sessions = [];
+                    trafficCop.dataManager.saveToStorage();
+                    trafficCop.updateStatistics();
+                    alert('History cleared!');
+                }
+            }
+
+            function exportData() {
+                if (trafficCop) {
+                    const data = JSON.stringify(trafficCop.dataManager.sessions, null, 2);
+                    const blob = new Blob([data], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'traffic-cop-data.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                    
+                    alert('Data exported!');
+                }
+            }
+
+                        // Add these functions to your script
+            function updateTopThreats() {
+                if (!trafficCop) return;
+                
+                const threats = trafficCop.dataManager.getTopThreats();
+                const container = document.getElementById('top-threats');
+                
+                if (!container) return;
+                
+                if (threats.length === 0) {
+                    container.innerHTML = '<p>No significant threats detected</p>';
+                    return;
+                }
+                
+                let html = '';
+                threats.forEach(threat => {
+                    html += `
+                        <div class="threat-item">
+                            <div class="threat-country">${threat.country}</div>
+                            <div class="threat-stats">
+                                ${threat.count} sessions<br>
+                                ${threat.avgRisk.toFixed(1)}% avg risk
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html;
+            }
+
+            // Enhanced tab navigation
+            function showTab(tabName) {
+                document.querySelectorAll('.tab-content').forEach(tab => {
+                    tab.classList.remove('active');
+                });
+                
+                document.querySelectorAll('.tab-button').forEach(button => {
+                    button.classList.remove('active');
+                });
+                
+                const targetTab = document.getElementById(tabName + '-tab');
+                if (targetTab) {
+                    targetTab.classList.add('active');
+                }
+                
+                if (event && event.target) {
+                    event.target.classList.add('active');
+                }
+                
+                // Load tab-specific content with enhancements
+                if (tabName === 'analytics' && trafficCop) {
+                    setTimeout(() => {
+                        trafficCop.drawAnalyticsCharts();
+                        updateTopThreats();
+                        trafficCop.updateLiveStatistics();
+                    }, 100);
+                } else if (tabName === 'history' && trafficCop) {
+                    trafficCop.loadSessionHistory();
+                }
+            }
+
+            // Auto-refresh dashboard
+            setInterval(() => {
+                if (trafficCop) {
+                    trafficCop.updateLiveStatistics();
+                    
+                    // If analytics tab is active, refresh charts
+                    const analyticsTab = document.getElementById('analytics-tab');
+                    if (analyticsTab && analyticsTab.classList.contains('active')) {
+                        trafficCop.drawAnalyticsCharts();
+                        updateTopThreats();
+                    }
+                }
+            }, 30000); // Update every 30 seconds
+
+
+
+    </script>
+</body>
+</html>

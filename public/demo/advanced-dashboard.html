@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Traffic Cop - Advanced Analytics Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f7fa; }
+        
+        .dashboard { display: grid; grid-template-columns: 250px 1fr; height: 100vh; }
+        
+        .sidebar { background: #2c3e50; color: white; padding: 20px; }
+        .sidebar h2 { margin-bottom: 30px; color: #ecf0f1; }
+        .nav-item { padding: 12px 0; cursor: pointer; border-radius: 4px; margin: 5px 0; }
+        .nav-item:hover { background: #34495e; }
+        .nav-item.active { background: #3498db; }
+        
+        .main-content { padding: 20px; overflow-y: auto; }
+        
+        .metrics-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        
+        .metric-card { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .metric-value { font-size: 2.5em; font-weight: bold; margin-bottom: 10px; }
+        .metric-label { color: #666; font-size: 0.9em; }
+        .metric-change { font-size: 0.8em; margin-top: 5px; }
+        .metric-change.positive { color: #27ae60; }
+        .metric-change.negative { color: #e74c3c; }
+        
+        .chart-container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .chart-title { font-size: 1.2em; font-weight: bold; margin-bottom: 20px; color: #2c3e50; }
+        
+        .real-time-indicator { display: inline-block; width: 8px; height: 8px; background: #27ae60; border-radius: 50%; margin-right: 8px; animation: pulse 2s infinite; }
+        
+        .alert-panel { background: #fff3cd; border: 1px solid #ffeaa7; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+        .alert-panel.critical { background: #f8d7da; border-color: #f5c6cb; }
+        .alert-panel.high { background: #fff3cd; border-color: #ffeaa7; }
+        
+        .threat-map { height: 400px; background: #ecf0f1; border-radius: 8px; position: relative; }
+        
+        .data-table { width: 100%; border-collapse: collapse; background: white; border-radius: 8px; overflow: hidden; }
+        .data-table th, .data-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        .data-table th { background: #f8f9fa; font-weight: 600; }
+        
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        .status-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.8em; font-weight: bold; }
+        .status-badge.safe { background: #d4edda; color: #155724; }
+        .status-badge.warning { background: #fff3cd; color: #856404; }
+        .status-badge.danger { background: #f8d7da; color: #721c24; }
+        
+        .ml-insights { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 12px; margin-bottom: 20px; }
+        .ml-insights h3 { margin-bottom: 15px; }
+        .insight-item { margin: 10px 0; padding: 10px; background: rgba(255,255,255,0.1); border-radius: 6px; }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="sidebar">
+            <h2>🛡️ Traffic Cop</h2>
+            <div class="nav-item active" onclick="showSection('overview')">📊 Overview</div>
+            <div class="nav-item" onclick="showSection('analytics')">📈 Analytics</div>
+            <div class="nav-item" onclick="showSection('threats')">🚨 Threats</div>
+            <div class="nav-item" onclick="showSection('ml-insights')">🤖 ML Insights</div>
+            <div class="nav-item" onclick="showSection('alerts')">🔔 Alerts</div>
+            <div class="nav-item" onclick="showSection('settings')">⚙️ Settings</div>
+        </div>
+        
+        <div class="main-content">
+            <!-- Overview Section -->
+            <div id="overview-section" class="content-section">
+                <h1><span class="real-time-indicator"></span>Real-Time Protection Dashboard</h1>
+                
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-value" id="total-requests">0</div>
+                        <div class="metric-label">Total Requests</div>
+                        <div class="metric-change positive" id="requests-change">+12% from yesterday</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="blocked-requests">0</div>
+                        <div class="metric-label">Blocked Requests</div>
+                        <div class="metric-change negative" id="blocked-change">-5% from yesterday</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="avg-latency">0ms</div>
+                        <div class="metric-label">Avg Response Time</div>
+                        <div class="metric-change positive" id="latency-change">-8ms from yesterday</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-value" id="threat-score">Low</div>
+                        <div class="metric-label">Current Threat Level</div>
+                        <div class="metric-change positive" id="threat-change">Stable</div>
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="chart-title">Traffic & Threats (Last 24 Hours)</div>
+                    <canvas id="trafficChart" width="800" height="300"></canvas>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="chart-container">
+                        <div class="chart-title">Geographic Distribution</div>
+                        <div class="threat-map" id="threatMap"></div>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Top Threat Sources</div>
+                        <table class="data-table">
+                            <thead>
+                                <tr><th>Source</th><th>Requests</th><th>Risk</th><th>Status</th></tr>
+                            </thead>
+                            <tbody id="threat-sources">
+                                <tr><td>192.168.1.100</td><td>1,247</td><td>High</td><td><span class="status-badge danger">Blocked</span></td></tr>
+                                <tr><td>China</td><td>856</td><td>Medium</td><td><span class="status-badge warning">Monitored</span></td></tr>
+                                <tr><td>Bot Network</td><td>432</td><td>High</td><td><span class="status-badge danger">Blocked</span></td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- ML Insights Section -->
+            <div id="ml-insights-section" class="content-section" style="display: none;">
+                <h1>🤖 Machine Learning Insights</h1>
+                
+                <div class="ml-insights">
+                    <h3>AI-Powered Threat Analysis</h3>
+                    <div class="insight-item">
+                        <strong>Pattern Recognition:</strong> Detected 15% increase in bot-like behavior from Eastern Europe
+                    </div>
+                    <div class="insight-item">
+                        <strong>Predictive Alert:</strong> High probability of traffic spike in next 2 hours (87% confidence)
+                    </div>
+                    <div class="insight-item">
+                        <strong>Anomaly Detection:</strong> Unusual click patterns detected from mobile devices in India
+                    </div>
+                </div>
+                
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                    <div class="chart-container">
+                        <div class="chart-title">ML Model Performance</div>
+                        <canvas id="mlPerformanceChart" width="400" height="250"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <div class="chart-title">Feature Importance</div>
+                        <canvas id="featureImportanceChart" width="400" height="250"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Alerts Section -->
+            <div id="alerts-section" class="content-section" style="display: none;">
+                <h1>🔔 Smart Alerts & Notifications</h1>
+                
+                <div class="alert-panel critical">
+                    <strong>CRITICAL:</strong> Potential DDoS attack detected - 2,500 req/min from single IP range
+                    <div style="margin-top: 10px; font-size: 0.9em;">
+                        <strong>Recommendations:</strong> Enable emergency rate limiting, Scale infrastructure
+                    </div>
+                </div>
+                
+                <div class="alert-panel high">
+                    <strong>HIGH:</strong> Geographic anomaly - 60% traffic from high-risk countries
+                    <div style="margin-top: 10px; font-size: 0.9em;">
+                        <strong>Recommendations:</strong> Review geo-filtering rules, Investigate traffic sources
+                    </div>
+                </div>
+                
+                <div class="chart-container">
+                    <div class="chart-title">Alert History</div>
+                    <table class="data-table">
+                        <thead>
+                            <tr><th>Time</th><th>Type</th><th>Severity</th><th>Description</th><th>Status</th></tr>
+                        </thead>
+                        <tbody id="alert-history">
+                            <tr>
+                                <td>10:45 AM</td>
+                                <td>DDoS Pattern</td>
+                                <td><span class="status-badge danger">Critical</span></td>
+                                <td>Traffic spike detected</td>
+                                <td>Active</td>
+                            </tr>
+                            <tr>
+                                <td>10:30 AM</td>
+                                <td>Bot Detection</td>
+                                <td><span class="status-badge warning">High</span></td>
+                                <td>Automated traffic from CN</td>
+                                <td>Resolved</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // Initialize dashboard
+        let currentMetrics = {};
+        
+        function showSection(sectionName) {
+            // Hide all sections
+            document.querySelectorAll('.content-section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Remove active class from nav items
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            
+            // Show selected section
+            document.getElementById(sectionName + '-section').style.display = 'block';
+            event.target.classList.add('active');
+            
+            // Load section-specific data
+            loadSectionData(sectionName);
+        }
+        
+        async function loadSectionData(section) {
+            switch(section) {
+                case 'overview':
+                    await loadOverviewData();
+                    break;
+                case 'ml-insights':
+                    await loadMLInsights();
+                    break;
+                case 'alerts':
+                    await loadAlerts();
+                    break;
+            }
+        }
+        
+        async function loadOverviewData() {
+            try {
+                const response = await fetch('http://localhost:3000/api/v1/analytics/advanced', {
+                    headers: { 'Authorization': 'Bearer tc_test_123' }
+                });
+                
+                if (response.ok) {
+                    currentMetrics = await response.json();
+                    updateOverviewMetrics();
+                    drawTrafficChart();
+                }
+            } catch (error) {
+                console.error('Failed to load overview data:', error);
+            }
+        }
+        
+        function updateOverviewMetrics() {
+            const realTime = currentMetrics.realTime || {};
+            
+            document.getElementById('total-requests').textContent = realTime.currentThroughput || 0;
+            document.getElementById('blocked-requests').textContent = Math.round((realTime.errorRate || 0) * (realTime.currentThroughput || 0) / 100);
+            document.getElementById('avg-latency').textContent = (realTime.avgLatency || 0) + 'ms';
+            document.getElementById('threat-score').textContent = currentMetrics.predictions?.riskForecast || 'Low';
+        }
+        
+        function drawTrafficChart() {
+            const canvas = document.getElementById('trafficChart');
+            if (!canvas) return;
+            
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw sample traffic data
+            const hours = Array.from({length: 24}, (_, i) => i);
+            const traffic = hours.map(() => Math.random() * 1000 + 200);
+            const threats = hours.map(() => Math.random() * 100 + 10);
+            
+            // Draw traffic line
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            
+            traffic.forEach((value, index) => {
+                const x = (index / 23) * (canvas.width - 40) + 20;
+                const y = canvas.height - (value / 1200) * (canvas.height - 40) - 20;
+                
+                if (index === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            
+            // Draw threats line
+            ctx.strokeStyle = '#e74c3c';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            threats.forEach((value, index) => {
+                const x = (index / 23) * (canvas.width - 40) + 20;
+                const y = canvas.height - (value / 120) * (canvas.height - 40) - 20;
+                
+                if (index === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            
+            // Add legend
+            ctx.fillStyle = '#3498db';
+            ctx.fillRect(canvas.width - 150, 20, 15, 15);
+            ctx.fillStyle = '#333';
+            ctx.font = '12px Arial';
+            ctx.fillText('Traffic', canvas.width - 130, 32);
+            
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(canvas.width - 150, 40, 15, 15);
+            ctx.fillText('Threats', canvas.width - 130, 52);
+        }
+        
+        // Real-time updates
+        setInterval(async () => {
+            await loadOverviewData();
+        }, 30000); // Update every 30 seconds
+        
+        // Initialize dashboard
+        loadOverviewData();
+    </script>
+</body>
+</html>

@@ -1,0 +1,14 @@
+{
+  "name": "traffic-cop-api",
+  "version": "1.0.0",
+  "description": "Traffic Cop Invalid Traffic Detection API",
+  "main": "api/server.js",
+  "scripts": {
+    "start": "node api/server.js",
+    "dev": "node api/server.js"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": "18.x"
+  }
+}
