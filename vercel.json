@@ -8,13 +8,20 @@
   ],
   "routes": [
     {
-      "src": "/(.*)",
+      "src": "/api/(.*)",
       "dest": "/api/server.js"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/server.js"
+    },
+    {
+      "src": "/(.*\\.(html|js|css|png|jpg|gif|ico|svg))",
+      "dest": "/public/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/index.html"
     }
-  ],
-  "functions": {
-    "api/server.js": {
-      "maxDuration": 30
-    }
-  }
+  ]
 }
