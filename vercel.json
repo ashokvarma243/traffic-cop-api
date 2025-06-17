@@ -1,24 +1,17 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "api/server.js",
-      "use": "@vercel/node"
-    }
-  ],
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/server.js"
     },
     {
-      "source": "/health", 
+      "source": "/health",
       "destination": "/api/server.js"
     },
     {
       "source": "/(.*)",
-      "destination": "/public/index.html"
+      "destination": "/public/$1"
     }
   ]
 }
-
