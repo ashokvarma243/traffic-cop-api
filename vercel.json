@@ -12,12 +12,13 @@
       "destination": "/api/server.js"
     },
     {
-      "source": "/health",
+      "source": "/health", 
       "destination": "/api/server.js"
     },
     {
       "source": "/(.*)",
-      "destination": "/public/$1"
+      "destination": "/public/index.html"
     }
   ]
 }
+
