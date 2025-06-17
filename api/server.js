@@ -1,490 +1,290 @@
-// test-server.js - Complete Traffic Cop API Server with Advanced Features
-const http = require('http');
+// server.js - Complete Traffic Cop API Server with Advanced Features
+const url = require('url');
+const TrafficCopAPIKeyManager = require('./api-key-manager');
 
-// Simple in-memory storage for testing
-const sessions = new Map();
-const apiKeys = new Map([
-    ['tc_test_123', { id: 'test_pub', name: 'Test Publisher' }],
-    ['tc_demo_publisher_123', { id: 'demo_pub', name: 'Demo Publisher' }],
-    ['tc_enterprise_456', { id: 'enterprise_pub', name: 'Enterprise Publisher' }]
-]);
+// Initialize API Key Manager
+const apiKeyManager = new TrafficCopAPIKeyManager();
+
+// Simple in-memory storage for testing (use database in production)
+let sessions = new Map();
 
 // Advanced Analytics Engine
 class AdvancedAnalytics {
     constructor() {
         this.metrics = {
             realTimeData: [],
-            hourlyStats: Array(24).fill().map((_, i) => ({ hour: i, requests: 0, blocked: 0, avgLatency: 0 })),
-            dailyStats: [],
-            geographicData: new Map(),
-            threatIntelligence: [],
             performanceMetrics: {
-                avgResponseTime: 0,
-                p95ResponseTime: 0,
-                errorRate: 0,
-                throughput: 0
-            }
+                avgResponseTime: 45,
+                errorRate: 2.1,
+                throughput: 150,
+                activeThreats: 0
+            },
+            geographicData: new Map(),
+            threatPatterns: new Map()
         };
-        this.startRealTimeCollection();
     }
     
-    recordRequest(analysis, responseTime, clientIP) {
-        const timestamp = Date.now();
-        const hour = new Date().getHours();
-        
-        // Real-time data (keep last 1000 requests)
-        this.metrics.realTimeData.push({
-            timestamp,
+    recordRequest(analysis, responseTime, clientIP = 'unknown') {
+        const record = {
+            timestamp: Date.now(),
             sessionId: analysis.sessionId,
             riskScore: analysis.riskScore,
             action: analysis.action,
             responseTime,
             clientIP,
             threats: analysis.threats
-        });
+        };
         
+        this.metrics.realTimeData.push(record);
+        
+        // Keep only last 1000 requests
         if (this.metrics.realTimeData.length > 1000) {
             this.metrics.realTimeData.shift();
         }
         
-        // Hourly stats
-        this.metrics.hourlyStats[hour].requests++;
-        if (analysis.action === 'block') {
-            this.metrics.hourlyStats[hour].blocked++;
-        }
-        
         // Update performance metrics
-        this.updatePerformanceMetrics(responseTime, analysis.action === 'block');
-        
-        // Geographic data
+        this.updatePerformanceMetrics();
         this.updateGeographicData(clientIP, analysis);
-        
-        // Threat intelligence
-        if (analysis.threats.length > 0) {
-            this.recordThreat(analysis, clientIP);
-        }
+        this.updateThreatPatterns(analysis);
     }
     
-    updatePerformanceMetrics(responseTime, isBlocked) {
+    updatePerformanceMetrics() {
         const recentRequests = this.metrics.realTimeData.slice(-100);
+        if (recentRequests.length === 0) return;
         
-        // Average response time
         const avgTime = recentRequests.reduce((sum, req) => sum + req.responseTime, 0) / recentRequests.length;
         this.metrics.performanceMetrics.avgResponseTime = Math.round(avgTime);
         
-        // P95 response time
-        const sortedTimes = recentRequests.map(r => r.responseTime).sort((a, b) => a - b);
-        const p95Index = Math.floor(sortedTimes.length * 0.95);
-        this.metrics.performanceMetrics.p95ResponseTime = sortedTimes[p95Index] || 0;
-        
-        // Error rate (blocked requests as errors)
         const blockedCount = recentRequests.filter(r => r.action === 'block').length;
         this.metrics.performanceMetrics.errorRate = (blockedCount / recentRequests.length) * 100;
         
-        // Throughput (requests per minute)
-        const oneMinuteAgo = Date.now() - 60000;
-        const recentMinute = this.metrics.realTimeData.filter(r => r.timestamp > oneMinuteAgo);
-        this.metrics.performanceMetrics.throughput = recentMinute.length;
+        this.metrics.performanceMetrics.throughput = recentRequests.length;
+        
+        const activeThreats = this.metrics.realTimeData.filter(r => 
+            Date.now() - r.timestamp < 300000 && r.action === 'block'
+        ).length;
+        this.metrics.performanceMetrics.activeThreats = activeThreats;
     }
     
     updateGeographicData(clientIP, analysis) {
-        // Simulate geographic data based on IP
-        const geoData = this.getGeoFromIP(clientIP);
-        
-        if (!this.metrics.geographicData.has(geoData.country)) {
-            this.metrics.geographicData.set(geoData.country, {
-                country: geoData.country,
-                code: geoData.code,
-                requests: 0,
-                blocked: 0,
-                avgRisk: 0,
-                totalRisk: 0
-            });
+        // Simplified geographic tracking
+        const country = this.getCountryFromIP(clientIP);
+        if (!this.metrics.geographicData.has(country)) {
+            this.metrics.geographicData.set(country, { total: 0, blocked: 0 });
         }
         
-        const countryData = this.metrics.geographicData.get(geoData.country);
-        countryData.requests++;
-        countryData.totalRisk += analysis.riskScore;
-        countryData.avgRisk = countryData.totalRisk / countryData.requests;
-        
+        const countryData = this.metrics.geographicData.get(country);
+        countryData.total++;
         if (analysis.action === 'block') {
             countryData.blocked++;
         }
     }
     
-    getGeoFromIP(ip) {
-        // Simulate geographic lookup
-        const countries = ['US', 'GB', 'DE', 'FR', 'CN', 'RU', 'IN', 'BR', 'JP', 'AU'];
-        const countryNames = {
-            'US': 'United States', 'GB': 'United Kingdom', 'DE': 'Germany',
-            'FR': 'France', 'CN': 'China', 'RU': 'Russia', 'IN': 'India',
-            'BR': 'Brazil', 'JP': 'Japan', 'AU': 'Australia'
-        };
-        
-        const code = countries[Math.floor(Math.random() * countries.length)];
-        return { country: countryNames[code], code: code };
-    }
-    
-    recordThreat(analysis, clientIP) {
-        this.metrics.threatIntelligence.push({
-            timestamp: Date.now(),
-            sessionId: analysis.sessionId,
-            clientIP: clientIP,
-            threats: analysis.threats,
-            riskScore: analysis.riskScore,
-            action: analysis.action
+    updateThreatPatterns(analysis) {
+        analysis.threats.forEach(threat => {
+            if (!this.metrics.threatPatterns.has(threat)) {
+                this.metrics.threatPatterns.set(threat, 0);
+            }
+            this.metrics.threatPatterns.set(threat, this.metrics.threatPatterns.get(threat) + 1);
         });
-        
-        // Keep only last 500 threats
-        if (this.metrics.threatIntelligence.length > 500) {
-            this.metrics.threatIntelligence.shift();
-        }
     }
     
-    startRealTimeCollection() {
-        // Simulate real-time data updates
-        setInterval(() => {
-            this.generatePredictiveInsights();
-        }, 30000); // Every 30 seconds
-    }
-    
-    generatePredictiveInsights() {
-        const recentData = this.metrics.realTimeData.slice(-100);
-        
-        // Predict traffic spikes
-        const currentHour = new Date().getHours();
-        const historicalAvg = this.metrics.hourlyStats[currentHour].requests / 30; // 30 days avg
-        const currentRate = recentData.length;
-        
-        if (currentRate > historicalAvg * 1.5) {
-            console.log('🚨 Traffic spike detected - scaling recommended');
-        }
-        
-        // Predict attack patterns
-        const recentThreats = this.metrics.threatIntelligence.filter(t => 
-            Date.now() - t.timestamp < 300000 // Last 5 minutes
-        );
-        
-        if (recentThreats.length > 10) {
-            console.log('🚨 Potential coordinated attack detected');
-        }
+    getCountryFromIP(ip) {
+        // Simplified country detection (use real GeoIP service in production)
+        if (ip.startsWith('192.168') || ip === 'unknown') return 'Local';
+        return 'Unknown';
     }
     
     getAdvancedMetrics() {
+        const recentData = this.metrics.realTimeData.slice(-50);
+        
         return {
             realTime: {
                 currentThroughput: this.metrics.performanceMetrics.throughput,
                 avgLatency: this.metrics.performanceMetrics.avgResponseTime,
                 errorRate: this.metrics.performanceMetrics.errorRate,
-                activeThreats: this.metrics.threatIntelligence.filter(t => 
-                    Date.now() - t.timestamp < 300000
-                ).length
+                activeThreats: this.metrics.performanceMetrics.activeThreats,
+                recentActivity: recentData.map(r => ({
+                    timestamp: r.timestamp,
+                    riskScore: r.riskScore,
+                    action: r.action
+                }))
             },
-            trends: {
-                hourlyStats: this.metrics.hourlyStats,
-                topCountries: Array.from(this.metrics.geographicData.values())
-                    .sort((a, b) => b.requests - a.requests)
-                    .slice(0, 10),
-                threatTrends: this.getThreatTrends()
-            },
+            geographic: Object.fromEntries(this.metrics.geographicData),
+            threatPatterns: Object.fromEntries(
+                Array.from(this.metrics.threatPatterns.entries())
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 10)
+            ),
             predictions: {
-                nextHourTraffic: this.predictNextHourTraffic(),
-                riskForecast: this.predictRiskLevel(),
+                riskForecast: this.calculateRiskForecast(),
                 capacityRecommendation: this.getCapacityRecommendation()
             }
         };
     }
     
-    getThreatTrends() {
-        const threatTypes = {};
-        this.metrics.threatIntelligence.forEach(threat => {
-            threat.threats.forEach(type => {
-                threatTypes[type] = (threatTypes[type] || 0) + 1;
-            });
-        });
+    calculateRiskForecast() {
+        const recentBlocked = this.metrics.realTimeData
+            .filter(r => Date.now() - r.timestamp < 3600000) // Last hour
+            .filter(r => r.action === 'block').length;
         
-        return Object.entries(threatTypes)
-            .sort(([,a], [,b]) => b - a)
-            .slice(0, 5)
-            .map(([type, count]) => ({ type, count }));
-    }
-    
-    predictNextHourTraffic() {
-        const currentHour = new Date().getHours();
-        const nextHour = (currentHour + 1) % 24;
-        const historicalAvg = this.metrics.hourlyStats[nextHour].requests / 30;
-        const currentTrend = this.metrics.performanceMetrics.throughput * 60; // Convert to hourly
-        
-        return Math.round((historicalAvg + currentTrend) / 2);
-    }
-    
-    predictRiskLevel() {
-        const recentRisks = this.metrics.realTimeData.slice(-50).map(r => r.riskScore);
-        const avgRisk = recentRisks.reduce((a, b) => a + b, 0) / recentRisks.length;
-        
-        if (avgRisk > 60) return 'HIGH';
-        if (avgRisk > 30) return 'MEDIUM';
+        if (recentBlocked > 50) return 'HIGH';
+        if (recentBlocked > 20) return 'MEDIUM';
         return 'LOW';
     }
     
     getCapacityRecommendation() {
-        const currentLoad = this.metrics.performanceMetrics.throughput;
-        const avgLatency = this.metrics.performanceMetrics.avgResponseTime;
-        
-        if (avgLatency > 100 || currentLoad > 1000) {
-            return 'SCALE_UP';
-        } else if (avgLatency < 30 && currentLoad < 100) {
-            return 'SCALE_DOWN';
-        }
+        const currentThroughput = this.metrics.performanceMetrics.throughput;
+        if (currentThroughput > 80) return 'SCALE_UP';
+        if (currentThroughput < 20) return 'SCALE_DOWN';
         return 'OPTIMAL';
     }
 }
 
-// Machine Learning Threat Detection Engine
+// ML Threat Detection Engine
 class MLThreatDetection {
     constructor() {
         this.model = {
             weights: {
                 userAgent: 0.25,
                 screenResolution: 0.15,
-                geographic: 0.20,
-                behavioral: 0.25,
-                temporal: 0.15
+                mouseMovement: 0.20,
+                clickPattern: 0.15,
+                geographic: 0.10,
+                behavioral: 0.15
             },
-            thresholds: {
-                bot: 0.8,
-                suspicious: 0.6,
-                normal: 0.3
-            },
-            learningRate: 0.01
+            threshold: 0.7
         };
         this.trainingData = [];
-        this.featureExtractor = new FeatureExtractor();
     }
     
-    analyzeWithML(visitorData, behavioralData = {}) {
-        const features = this.featureExtractor.extract(visitorData, behavioralData);
-        const riskScore = this.calculateRiskScore(features);
+    analyzeWithML(visitorData) {
+        const features = this.extractFeatures(visitorData);
+        const mlRiskScore = this.calculateMLScore(features);
         const confidence = this.calculateConfidence(features);
-        const threatVector = this.identifyThreatVector(features);
+        
+        // Store for continuous learning
+        this.trainingData.push({
+            features,
+            timestamp: Date.now(),
+            riskScore: mlRiskScore
+        });
+        
+        // Keep only recent training data
+        if (this.trainingData.length > 1000) {
+            this.trainingData.shift();
+        }
         
         return {
-            mlRiskScore: riskScore,
-            confidence: confidence,
-            threatVector: threatVector,
-            features: features,
-            recommendation: this.getRecommendation(riskScore, confidence)
+            mlRiskScore: Math.round(mlRiskScore),
+            confidence: Math.round(confidence),
+            threatVector: this.identifyThreats(features),
+            modelVersion: '2.1.0'
         };
     }
     
-    calculateRiskScore(features) {
-        let score = 0;
-        
-        // User Agent Analysis
-        score += features.userAgentSuspicion * this.model.weights.userAgent;
-        
-        // Device Fingerprint Analysis
-        score += features.deviceSuspicion * this.model.weights.screenResolution;
-        
-        // Geographic Risk
-        score += features.geographicRisk * this.model.weights.geographic;
-        
-        // Behavioral Analysis
-        score += features.behavioralRisk * this.model.weights.behavioral;
-        
-        // Temporal Analysis
-        score += features.temporalRisk * this.model.weights.temporal;
-        
-        return Math.min(Math.max(score * 100, 0), 100);
-    }
-    
-    calculateConfidence(features) {
-        // Calculate confidence based on feature consistency
-        const featureValues = Object.values(features);
-        const mean = featureValues.reduce((a, b) => a + b, 0) / featureValues.length;
-        const variance = featureValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / featureValues.length;
-        
-        // Lower variance = higher confidence
-        return Math.max(0, Math.min(100, 100 - (variance * 100)));
-    }
-    
-    identifyThreatVector(features) {
-        const vectors = [];
-        
-        if (features.userAgentSuspicion > 0.7) vectors.push('Automated Browser');
-        if (features.deviceSuspicion > 0.6) vectors.push('Virtual Environment');
-        if (features.geographicRisk > 0.8) vectors.push('High-Risk Location');
-        if (features.behavioralRisk > 0.7) vectors.push('Abnormal Behavior');
-        if (features.temporalRisk > 0.6) vectors.push('Suspicious Timing');
-        
-        return vectors.length > 0 ? vectors : ['Low Risk'];
-    }
-    
-    getRecommendation(riskScore, confidence) {
-        if (riskScore > 80 && confidence > 70) {
-            return { action: 'BLOCK', reason: 'High risk with high confidence' };
-        } else if (riskScore > 60) {
-            return { action: 'CHALLENGE', reason: 'Medium risk detected' };
-        } else if (riskScore > 30) {
-            return { action: 'MONITOR', reason: 'Low risk - continue monitoring' };
-        } else {
-            return { action: 'ALLOW', reason: 'Normal traffic pattern' };
-        }
-    }
-    
-    learn(visitorData, actualOutcome) {
-        // Add to training data
-        this.trainingData.push({
-            features: this.featureExtractor.extract(visitorData),
-            outcome: actualOutcome
-        });
-        
-        // Retrain model periodically
-        if (this.trainingData.length % 100 === 0) {
-            this.retrainModel();
-        }
-    }
-    
-    retrainModel() {
-        // Simple gradient descent for weight adjustment
-        const learningRate = this.model.learningRate;
-        
-        this.trainingData.slice(-500).forEach(sample => {
-            const predicted = this.calculateRiskScore(sample.features) / 100;
-            const actual = sample.outcome === 'block' ? 1 : 0;
-            const error = predicted - actual;
-            
-            // Adjust weights based on error
-            Object.keys(this.model.weights).forEach(key => {
-                if (sample.features[key + 'Risk'] !== undefined) {
-                    this.model.weights[key] -= learningRate * error * sample.features[key + 'Risk'];
-                }
-            });
-        });
-        
-        // Normalize weights
-        const totalWeight = Object.values(this.model.weights).reduce((a, b) => a + b, 0);
-        Object.keys(this.model.weights).forEach(key => {
-            this.model.weights[key] /= totalWeight;
-        });
-    }
-}
-
-// Feature Extraction Engine
-class FeatureExtractor {
-    extract(visitorData, behavioralData = {}) {
+    extractFeatures(visitorData) {
         return {
-            userAgentSuspicion: this.analyzeUserAgent(visitorData.userAgent),
-            deviceSuspicion: this.analyzeDevice(visitorData),
-            geographicRisk: this.analyzeGeography(visitorData),
-            behavioralRisk: this.analyzeBehavior(behavioralData),
-            temporalRisk: this.analyzeTiming(visitorData),
-            networkRisk: this.analyzeNetwork(visitorData)
+            userAgentSuspicious: this.analyzeUserAgent(visitorData.userAgent),
+            screenResolutionRisk: this.analyzeScreenResolution(visitorData.screenResolution),
+            mouseMovementPattern: this.analyzeMouseMovement(visitorData.behaviorData),
+            clickPattern: this.analyzeClickPattern(visitorData.behaviorData),
+            geographicRisk: this.analyzeGeographic(visitorData.countryCode),
+            behavioralAnomalies: this.analyzeBehavior(visitorData.behaviorData)
         };
     }
     
     analyzeUserAgent(userAgent) {
-        if (!userAgent) return 1.0;
+        if (!userAgent) return 0.8;
         
+        const suspiciousPatterns = ['bot', 'crawler', 'spider', 'headless', 'selenium', 'phantom'];
         const ua = userAgent.toLowerCase();
-        let suspicion = 0;
         
-        // Bot keywords
-        const botKeywords = ['bot', 'crawler', 'spider', 'scraper', 'headless'];
-        botKeywords.forEach(keyword => {
-            if (ua.includes(keyword)) suspicion += 0.3;
-        });
+        for (const pattern of suspiciousPatterns) {
+            if (ua.includes(pattern)) return 0.9;
+        }
         
-        // Automation tools
-        const autoTools = ['selenium', 'puppeteer', 'playwright', 'phantom'];
-        autoTools.forEach(tool => {
-            if (ua.includes(tool)) suspicion += 0.4;
-        });
-        
-        // Unusual patterns
-        if (ua.length < 20 || ua.length > 500) suspicion += 0.2;
-        if (!ua.includes('mozilla') && !ua.includes('webkit')) suspicion += 0.3;
-        
-        return Math.min(suspicion, 1.0);
+        if (ua.length < 20 || ua.length > 500) return 0.6;
+        return 0.1;
     }
     
-    analyzeDevice(visitorData) {
-        let suspicion = 0;
+    analyzeScreenResolution(resolution) {
+        if (!resolution) return 0.7;
         
-        // Screen resolution analysis
-        const resolution = visitorData.screenResolution || '';
-        const commonResolutions = ['1920x1080', '1366x768', '1536x864', '1440x900'];
-        
-        if (resolution === '1024x768') suspicion += 0.4; // Common bot resolution
-        if (!commonResolutions.includes(resolution) && resolution !== '') suspicion += 0.2;
-        
-        // Plugin analysis
-        const plugins = visitorData.plugins || 0;
-        if (plugins === 0) suspicion += 0.3;
-        if (plugins > 50) suspicion += 0.2;
-        
-        // Platform consistency
-        if (!visitorData.platform) suspicion += 0.2;
-        
-        return Math.min(suspicion, 1.0);
-    }
-    
-    analyzeGeography(visitorData) {
-        const highRiskCountries = ['CN', 'RU', 'BD', 'PK', 'ID', 'VN'];
-        const mediumRiskCountries = ['IN', 'PH', 'EG', 'NG', 'UA', 'TR'];
-        
-        if (highRiskCountries.includes(visitorData.countryCode)) return 0.8;
-        if (mediumRiskCountries.includes(visitorData.countryCode)) return 0.5;
+        const suspiciousResolutions = ['1024x768', '800x600', '1x1'];
+        if (suspiciousResolutions.includes(resolution)) return 0.8;
         
         return 0.1;
     }
     
-    analyzeBehavior(behavioralData) {
-        let suspicion = 0;
+    analyzeMouseMovement(behaviorData) {
+        if (!behaviorData || !behaviorData.mouseMovements) return 0.5;
         
-        // Mouse movement analysis
-        if (behavioralData.mouseMovements < 5) suspicion += 0.3;
-        if (behavioralData.clickSpeed && behavioralData.clickSpeed < 100) suspicion += 0.4;
+        if (behaviorData.mouseMovements === 0) return 0.9;
+        if (behaviorData.mouseVariation < 50) return 0.7;
         
-        // Scroll behavior
-        if (behavioralData.scrollEvents < 2) suspicion += 0.2;
-        
-        // Page interaction time
-        if (behavioralData.timeOnPage && behavioralData.timeOnPage < 1000) suspicion += 0.3;
-        
-        return Math.min(suspicion, 1.0);
+        return 0.2;
     }
     
-    analyzeTiming(visitorData) {
-        const now = Date.now();
-        const requestTime = visitorData.timestamp || now;
-        const timeDiff = now - requestTime;
+    analyzeClickPattern(behaviorData) {
+        if (!behaviorData) return 0.3;
         
-        let suspicion = 0;
+        if (behaviorData.avgClickSpeed && behaviorData.avgClickSpeed < 100) return 0.8;
+        if (behaviorData.clicks > 50 && behaviorData.timeOnPage < 10000) return 0.7;
         
-        // Very fast requests (possible automation)
-        if (timeDiff < 100) suspicion += 0.4;
-        
-        // Requests at unusual hours (for the timezone)
-        const hour = new Date().getHours();
-        if (hour >= 2 && hour <= 6) suspicion += 0.2; // Late night requests
-        
-        return Math.min(suspicion, 1.0);
+        return 0.2;
     }
     
-    analyzeNetwork(visitorData) {
-        // Simulate network analysis
-        let suspicion = 0;
+    analyzeGeographic(countryCode) {
+        const highRiskCountries = ['CN', 'RU', 'BD', 'PK', 'ID'];
+        if (highRiskCountries.includes(countryCode)) return 0.6;
+        return 0.1;
+    }
+    
+    analyzeBehavior(behaviorData) {
+        if (!behaviorData) return 0.4;
         
-        // Check for VPN/Proxy indicators
-        if (visitorData.ip && visitorData.ip.startsWith('10.')) suspicion += 0.3;
+        let anomalyScore = 0;
         
-        // Unusual ISP patterns (would need real ISP database)
-        if (visitorData.isp && visitorData.isp.toLowerCase().includes('hosting')) {
-            suspicion += 0.4;
+        if (behaviorData.timeOnPage > 10000 && behaviorData.pageInteractions === 0) {
+            anomalyScore += 0.3;
         }
         
-        return Math.min(suspicion, 1.0);
+        if (behaviorData.scrollPattern === 'too_uniform' || behaviorData.scrollPattern === 'too_fast') {
+            anomalyScore += 0.2;
+        }
+        
+        return Math.min(anomalyScore, 0.9);
+    }
+    
+    calculateMLScore(features) {
+        let score = 0;
+        
+        score += features.userAgentSuspicious * this.model.weights.userAgent;
+        score += features.screenResolutionRisk * this.model.weights.screenResolution;
+        score += features.mouseMovementPattern * this.model.weights.mouseMovement;
+        score += features.clickPattern * this.model.weights.clickPattern;
+        score += features.geographicRisk * this.model.weights.geographic;
+        score += features.behavioralAnomalies * this.model.weights.behavioral;
+        
+        return Math.min(score * 100, 100);
+    }
+    
+    calculateConfidence(features) {
+        const featureCount = Object.values(features).filter(f => f > 0.5).length;
+        return Math.min(60 + (featureCount * 10), 95);
+    }
+    
+    identifyThreats(features) {
+        const threats = [];
+        
+        if (features.userAgentSuspicious > 0.7) threats.push('Suspicious user agent detected');
+        if (features.mouseMovementPattern > 0.7) threats.push('Automated mouse patterns');
+        if (features.clickPattern > 0.7) threats.push('Rapid clicking detected');
+        if (features.behavioralAnomalies > 0.5) threats.push('Behavioral anomalies detected');
+        if (features.geographicRisk > 0.5) threats.push('High-risk geographic location');
+        
+        return threats;
     }
 }
 
@@ -495,185 +295,82 @@ class SmartAlertEngine {
             {
                 id: 'high_risk_spike',
                 name: 'High Risk Traffic Spike',
-                condition: (metrics) => metrics.realTime.errorRate > 50,
+                condition: (metrics) => metrics.realTime.errorRate > 15,
                 severity: 'HIGH',
                 cooldown: 300000 // 5 minutes
             },
             {
-                id: 'ddos_pattern',
-                name: 'Potential DDoS Attack',
-                condition: (metrics) => metrics.realTime.currentThroughput > 1000,
-                severity: 'CRITICAL',
+                id: 'unusual_geographic',
+                name: 'Unusual Geographic Pattern',
+                condition: (metrics) => this.checkGeographicAnomaly(metrics),
+                severity: 'MEDIUM',
                 cooldown: 600000 // 10 minutes
             },
             {
-                id: 'geographic_anomaly',
-                name: 'Geographic Anomaly Detected',
-                condition: (metrics) => this.checkGeographicAnomaly(metrics),
-                severity: 'MEDIUM',
+                id: 'performance_degradation',
+                name: 'Performance Degradation',
+                condition: (metrics) => metrics.realTime.avgLatency > 200,
+                severity: 'LOW',
                 cooldown: 900000 // 15 minutes
             }
         ];
         
         this.alertHistory = [];
-        this.lastAlerts = new Map();
-        this.webhooks = [];
-        this.emailAlerts = [];
+        this.lastAlertTimes = new Map();
     }
     
     checkAlerts(metrics) {
-        const alerts = [];
-        
-        this.alertRules.forEach(rule => {
-            if (this.shouldTriggerAlert(rule, metrics)) {
-                const alert = this.createAlert(rule, metrics);
-                alerts.push(alert);
-                this.processAlert(alert);
-            }
-        });
-        
-        return alerts;
-    }
-    
-    shouldTriggerAlert(rule, metrics) {
-        const lastAlert = this.lastAlerts.get(rule.id);
         const now = Date.now();
         
-        // Check cooldown period
-        if (lastAlert && (now - lastAlert) < rule.cooldown) {
-            return false;
-        }
-        
-        // Check condition
-        return rule.condition(metrics);
+        this.alertRules.forEach(rule => {
+            const lastAlert = this.lastAlertTimes.get(rule.id) || 0;
+            
+            if (now - lastAlert > rule.cooldown && rule.condition(metrics)) {
+                this.triggerAlert(rule, metrics);
+                this.lastAlertTimes.set(rule.id, now);
+            }
+        });
     }
     
-    createAlert(rule, metrics) {
+    triggerAlert(rule, metrics) {
         const alert = {
-            id: `alert_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            id: `alert_${Date.now()}`,
             ruleId: rule.id,
             name: rule.name,
             severity: rule.severity,
-            timestamp: Date.now(),
-            metrics: metrics.realTime,
-            description: this.generateAlertDescription(rule, metrics),
-            recommendations: this.generateRecommendations(rule, metrics)
+            timestamp: new Date().toISOString(),
+            metrics: {
+                errorRate: metrics.realTime.errorRate,
+                avgLatency: metrics.realTime.avgLatency,
+                activeThreats: metrics.realTime.activeThreats
+            }
         };
         
         this.alertHistory.push(alert);
-        this.lastAlerts.set(rule.id, Date.now());
         
-        return alert;
-    }
-    
-    generateAlertDescription(rule, metrics) {
-        switch (rule.id) {
-            case 'high_risk_spike':
-                return `Error rate has spiked to ${metrics.realTime.errorRate}% (threshold: 50%)`;
-            case 'ddos_pattern':
-                return `Traffic throughput is ${metrics.realTime.currentThroughput} req/min (threshold: 1000)`;
-            case 'geographic_anomaly':
-                return 'Unusual geographic traffic pattern detected';
-            default:
-                return 'Alert condition met';
+        // Keep only last 100 alerts
+        if (this.alertHistory.length > 100) {
+            this.alertHistory.shift();
         }
-    }
-    
-    generateRecommendations(rule, metrics) {
-        switch (rule.id) {
-            case 'high_risk_spike':
-                return [
-                    'Review recent traffic patterns',
-                    'Consider lowering risk thresholds temporarily',
-                    'Check for coordinated attack patterns'
-                ];
-            case 'ddos_pattern':
-                return [
-                    'Enable aggressive rate limiting',
-                    'Scale infrastructure immediately',
-                    'Contact hosting provider if needed'
-                ];
-            case 'geographic_anomaly':
-                return [
-                    'Review geographic filtering rules',
-                    'Investigate traffic sources',
-                    'Consider temporary geo-blocking'
-                ];
-            default:
-                return ['Investigate alert condition'];
-        }
-    }
-    
-    processAlert(alert) {
-        console.log(`🚨 ALERT [${alert.severity}]: ${alert.name}`);
-        console.log(`   Description: ${alert.description}`);
         
-        // Send to webhooks
-        this.webhooks.forEach(webhook => {
-            this.sendWebhook(webhook, alert);
-        });
-        
-        // Send email alerts for high severity
-        if (alert.severity === 'HIGH' || alert.severity === 'CRITICAL') {
-            this.emailAlerts.forEach(email => {
-                this.sendEmailAlert(email, alert);
-            });
-        }
-    }
-    
-    sendWebhook(webhook, alert) {
-        // Simulate webhook sending
-        console.log(`📡 Sending webhook to ${webhook.url}`);
-        
-        const payload = {
-            alert: alert,
-            timestamp: Date.now(),
-            source: 'Traffic Cop'
-        };
-        
-        // In real implementation, use fetch() to send webhook
-    }
-    
-    sendEmailAlert(email, alert) {
-        // Simulate email sending
-        console.log(`📧 Sending email alert to ${email}`);
+        console.log(`🚨 ALERT: ${alert.name} (${alert.severity})`);
     }
     
     checkGeographicAnomaly(metrics) {
-        // Check if traffic from unusual countries exceeds threshold
-        const topCountries = metrics.trends.topCountries || [];
-        const highRiskCountries = ['CN', 'RU', 'BD', 'PK'];
-        
-        const highRiskTraffic = topCountries
-            .filter(country => highRiskCountries.includes(country.code))
-            .reduce((sum, country) => sum + country.requests, 0);
-        
-        const totalTraffic = topCountries.reduce((sum, country) => sum + country.requests, 0);
-        
-        return totalTraffic > 0 && (highRiskTraffic / totalTraffic) > 0.6;
+        // Simple geographic anomaly detection
+        const countries = Object.keys(metrics.geographic || {});
+        return countries.length > 10; // More than 10 countries in recent activity
     }
     
-    addWebhook(url, secret = null) {
-        this.webhooks.push({ url, secret });
-    }
-    
-    addEmailAlert(email) {
-        this.emailAlerts.push(email);
-    }
-    
-    getAlertHistory(limit = 50) {
+    getAlertHistory(limit = 20) {
         return this.alertHistory.slice(-limit).reverse();
     }
 }
 
-// Initialize advanced features
+// Initialize engines
 const analytics = new AdvancedAnalytics();
 const mlEngine = new MLThreatDetection();
 const alertEngine = new SmartAlertEngine();
-
-// Add webhook for testing
-alertEngine.addWebhook('https://your-webhook-url.com/alerts');
-alertEngine.addEmailAlert('admin@yoursite.com');
 
 // Enhanced traffic analysis function with ML and Automatic Bot Detection
 function analyzeTraffic(visitorData) {
@@ -793,23 +490,6 @@ function analyzeTraffic(visitorData) {
             riskScore += 15;
             threats.push('Missing hardware information');
         }
-        
-        // Suspicious timezone/language combination
-        if (device.timezone && device.language) {
-            // Check for mismatched timezone and language
-            const suspiciousCombos = [
-                { timezone: 'America/New_York', language: 'zh-CN' },
-                { timezone: 'Europe/London', language: 'ru' },
-                { timezone: 'Asia/Tokyo', language: 'en-US' }
-            ];
-            
-            suspiciousCombos.forEach(combo => {
-                if (device.timezone.includes(combo.timezone) && device.language.includes(combo.language)) {
-                    riskScore += 10;
-                    threats.push('Suspicious timezone/language combination');
-                }
-            });
-        }
     }
     
     // Loading time analysis
@@ -837,7 +517,7 @@ function analyzeTraffic(visitorData) {
         threats.push('Cookies disabled');
     }
     
-    // ML Analysis (your existing ML engine)
+    // ML Analysis
     const mlAnalysis = mlEngine.analyzeWithML(visitorData);
     
     // Combine basic, behavior, and ML scores with weighted average
@@ -896,10 +576,9 @@ function analyzeTraffic(visitorData) {
     sessions.set(sessionId, analysis);
     
     return analysis;
-
 }
 
-// Vercel export function (replace the entire server section above)
+// Vercel export function
 module.exports = async (req, res) => {
     console.log(`${req.method} ${req.url}`);
     
@@ -920,14 +599,50 @@ module.exports = async (req, res) => {
             timestamp: new Date().toISOString(),
             message: 'Traffic Cop API is running on Vercel!',
             version: '2.0.0',
-            features: ['ML Detection', 'Real-time Analytics', 'Smart Alerts']
+            features: ['ML Detection', 'Real-time Analytics', 'Smart Alerts', 'Auto Bot Detection']
+        });
+        return;
+    }
+    
+    // Publisher signup endpoint
+    if (req.url === '/api/v1/publisher/signup' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+            try {
+                const publisherInfo = JSON.parse(body);
+                
+                // Validate required fields
+                if (!publisherInfo.email || !publisherInfo.website) {
+                    res.status(400).json({
+                        success: false,
+                        error: 'Email and website are required'
+                    });
+                    return;
+                }
+                
+                // Generate API key using the manager
+                const result = apiKeyManager.createPublisher(publisherInfo);
+                
+                if (result.success) {
+                    res.status(200).json(result);
+                } else {
+                    res.status(500).json(result);
+                }
+                
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid JSON data'
+                });
+            }
         });
         return;
     }
     
     // Main analysis endpoint
     if (req.url === '/api/v1/analyze' && req.method === 'POST') {
-        // Check API key
+        // Check API key using the manager
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             res.status(401).json({ error: 'Missing API key' });
@@ -935,19 +650,20 @@ module.exports = async (req, res) => {
         }
         
         const apiKey = authHeader.substring(7);
-        if (!apiKeys.has(apiKey)) {
-            res.status(401).json({ error: 'Invalid API key' });
+        const validation = apiKeyManager.validateAPIKey(apiKey);
+        
+        if (!validation.valid) {
+            res.status(401).json({ error: validation.reason });
             return;
         }
         
-        // Parse request body
+        // Parse request body and analyze
         let body = '';
         req.on('data', chunk => body += chunk);
         req.on('end', () => {
             try {
                 const visitorData = JSON.parse(body);
                 const analysis = analyzeTraffic(visitorData);
-                
                 res.status(200).json(analysis);
             } catch (error) {
                 res.status(400).json({ error: 'Invalid JSON' });
@@ -965,15 +681,18 @@ module.exports = async (req, res) => {
         }
         
         const apiKey = authHeader.substring(7);
-        if (!apiKeys.has(apiKey)) {
-            res.status(401).json({ error: 'Invalid API key' });
+        const validation = apiKeyManager.validateAPIKey(apiKey);
+        
+        if (!validation.valid) {
+            res.status(401).json({ error: validation.reason });
             return;
         }
         
         res.status(200).json({
             totalSessions: sessions.size,
             blockedSessions: Array.from(sessions.values()).filter(s => s.action === 'block').length,
-            blockRate: sessions.size > 0 ? Math.round((Array.from(sessions.values()).filter(s => s.action === 'block').length / sessions.size) * 100) : 0
+            blockRate: sessions.size > 0 ? Math.round((Array.from(sessions.values()).filter(s => s.action === 'block').length / sessions.size) * 100) : 0,
+            publisherInfo: validation.data
         });
         return;
     }
@@ -987,8 +706,10 @@ module.exports = async (req, res) => {
         }
         
         const apiKey = authHeader.substring(7);
-        if (!apiKeys.has(apiKey)) {
-            res.status(401).json({ error: 'Invalid API key' });
+        const validation = apiKeyManager.validateAPIKey(apiKey);
+        
+        if (!validation.valid) {
+            res.status(401).json({ error: validation.reason });
             return;
         }
         
@@ -1025,11 +746,20 @@ module.exports = async (req, res) => {
             return;
         }
         
+        const apiKey = authHeader.substring(7);
+        const validation = apiKeyManager.validateAPIKey(apiKey);
+        
+        if (!validation.valid) {
+            res.status(401).json({ error: validation.reason });
+            return;
+        }
+        
         res.status(200).json({
             modelAccuracy: 94.2,
             trainingDataPoints: mlEngine.trainingData.length,
             featureWeights: mlEngine.model.weights,
-            recentPredictions: analytics.getAdvancedMetrics().predictions
+            recentPredictions: analytics.getAdvancedMetrics().predictions,
+            modelVersion: '2.1.0'
         });
         return;
     }
@@ -1039,6 +769,14 @@ module.exports = async (req, res) => {
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
             res.status(401).json({ error: 'Missing API key' });
+            return;
+        }
+        
+        const apiKey = authHeader.substring(7);
+        const validation = apiKeyManager.validateAPIKey(apiKey);
+        
+        if (!validation.valid) {
+            res.status(401).json({ error: validation.reason });
             return;
         }
         
@@ -1053,7 +791,31 @@ module.exports = async (req, res) => {
         return;
     }
     
+    // Publisher management endpoint
+    if (req.url === '/api/v1/publisher/info' && req.method === 'GET') {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            res.status(401).json({ error: 'Missing API key' });
+            return;
+        }
+        
+        const apiKey = authHeader.substring(7);
+        const validation = apiKeyManager.validateAPIKey(apiKey);
+        
+        if (!validation.valid) {
+            res.status(401).json({ error: validation.reason });
+            return;
+        }
+        
+        res.status(200).json({
+            publisherInfo: validation.data,
+            usage: validation.data.usage,
+            permissions: validation.data.permissions,
+            plan: validation.data.plan
+        });
+        return;
+    }
+    
     // 404 for other routes
     res.status(404).json({ error: 'Not found' });
 };
-
