@@ -146,26 +146,31 @@
         }
         
         function updateDashboard(dashboard, analytics, publisher) {
-            // Update publisher info
-            if (publisher.publisherInfo) {
+            // Update publisher info to show THEIR information
+            if (dashboard.publisherInfo) {
                 document.getElementById('publisher-info').textContent = 
-                    `${publisher.publisherInfo.publisherName} • ${publisher.publisherInfo.plan} Plan • ${publisher.publisherInfo.website}`;
+                    `${dashboard.publisherInfo.name} • ${dashboard.publisherInfo.plan} Plan • ${dashboard.publisherInfo.website}`;
             }
             
-            // Update stats
+            // Update stats with THEIR data only
             document.getElementById('total-visitors').textContent = dashboard.totalSessions.toLocaleString();
             document.getElementById('blocked-visitors').textContent = dashboard.blockedSessions.toLocaleString();
             document.getElementById('block-rate').textContent = dashboard.blockRate + '%';
-            document.getElementById('response-time').textContent = (analytics.realTime?.avgLatency || 45) + 'ms';
+
+            // Show message about data scope
+            const scopeMessage = document.createElement('div');
+            scopeMessage.style.cssText = 'background: #e0f2fe; padding: 10px; border-radius: 5px; margin: 10px 0; color: #0277bd;';
+            scopeMessage.innerHTML = `📊 <strong>Your Data:</strong> This dashboard shows statistics for ${dashboard.publisherInfo.website} only.`;
+            document.querySelector('.container').insertBefore(scopeMessage, document.querySelector('.stats-grid'));
             
-            // Update country analysis (like MonetizeMore)
-            updateCountryAnalysis(analytics.geographic);
+                    // Update country analysis with THEIR traffic only
+            updateCountryAnalysis(dashboard.trafficByCountry);
             
-            // Update threat patterns
-            updateThreatPatterns(analytics.threatPatterns);
+            // Update threat patterns with THEIR threats only
+            updateThreatPatterns(dashboard.threatPatterns);
             
-            // Update real-time feed
-            updateRealTimeFeed(analytics.realTime);
+            // Update real-time feed with THEIR activity only
+            updateRealTimeFeed(dashboard.recentActivity);
         }
         
         function updateCountryAnalysis(geographic) {

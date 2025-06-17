@@ -372,8 +372,8 @@ const analytics = new AdvancedAnalytics();
 const mlEngine = new MLThreatDetection();
 const alertEngine = new SmartAlertEngine();
 
-// Enhanced traffic analysis function with ML and Automatic Bot Detection
-function analyzeTraffic(visitorData) {
+// Enhanced traffic analysis function with ML, Automatic Bot Detection, and Multi-Publisher Support
+function analyzeTraffic(visitorData, publisherApiKey) {
     const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     const startTime = Date.now();
     
@@ -412,8 +412,8 @@ function analyzeTraffic(visitorData) {
         threats.push('Suspicious screen resolution');
     }
     
-    // Geographic risk
-    if (visitorData.countryCode && ['CN', 'RU', 'BD', 'PK', 'ID'].includes(visitorData.countryCode)) {
+    // Geographic risk analysis
+    if (visitorData.countryCode && ['CN', 'RU', 'BD', 'PK', 'ID', 'NG', 'VN'].includes(visitorData.countryCode)) {
         riskScore += 30;
         threats.push('High-risk geographic location');
     }
@@ -464,6 +464,12 @@ function analyzeTraffic(visitorData) {
             riskScore += 20;
             threats.push('No keyboard activity detected');
         }
+        
+        // Advanced behavioral patterns
+        if (behavior.mouseMovements > 0 && behavior.clicks === 0 && behavior.timeOnPage > 5000) {
+            riskScore += 15;
+            threats.push('Mouse movement without clicks (suspicious)');
+        }
     }
     
     // Device fingerprint analysis
@@ -490,6 +496,38 @@ function analyzeTraffic(visitorData) {
             riskScore += 15;
             threats.push('Missing hardware information');
         }
+        
+        // Timezone/Language mismatch analysis
+        if (device.timezone && device.language) {
+            const suspiciousCombos = [
+                { timezone: 'America/New_York', language: 'zh-CN' },
+                { timezone: 'Europe/London', language: 'ru' },
+                { timezone: 'Asia/Tokyo', language: 'en-US' }
+            ];
+            
+            suspiciousCombos.forEach(combo => {
+                if (device.timezone.includes(combo.timezone) && device.language.includes(combo.language)) {
+                    riskScore += 10;
+                    threats.push('Suspicious timezone/language combination');
+                }
+            });
+        }
+        
+        // Screen resolution vs viewport mismatch
+        if (visitorData.viewportSize && visitorData.screenResolution) {
+            const screenParts = visitorData.screenResolution.split('x');
+            const viewportParts = visitorData.viewportSize.split('x');
+            
+            if (screenParts[0] && viewportParts[0]) {
+                const screenWidth = parseInt(screenParts[0]);
+                const viewportWidth = parseInt(viewportParts[0]);
+                
+                if (viewportWidth > screenWidth) {
+                    riskScore += 20;
+                    threats.push('Viewport larger than screen (suspicious)');
+                }
+            }
+        }
     }
     
     // Loading time analysis
@@ -515,6 +553,28 @@ function analyzeTraffic(visitorData) {
     if (visitorData.cookieEnabled === false) {
         riskScore += 10;
         threats.push('Cookies disabled');
+    }
+    
+    // Referrer analysis
+    if (visitorData.referrer) {
+        const suspiciousReferrers = ['t.co', 'bit.ly', 'tinyurl.com', 'goo.gl'];
+        const referrerDomain = new URL(visitorData.referrer).hostname.toLowerCase();
+        
+        if (suspiciousReferrers.some(domain => referrerDomain.includes(domain))) {
+            riskScore += 15;
+            threats.push('Suspicious referrer domain');
+        }
+    }
+    
+    // IP analysis (basic)
+    if (visitorData.ipAddress) {
+        // Check for common VPN/proxy patterns
+        if (visitorData.ipAddress.startsWith('10.') || 
+            visitorData.ipAddress.startsWith('192.168.') ||
+            visitorData.ipAddress.startsWith('172.')) {
+            riskScore += 5;
+            threats.push('Private IP address detected');
+        }
     }
     
     // ML Analysis
@@ -546,10 +606,16 @@ function analyzeTraffic(visitorData) {
         confidence = Math.min(95, confidence + (threats.length * 2));
     }
     
+    // Extract country code for geographic tracking
+    const countryCode = visitorData.countryCode || extractCountryFromIP(visitorData.ipAddress) || 'Unknown';
+    
     const responseTime = Date.now() - startTime;
     
     const analysis = {
         sessionId,
+        publisherApiKey: publisherApiKey,  // Track which publisher this belongs to
+        website: visitorData.website || visitorData.url ? new URL(visitorData.url).hostname : 'unknown',
+        countryCode: countryCode,  // For geographic analysis
         riskScore: Math.min(finalScore, 100),
         action,
         confidence: Math.round(confidence),
@@ -561,22 +627,106 @@ function analyzeTraffic(visitorData) {
             behaviorAnalysis: behaviorScore,
             mlAnalysis: mlScore,
             combinedScore: finalScore,
-            threatsDetected: threats.length
+            threatsDetected: threats.length,
+            detectionTypes: {
+                userAgent: threats.filter(t => t.includes('user agent') || t.includes('Automation tool')).length > 0,
+                behavioral: threats.filter(t => t.includes('mouse') || t.includes('click') || t.includes('scroll')).length > 0,
+                device: threats.filter(t => t.includes('WebDriver') || t.includes('plugin')).length > 0,
+                geographic: threats.filter(t => t.includes('geographic')).length > 0
+            }
+        },
+        // Additional metadata for analytics
+        visitorMetadata: {
+            userAgent: visitorData.userAgent ? visitorData.userAgent.substring(0, 100) : null, // Truncated for storage
+            screenResolution: visitorData.screenResolution,
+            language: visitorData.deviceFingerprint?.language,
+            timezone: visitorData.deviceFingerprint?.timezone,
+            referrer: visitorData.referrer ? new URL(visitorData.referrer).hostname : null
         }
     };
     
-    // Record for analytics
-    analytics.recordRequest(analysis, responseTime, '192.168.1.1');
+    // Record for analytics with publisher context
+    analytics.recordRequest(analysis, responseTime, visitorData.ipAddress || '192.168.1.1');
     
     // Check for alerts
     const currentMetrics = analytics.getAdvancedMetrics();
     alertEngine.checkAlerts(currentMetrics);
     
-    // Store session
+    // Store session with publisher association
     sessions.set(sessionId, analysis);
+    
+    // Log high-risk sessions for monitoring
+    if (finalScore >= 80) {
+        console.log(`🚨 HIGH RISK SESSION: ${sessionId} - Publisher: ${publisherApiKey} - Score: ${finalScore}% - Action: ${action}`);
+    }
     
     return analysis;
 }
+
+// Helper function to get publisher-specific geographic data
+function getPublisherGeographicData(publisherSessions) {
+    const geographic = {};
+    
+    publisherSessions.forEach(session => {
+        // Extract country from session data (you may need to add this)
+        const country = session.countryCode || 'Unknown';
+        
+        if (!geographic[country]) {
+            geographic[country] = { total: 0, blocked: 0 };
+        }
+        
+        geographic[country].total++;
+        if (session.action === 'block') {
+            geographic[country].blocked++;
+        }
+    });
+    
+    return geographic;
+}
+
+// Helper function to get publisher-specific threat patterns
+function getPublisherThreatPatterns(publisherSessions) {
+    const threatPatterns = {};
+    
+    publisherSessions.forEach(session => {
+        session.threats.forEach(threat => {
+            if (!threatPatterns[threat]) {
+                threatPatterns[threat] = 0;
+            }
+            threatPatterns[threat]++;
+        });
+    });
+    
+    // Return top 10 threats
+    return Object.fromEntries(
+        Object.entries(threatPatterns)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 10)
+    );
+}
+
+
+// Helper function to extract country from IP (basic implementation)
+function extractCountryFromIP(ipAddress) {
+    if (!ipAddress) return 'Unknown';
+    
+    // Basic IP to country mapping (in production, use a proper GeoIP service)
+    const ipRanges = {
+        'US': ['192.168.', '10.0.', '172.16.'],
+        'CN': ['202.', '203.'],
+        'IN': ['117.', '118.'],
+        'RU': ['188.', '185.']
+    };
+    
+    for (const [country, ranges] of Object.entries(ipRanges)) {
+        if (ranges.some(range => ipAddress.startsWith(range))) {
+            return country;
+        }
+    }
+    
+    return 'Unknown';
+}
+
 
 // Vercel export function
 module.exports = async (req, res) => {
@@ -640,7 +790,7 @@ module.exports = async (req, res) => {
         return;
     }
     
-    // Main analysis endpoint
+        // In your server.js - Update the analyze endpoint
     if (req.url === '/api/v1/analyze' && req.method === 'POST') {
         // Check API key using the manager
         const authHeader = req.headers.authorization;
@@ -663,7 +813,8 @@ module.exports = async (req, res) => {
         req.on('end', () => {
             try {
                 const visitorData = JSON.parse(body);
-                const analysis = analyzeTraffic(visitorData);
+                // Pass the API key to track which publisher this belongs to
+                const analysis = analyzeTraffic(visitorData, apiKey);
                 res.status(200).json(analysis);
             } catch (error) {
                 res.status(400).json({ error: 'Invalid JSON' });
@@ -671,8 +822,9 @@ module.exports = async (req, res) => {
         });
         return;
     }
+
     
-    // Dashboard endpoint
+        // Dashboard endpoint with publisher-specific filtering
     if (req.url === '/api/v1/dashboard' && req.method === 'GET') {
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -688,16 +840,47 @@ module.exports = async (req, res) => {
             return;
         }
         
-        res.status(200).json({
-            totalSessions: sessions.size,
-            blockedSessions: Array.from(sessions.values()).filter(s => s.action === 'block').length,
-            blockRate: sessions.size > 0 ? Math.round((Array.from(sessions.values()).filter(s => s.action === 'block').length / sessions.size) * 100) : 0,
-            publisherInfo: validation.data
-        });
+        // Filter sessions by this publisher's API key ONLY
+        const publisherSessions = Array.from(sessions.values()).filter(session => 
+            session.publisherApiKey === apiKey
+        );
+        
+        const publisherStats = {
+            publisherInfo: {
+                name: validation.data.publisherName,
+                website: validation.data.website,
+                plan: validation.data.plan,
+                apiKey: apiKey
+            },
+            totalSessions: publisherSessions.length,
+            blockedSessions: publisherSessions.filter(s => s.action === 'block').length,
+            challengedSessions: publisherSessions.filter(s => s.action === 'challenge').length,
+            blockRate: publisherSessions.length > 0 ? 
+                Math.round((publisherSessions.filter(s => s.action === 'block').length / publisherSessions.length) * 100) : 0,
+            
+            // Publisher-specific geographic data
+            trafficByCountry: getPublisherGeographicData(publisherSessions),
+            
+            // Publisher-specific threat patterns
+            threatPatterns: getPublisherThreatPatterns(publisherSessions),
+            
+            // Recent activity for this publisher only
+            recentActivity: publisherSessions
+                .slice(-20)
+                .map(session => ({
+                    timestamp: session.timestamp,
+                    riskScore: session.riskScore,
+                    action: session.action,
+                    website: session.website
+                }))
+        };
+        
+        res.status(200).json(publisherStats);
         return;
     }
+
     
-    // Advanced analytics endpoint
+        // Advanced analytics endpoint with publisher filtering
     if (req.url === '/api/v1/analytics/advanced' && req.method === 'GET') {
         const authHeader = req.headers.authorization;
         if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -713,9 +896,40 @@ module.exports = async (req, res) => {
             return;
         }
         
-        res.status(200).json(analytics.getAdvancedMetrics());
+        // Get publisher-specific analytics
+        const publisherSessions = Array.from(sessions.values()).filter(session => 
+            session.publisherApiKey === apiKey
+        );
+        
+        const publisherAnalytics = {
+            realTime: {
+                currentThroughput: publisherSessions.length,
+                avgLatency: publisherSessions.length > 0 ? 
+                    publisherSessions.reduce((sum, s) => sum + s.responseTime, 0) / publisherSessions.length : 0,
+                errorRate: publisherSessions.length > 0 ? 
+                    (publisherSessions.filter(s => s.action === 'block').length / publisherSessions.length) * 100 : 0,
+                activeThreats: publisherSessions.filter(s => 
+                    Date.now() - new Date(s.timestamp).getTime() < 300000 && s.action === 'block'
+                ).length,
+                recentActivity: publisherSessions.slice(-50).map(s => ({
+                    timestamp: new Date(s.timestamp).getTime(),
+                    riskScore: s.riskScore,
+                    action: s.action
+                }))
+            },
+            geographic: getPublisherGeographicData(publisherSessions),
+            threatPatterns: getPublisherThreatPatterns(publisherSessions),
+            predictions: {
+                riskForecast: publisherSessions.filter(s => s.action === 'block').length > 50 ? 'HIGH' : 
+                            publisherSessions.filter(s => s.action === 'block').length > 20 ? 'MEDIUM' : 'LOW',
+                capacityRecommendation: 'OPTIMAL'
+            }
+        };
+        
+        res.status(200).json(publisherAnalytics);
         return;
     }
+
     
     // Real-time streaming endpoint
     if (req.url === '/api/v1/analytics/stream' && req.method === 'GET') {

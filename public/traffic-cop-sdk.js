@@ -371,6 +371,7 @@
             return {
                 sessionId: this.sessionId,
                 url: window.location.href,
+                website: window.location.hostname,
                 referrer: document.referrer,
                 userAgent: navigator.userAgent,
                 screenResolution: `${screen.width}x${screen.height}`,
