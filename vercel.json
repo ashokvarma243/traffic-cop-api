@@ -27,8 +27,21 @@
       "destination": "/publisher-demo.html"
     },
     {
+      "source": "/(.+).html",
+      "destination": "/public/$1.html"
+    },
+    {
+      "source": "/(.+).js",
+      "destination": "/public/$1.js"
+    },
+    {
+      "source": "/(.+).css",
+      "destination": "/public/$1.css"
+    },
+    {
       "source": "/(.*)",
       "destination": "/public/$1"
     }
   ]
 }
+
