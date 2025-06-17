@@ -675,7 +675,7 @@ const alertEngine = new SmartAlertEngine();
 alertEngine.addWebhook('https://your-webhook-url.com/alerts');
 alertEngine.addEmailAlert('admin@yoursite.com');
 
-// Enhanced traffic analysis function with ML
+// Enhanced traffic analysis function with ML and Automatic Bot Detection
 function analyzeTraffic(visitorData) {
     const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     const startTime = Date.now();
@@ -684,10 +684,29 @@ function analyzeTraffic(visitorData) {
     let riskScore = 0;
     const threats = [];
     
-    // Bot detection
+    // Bot detection in user agent
     if (visitorData.userAgent && visitorData.userAgent.toLowerCase().includes('bot')) {
         riskScore += 40;
         threats.push('Bot detected in user agent');
+    }
+    
+    // Enhanced user agent analysis
+    if (visitorData.userAgent) {
+        const ua = visitorData.userAgent.toLowerCase();
+        const botKeywords = ['headless', 'selenium', 'puppeteer', 'playwright', 'phantom', 'crawler', 'spider', 'scraper'];
+        
+        botKeywords.forEach(keyword => {
+            if (ua.includes(keyword)) {
+                riskScore += 35;
+                threats.push(`Automation tool detected: ${keyword}`);
+            }
+        });
+        
+        // Check for missing or suspicious user agent
+        if (ua.length < 20 || ua.length > 500) {
+            riskScore += 20;
+            threats.push('Unusual user agent length');
+        }
     }
     
     // Screen size check
@@ -697,34 +716,173 @@ function analyzeTraffic(visitorData) {
     }
     
     // Geographic risk
-    if (visitorData.countryCode && ['CN', 'RU', 'BD'].includes(visitorData.countryCode)) {
+    if (visitorData.countryCode && ['CN', 'RU', 'BD', 'PK', 'ID'].includes(visitorData.countryCode)) {
         riskScore += 30;
         threats.push('High-risk geographic location');
     }
     
-    // ML Analysis
+    // Enhanced behavior analysis from SDK
+    if (visitorData.behaviorData) {
+        const behavior = visitorData.behaviorData;
+        
+        // Mouse movement analysis
+        if (behavior.mouseMovements !== undefined) {
+            if (behavior.mouseMovements === 0) {
+                riskScore += 35;
+                threats.push('No mouse movement detected');
+            } else if (behavior.mouseVariation < 50) {
+                riskScore += 25;
+                threats.push('Limited mouse movement variation');
+            }
+        }
+        
+        // Click analysis
+        if (behavior.avgClickSpeed && behavior.avgClickSpeed < 100) {
+            riskScore += 30;
+            threats.push('Rapid clicking detected (bot-like)');
+        }
+        
+        // Scroll pattern analysis
+        if (behavior.scrollPattern) {
+            if (behavior.scrollPattern === 'too_fast') {
+                riskScore += 20;
+                threats.push('Unusually fast scrolling');
+            } else if (behavior.scrollPattern === 'too_uniform') {
+                riskScore += 25;
+                threats.push('Uniform scroll pattern (bot-like)');
+            } else if (behavior.scrollPattern === 'too_slow') {
+                riskScore += 15;
+                threats.push('Unusually slow scrolling');
+            }
+        }
+        
+        // Page interaction analysis
+        if (behavior.timeOnPage > 10000 && behavior.pageInteractions === 0) {
+            riskScore += 35;
+            threats.push('No page interaction despite time on page');
+        }
+        
+        // Keystroke analysis
+        if (behavior.keystrokes === 0 && behavior.timeOnPage > 15000) {
+            riskScore += 20;
+            threats.push('No keyboard activity detected');
+        }
+    }
+    
+    // Device fingerprint analysis
+    if (visitorData.deviceFingerprint) {
+        const device = visitorData.deviceFingerprint;
+        
+        // WebDriver detection (automation tools)
+        if (device.webdriver === true) {
+            riskScore += 50;
+            threats.push('WebDriver automation detected');
+        }
+        
+        // Plugin analysis
+        if (device.plugins && device.plugins.length === 0) {
+            riskScore += 20;
+            threats.push('No browser plugins detected');
+        } else if (device.plugins && device.plugins.length > 50) {
+            riskScore += 15;
+            threats.push('Excessive browser plugins detected');
+        }
+        
+        // Hardware information missing
+        if (!device.deviceMemory && !device.hardwareConcurrency) {
+            riskScore += 15;
+            threats.push('Missing hardware information');
+        }
+        
+        // Suspicious timezone/language combination
+        if (device.timezone && device.language) {
+            // Check for mismatched timezone and language
+            const suspiciousCombos = [
+                { timezone: 'America/New_York', language: 'zh-CN' },
+                { timezone: 'Europe/London', language: 'ru' },
+                { timezone: 'Asia/Tokyo', language: 'en-US' }
+            ];
+            
+            suspiciousCombos.forEach(combo => {
+                if (device.timezone.includes(combo.timezone) && device.language.includes(combo.language)) {
+                    riskScore += 10;
+                    threats.push('Suspicious timezone/language combination');
+                }
+            });
+        }
+    }
+    
+    // Loading time analysis
+    if (visitorData.loadTime) {
+        if (visitorData.loadTime < 50) {
+            riskScore += 25;
+            threats.push('Unusually fast page load (possible prefetch)');
+        } else if (visitorData.loadTime > 30000) {
+            riskScore += 10;
+            threats.push('Unusually slow page load');
+        }
+    }
+    
+    // Plugin count analysis
+    if (visitorData.plugins !== undefined) {
+        if (visitorData.plugins === 0) {
+            riskScore += 15;
+            threats.push('No browser plugins detected');
+        }
+    }
+    
+    // Cookie analysis
+    if (visitorData.cookieEnabled === false) {
+        riskScore += 10;
+        threats.push('Cookies disabled');
+    }
+    
+    // ML Analysis (your existing ML engine)
     const mlAnalysis = mlEngine.analyzeWithML(visitorData);
     
-    // Combine basic and ML scores
-    const finalScore = Math.round((riskScore + mlAnalysis.mlRiskScore) / 2);
+    // Combine basic, behavior, and ML scores with weighted average
+    const behaviorScore = riskScore;
+    const mlScore = mlAnalysis.mlRiskScore;
     
-    // Determine action
+    // Weight: 40% behavior analysis, 60% ML analysis
+    const finalScore = Math.round((behaviorScore * 0.4) + (mlScore * 0.6));
+    
+    // Determine action with enhanced thresholds
     let action = 'allow';
-    if (finalScore >= 80) action = 'block';
-    else if (finalScore >= 60) action = 'challenge';
-    else if (finalScore >= 30) action = 'monitor';
+    let confidence = mlAnalysis.confidence;
+    
+    if (finalScore >= 85) {
+        action = 'block';
+        confidence = Math.min(95, confidence + 10);
+    } else if (finalScore >= 70) {
+        action = 'challenge';
+        confidence = Math.min(90, confidence + 5);
+    } else if (finalScore >= 40) {
+        action = 'monitor';
+    }
+    
+    // Boost confidence if multiple detection methods agree
+    if (threats.length > 3) {
+        confidence = Math.min(95, confidence + (threats.length * 2));
+    }
     
     const responseTime = Date.now() - startTime;
     
     const analysis = {
         sessionId,
-        riskScore: finalScore,
+        riskScore: Math.min(finalScore, 100),
         action,
-        confidence: mlAnalysis.confidence,
+        confidence: Math.round(confidence),
         threats: [...threats, ...mlAnalysis.threatVector],
         responseTime,
         timestamp: new Date().toISOString(),
-        mlInsights: mlAnalysis
+        mlInsights: mlAnalysis,
+        detectionMethods: {
+            behaviorAnalysis: behaviorScore,
+            mlAnalysis: mlScore,
+            combinedScore: finalScore,
+            threatsDetected: threats.length
+        }
     };
     
     // Record for analytics
@@ -738,6 +896,7 @@ function analyzeTraffic(visitorData) {
     sessions.set(sessionId, analysis);
     
     return analysis;
+
 }
 
 // Vercel export function (replace the entire server section above)
