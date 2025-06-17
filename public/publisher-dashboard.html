@@ -110,6 +110,70 @@
     </div>
     
     <script>
+                // Add this at the beginning of your publisher-dashboard.html script section
+        function checkAuthentication() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionParam = urlParams.get('session');
+            const storedSession = sessionStorage.getItem('trafficCopSession');
+            
+            if (!sessionParam && !storedSession) {
+                // No authentication, redirect to login
+                window.location.href = '/publisher-login.html';
+                return false;
+            }
+            
+            if (sessionParam) {
+                // Decode API key from session parameter
+                try {
+                    const apiKey = atob(sessionParam);
+                    return apiKey;
+                } catch (error) {
+                    window.location.href = '/publisher-login.html';
+                    return false;
+                }
+            }
+            
+            if (storedSession) {
+                const sessionData = JSON.parse(storedSession);
+                // Check if session is still valid (24 hours)
+                if (Date.now() - sessionData.loginTime < 24 * 60 * 60 * 1000) {
+                    return sessionData.apiKey;
+                } else {
+                    // Session expired
+                    sessionStorage.removeItem('trafficCopSession');
+                    window.location.href = '/publisher-login.html';
+                    return false;
+                }
+            }
+            
+            return false;
+        }
+
+        // Update your existing loadDashboardData function
+        async function loadDashboardData() {
+            // Check authentication first
+            const apiKey = checkAuthentication();
+            if (!apiKey) return;
+            
+            // Rest of your existing loadDashboardData code...
+            try {
+                const dashboardResponse = await fetch(`${API_BASE}/api/v1/dashboard`, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                });
+                // ... rest of your code
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                // If API key is invalid, redirect to login
+                window.location.href = '/publisher-login.html';
+            }
+        }
+
+        // Add logout functionality
+        function logout() {
+            sessionStorage.removeItem('trafficCopSession');
+            window.location.href = '/publisher-login.html';
+        }
+
         // Get API key from URL parameter
         const urlParams = new URLSearchParams(window.location.search);
         const apiKey = urlParams.get('key') || 'tc_test_123';

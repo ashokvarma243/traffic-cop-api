@@ -1,12 +1,30 @@
 {
+  "version": 2,
+  "functions": {
+    "api/server.js": {
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
     {
       "source": "/api/(.*)",
       "destination": "/api/server.js"
     },
     {
+      "source": "/health",
+      "destination": "/api/server.js"
+    },
+    {
+      "source": "/login",
+      "destination": "/publisher-login.html"
+    },
+    {
+      "source": "/publisher-dashboard",
+      "destination": "/publisher-dashboard.html"
+    },
+    {
       "source": "/(.*)",
-      "destination": "/`$1"
+      "destination": "/public/$1"
     }
   ]
 }

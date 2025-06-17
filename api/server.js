@@ -978,6 +978,53 @@ module.exports = async (req, res) => {
         return;
     }
     
+        // Publisher login endpoint
+    if (req.url === '/api/v1/publisher/login' && req.method === 'POST') {
+        let body = '';
+        req.on('data', chunk => body += chunk);
+        req.on('end', () => {
+            try {
+                const loginData = JSON.parse(body);
+                const { email, apiKey } = loginData;
+                
+                // Validate API key
+                const validation = apiKeyManager.validateAPIKey(apiKey);
+                
+                if (!validation.valid) {
+                    res.status(401).json({
+                        success: false,
+                        error: 'Invalid API key or expired account'
+                    });
+                    return;
+                }
+                
+                // Check if email matches the one in publisher data
+                if (validation.data.email !== email) {
+                    res.status(401).json({
+                        success: false,
+                        error: 'Email does not match API key'
+                    });
+                    return;
+                }
+                
+                // Successful login
+                res.status(200).json({
+                    success: true,
+                    publisherName: validation.data.publisherName,
+                    plan: validation.data.plan,
+                    website: validation.data.website
+                });
+                
+            } catch (error) {
+                res.status(400).json({
+                    success: false,
+                    error: 'Invalid login data'
+                });
+            }
+        });
+        return;
+    }
+
     // Alerts endpoint
     if (req.url === '/api/v1/alerts' && req.method === 'GET') {
         const authHeader = req.headers.authorization;
