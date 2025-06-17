@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Traffic Cop - Publisher Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Inter', sans-serif; background: #f8fafc; }
+        
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }
+        .stat-card { background: white; padding: 25px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .stat-number { font-size: 2.5em; font-weight: bold; color: #667eea; }
+        .stat-label { color: #64748b; margin-top: 5px; }
+        .stat-change { font-size: 0.9em; margin-top: 10px; }
+        .positive { color: #22c55e; }
+        .negative { color: #ef4444; }
+        
+        .chart-container { background: white; padding: 30px; border-radius: 15px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); margin: 20px 0; }
+        .country-list { max-height: 400px; overflow-y: auto; }
+        .country-item { display: flex; justify-content: space-between; align-items: center; padding: 15px; border-bottom: 1px solid #e2e8f0; }
+        .country-flag { width: 24px; height: 16px; margin-right: 10px; }
+        .risk-badge { padding: 4px 12px; border-radius: 20px; font-size: 0.8em; font-weight: bold; }
+        .risk-low { background: #dcfce7; color: #166534; }
+        .risk-medium { background: #fef3c7; color: #92400e; }
+        .risk-high { background: #fee2e2; color: #991b1b; }
+        
+        .threat-list { list-style: none; }
+        .threat-item { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e2e8f0; }
+        
+        .refresh-btn { background: #667eea; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin: 10px 0; }
+        .export-btn { background: #22c55e; color: white; border: none; padding: 10px 20px; border-radius: 8px; cursor: pointer; margin: 10px; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="container">
+            <h1>🛡️ Traffic Cop Dashboard</h1>
+            <p id="publisher-info">Loading publisher information...</p>
+        </div>
+    </div>
+    
+    <div class="container">
+        <!-- Real-time Stats -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="stat-number" id="total-visitors">-</div>
+                <div class="stat-label">Total Visitors Today</div>
+                <div class="stat-change positive" id="visitor-change">+12% from yesterday</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="blocked-visitors">-</div>
+                <div class="stat-label">Invalid Traffic Blocked</div>
+                <div class="stat-change positive" id="blocked-change">Revenue protected</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="block-rate">-</div>
+                <div class="stat-label">Block Rate</div>
+                <div class="stat-change" id="rate-change">Industry avg: 8%</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number" id="response-time">-</div>
+                <div class="stat-label">Avg Response Time</div>
+                <div class="stat-change positive" id="speed-change">Lightning fast</div>
+            </div>
+        </div>
+        
+        <!-- Invalid Traffic by Country (Like MonetizeMore) -->
+        <div class="chart-container">
+            <h2>🌍 Invalid Traffic by Country</h2>
+            <p style="color: #64748b; margin-bottom: 20px;">
+                Geographic analysis showing IVT risk percentage by country (like MonetizeMore's Traffic Cop)
+            </p>
+            <div class="country-list" id="country-analysis">
+                <!-- Countries will be populated here -->
+            </div>
+        </div>
+        
+        <!-- Threat Detection (Like MonetizeMore) -->
+        <div class="chart-container">
+            <h2>🚨 Top Threat Patterns Detected</h2>
+            <p style="color: #64748b; margin-bottom: 20px;">
+                Real-time threat intelligence showing the most common invalid traffic sources
+            </p>
+            <ul class="threat-list" id="threat-patterns">
+                <!-- Threats will be populated here -->
+            </ul>
+        </div>
+        
+        <!-- Real-time Activity -->
+        <div class="chart-container">
+            <h2>⚡ Real-time Activity</h2>
+            <p style="color: #64748b; margin-bottom: 20px;">
+                Live feed of visitor analysis and protection actions
+            </p>
+            <div id="realtime-feed">
+                <!-- Real-time data will be populated here -->
+            </div>
+        </div>
+        
+        <!-- Controls -->
+        <div class="chart-container">
+            <h2>⚙️ Traffic Cop Controls</h2>
+            <button class="refresh-btn" onclick="refreshData()">🔄 Refresh Data</button>
+            <button class="export-btn" onclick="exportReport()">📊 Export Report</button>
+            <button class="export-btn" onclick="viewSetup()">🔧 View Setup Code</button>
+        </div>
+    </div>
+    
+    <script>
+        // Get API key from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const apiKey = urlParams.get('key') || 'tc_test_123';
+        
+        // API endpoints
+        const API_BASE = window.location.origin;
+        
+        async function loadDashboardData() {
+            try {
+                // Load basic dashboard data
+                const dashboardResponse = await fetch(`${API_BASE}/api/v1/dashboard`, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                });
+                const dashboardData = await dashboardResponse.json();
+                
+                // Load advanced analytics
+                const analyticsResponse = await fetch(`${API_BASE}/api/v1/analytics/advanced`, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                });
+                const analyticsData = await analyticsResponse.json();
+                
+                // Load publisher info
+                const publisherResponse = await fetch(`${API_BASE}/api/v1/publisher/info`, {
+                    headers: { 'Authorization': `Bearer ${apiKey}` }
+                });
+                const publisherData = await publisherResponse.json();
+                
+                updateDashboard(dashboardData, analyticsData, publisherData);
+                
+            } catch (error) {
+                console.error('Error loading dashboard:', error);
+                document.getElementById('publisher-info').textContent = 'Error loading data. Please check your API key.';
+            }
+        }
+        
+        function updateDashboard(dashboard, analytics, publisher) {
+            // Update publisher info
+            if (publisher.publisherInfo) {
+                document.getElementById('publisher-info').textContent = 
+                    `${publisher.publisherInfo.publisherName} • ${publisher.publisherInfo.plan} Plan • ${publisher.publisherInfo.website}`;
+            }
+            
+            // Update stats
+            document.getElementById('total-visitors').textContent = dashboard.totalSessions.toLocaleString();
+            document.getElementById('blocked-visitors').textContent = dashboard.blockedSessions.toLocaleString();
+            document.getElementById('block-rate').textContent = dashboard.blockRate + '%';
+            document.getElementById('response-time').textContent = (analytics.realTime?.avgLatency || 45) + 'ms';
+            
+            // Update country analysis (like MonetizeMore)
+            updateCountryAnalysis(analytics.geographic);
+            
+            // Update threat patterns
+            updateThreatPatterns(analytics.threatPatterns);
+            
+            // Update real-time feed
+            updateRealTimeFeed(analytics.realTime);
+        }
+        
+        function updateCountryAnalysis(geographic) {
+            const container = document.getElementById('country-analysis');
+            container.innerHTML = '';
+            
+            Object.entries(geographic || {}).forEach(([country, data]) => {
+                const riskPercentage = data.total > 0 ? Math.round((data.blocked / data.total) * 100) : 0;
+                const riskLevel = riskPercentage > 50 ? 'high' : riskPercentage > 20 ? 'medium' : 'low';
+                
+                const countryItem = document.createElement('div');
+                countryItem.className = 'country-item';
+                countryItem.innerHTML = `
+                    <div style="display: flex; align-items: center;">
+                        <span style="font-weight: bold;">${country}</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 15px;">
+                        <span>${data.total.toLocaleString()} visitors</span>
+                        <span class="risk-badge risk-${riskLevel}">${riskPercentage}% IVT</span>
+                    </div>
+                `;
+                container.appendChild(countryItem);
+            });
+        }
+        
+        function updateThreatPatterns(threats) {
+            const container = document.getElementById('threat-patterns');
+            container.innerHTML = '';
+            
+            Object.entries(threats || {}).forEach(([threat, count]) => {
+                const threatItem = document.createElement('li');
+                threatItem.className = 'threat-item';
+                threatItem.innerHTML = `
+                    <span>${threat}</span>
+                    <span style="font-weight: bold; color: #ef4444;">${count} detected</span>
+                `;
+                container.appendChild(threatItem);
+            });
+        }
+        
+        function updateRealTimeFeed(realTime) {
+            const container = document.getElementById('realtime-feed');
+            const activities = realTime?.recentActivity || [];
+            
+            container.innerHTML = activities.slice(0, 10).map(activity => {
+                const color = activity.action === 'block' ? '#ef4444' : 
+                            activity.action === 'challenge' ? '#f59e0b' : '#22c55e';
+                
+                return `<div style="padding: 10px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between;">
+                    <span>Visitor analyzed - Risk: ${activity.riskScore}%</span>
+                    <span style="color: ${color};">
+                        ${activity.action.toUpperCase()}
+                    </span>
+                </div>`;
+            }).join('');
+        }
+
+
+        function refreshData() {
+            loadDashboardData();
+        }
+        
+        function exportReport() {
+            // Generate CSV report
+            const data = {
+                timestamp: new Date().toISOString(),
+                apiKey: apiKey,
+                note: 'Traffic Cop Analytics Report'
+            };
+            
+            const csvContent = "data:text/csv;charset=utf-8," + 
+                "Metric,Value\n" +
+                "Total Visitors," + document.getElementById('total-visitors').textContent + "\n" +
+                "Blocked Visitors," + document.getElementById('blocked-visitors').textContent + "\n" +
+                "Block Rate," + document.getElementById('block-rate').textContent + "\n" +
+                "Response Time," + document.getElementById('response-time').textContent;
+            
+            const encodedUri = encodeURI(csvContent);
+            const link = document.createElement("a");
+            link.setAttribute("href", encodedUri);
+            link.setAttribute("download", "traffic-cop-report.csv");
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+        
+        function viewSetup() {
+            alert(`Your Traffic Cop integration code:
+
+        <script src="${API_BASE}/traffic-cop-sdk.js"></script>
+        <script>TrafficCop.init('${apiKey}', {mode: 'block'});<\/script>`);
+        }
+
+
+        
+        // Load data on page load
+        loadDashboardData();
+        
+        // Auto-refresh every 30 seconds
+        setInterval(loadDashboardData, 30000);
+    </script>
+</body>
+</html>
