@@ -16,27 +16,15 @@
     },
     {
       "source": "/publisher-dashboard",
-      "destination": "/publisher-dashboard.html"
+      "destination": "/public/publisher-dashboard.html"
     },
     {
       "source": "/dashboard",
-      "destination": "/advanced-dashboard.html"
+      "destination": "/public/advanced-dashboard.html"
     },
     {
       "source": "/demo",
-      "destination": "/publisher-demo.html"
-    },
-    {
-      "source": "/(.+).html",
-      "destination": "/public/$1.html"
-    },
-    {
-      "source": "/(.+).js",
-      "destination": "/public/$1.js"
-    },
-    {
-      "source": "/(.+).css",
-      "destination": "/public/$1.css"
+      "destination": "/public/publisher-demo.html"
     },
     {
       "source": "/(.*)",
@@ -44,4 +32,3 @@
     }
   ]
 }
-
