@@ -15,6 +15,10 @@
       "destination": "/api/server.js"
     },
     {
+      "source": "/publisher-dashboard",
+      "destination": "/publisher-dashboard.html"
+    },
+    {
       "source": "/dashboard",
       "destination": "/advanced-dashboard.html"
     },
@@ -23,12 +27,12 @@
       "destination": "/publisher-demo.html"
     },
     {
-      "source": "/publisher-dashboard",
-      "destination": "/publisher-dashboard.html"
+      "source": "/(.*\\.(html|js|css|png|jpg|gif|ico|svg))",
+      "destination": "/public/$1"
     },
     {
       "source": "/(.*)",
-      "destination": "/public/$1"
+      "destination": "/public/index.html"
     }
   ]
 }
