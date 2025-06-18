@@ -471,7 +471,60 @@ function analyzeTraffic(visitorData, publisherApiKey) {
             threats.push('Mouse movement without clicks (suspicious)');
         }
     }
-    
+        
+        // Enhanced behavior analysis with null checks
+    if (visitorData.behaviorData && typeof visitorData.behaviorData === 'object') {
+        const behavior = visitorData.behaviorData;
+        
+        // Mouse movement analysis with safety checks
+        if (typeof behavior.mouseMovements === 'number') {
+            if (behavior.mouseMovements === 0) {
+                riskScore += 35;
+                threats.push('No mouse movement detected');
+            } else if (typeof behavior.mouseVariation === 'number' && behavior.mouseVariation < 50) {
+                riskScore += 25;
+                threats.push('Limited mouse movement variation');
+            }
+        }
+        
+        // Click analysis with safety checks
+        if (typeof behavior.avgClickSpeed === 'number' && behavior.avgClickSpeed < 100) {
+            riskScore += 30;
+            threats.push('Rapid clicking detected (bot-like)');
+        }
+        
+        // Page interaction analysis with safety checks
+        if (typeof behavior.timeOnPage === 'number' && typeof behavior.pageInteractions === 'number') {
+            if (behavior.timeOnPage > 10000 && behavior.pageInteractions === 0) {
+                riskScore += 35;
+                threats.push('No page interaction despite time on page');
+            }
+        }
+    }
+
+    // Device fingerprint analysis with null checks
+    if (visitorData.deviceFingerprint && typeof visitorData.deviceFingerprint === 'object') {
+        const device = visitorData.deviceFingerprint;
+        
+        // WebDriver detection with safety check
+        if (device.webdriver === true) {
+            riskScore += 50;
+            threats.push('WebDriver automation detected');
+        }
+        
+        // Plugin analysis with safety checks
+        if (Array.isArray(device.plugins)) {
+            if (device.plugins.length === 0) {
+                riskScore += 20;
+                threats.push('No browser plugins detected');
+            } else if (device.plugins.length > 50) {
+                riskScore += 15;
+                threats.push('Excessive browser plugins detected');
+            }
+        }
+    }
+
+
     // Device fingerprint analysis
     if (visitorData.deviceFingerprint) {
         const device = visitorData.deviceFingerprint;
