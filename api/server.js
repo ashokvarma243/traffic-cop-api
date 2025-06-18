@@ -898,14 +898,15 @@ module.exports = async (req, res) => {
             return;
         }
         
-        // Publisher signup endpoint
+                // Publisher signup endpoint - Add this to your server.js
         if (req.url === '/api/v1/publisher/signup' && req.method === 'POST') {
             let body = '';
             req.on('data', chunk => body += chunk);
-            req.on('end', () => {
+            req.on('end', async () => {
                 try {
                     const publisherInfo = JSON.parse(body);
                     
+                    // Simple validation
                     if (!publisherInfo.email || !publisherInfo.website) {
                         res.status(400).json({
                             success: false,
@@ -914,23 +915,31 @@ module.exports = async (req, res) => {
                         return;
                     }
                     
-                    const result = apiKeyManager.createPublisher(publisherInfo);
+                    // For now, return a test response until KV is working
+                    const testApiKey = `tc_live_${Date.now()}_test_key`;
                     
-                    if (result.success) {
-                        res.status(200).json(result);
-                    } else {
-                        res.status(500).json(result);
-                    }
+                    res.status(200).json({
+                        success: true,
+                        apiKey: testApiKey,
+                        publisherId: `pub_${Date.now()}`,
+                        publisherName: publisherInfo.name || publisherInfo.website,
+                        plan: publisherInfo.plan || 'starter',
+                        message: 'Test API key generated (KV integration pending)',
+                        dashboardUrl: 'https://traffic-cop-apii.vercel.app/publisher-login.html'
+                    });
                     
                 } catch (error) {
+                    console.error('Signup error:', error);
                     res.status(400).json({
                         success: false,
-                        error: 'Invalid JSON data'
+                        error: 'Invalid JSON data',
+                        details: error.message
                     });
                 }
             });
             return;
         }
+
         
                 // Traffic analysis endpoint - Simplified working version
         if (req.url === '/api/v1/analyze' && req.method === 'POST') {
