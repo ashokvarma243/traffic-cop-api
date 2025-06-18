@@ -732,11 +732,15 @@ function extractCountryFromIP(ipAddress) {
 module.exports = async (req, res) => {
     console.log(`${req.method} ${req.url}`);
     
-    // Enable CORS for testing
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    // ========== REPLACE THIS ENTIRE SECTION ==========
+    // Complete CORS headers for cross-origin requests
+    res.setHeader('Access-Control-Allow-Origin', '*'); // Allow all origins for public API
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version');
+    res.setHeader('Access-Control-Allow-Credentials', 'false');
+    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight for 24 hours
     
+    // Handle OPTIONS preflight request (CRITICAL FOR CORS)
     if (req.method === 'OPTIONS') {
         res.status(200).end();
         return;
