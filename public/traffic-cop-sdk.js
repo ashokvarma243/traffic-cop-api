@@ -366,6 +366,33 @@
                 }
             }
         }
+
+                // Add this method to your TrafficCopSDK class
+        async sendAnalysisRequest(visitorData) {
+            try {
+                const response = await fetch(this.config.endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.apiKey}`
+                    },
+                    body: JSON.stringify(visitorData)
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                
+                return response;
+                
+            } catch (error) {
+                if (this.config.debug) {
+                    console.error('Traffic Cop API Error:', error);
+                }
+                throw error;
+            }
+        }
+
         
         collectVisitorData() {
             return {
