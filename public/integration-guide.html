@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Cop SDK Integration Guide</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; }
+        .code-block { background: #f5f5f5; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .highlight { background: #fff3cd; padding: 10px; border-radius: 5px; margin: 10px 0; }
+        h1 { color: #667eea; }
+        h2 { color: #333; border-bottom: 2px solid #667eea; padding-bottom: 5px; }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Traffic Cop SDK Integration Guide</h1>
+    
+    <h2>Quick Start</h2>
+    <p>Add Traffic Cop bot detection to your website in under 2 minutes:</p>
+    
+    <div class="code-block">
+        <strong>Method 1: Auto-initialization</strong><br>
+        <code>&lt;script src="https://traffic-cop-apii.vercel.app/traffic-cop-sdk.js" data-traffic-cop-key="YOUR_API_KEY"&gt;&lt;/script&gt;</code>
+    </div>
+    
+    <div class="code-block">
+        <strong>Method 2: Manual initialization</strong><br>
+        <code>
+        &lt;script src="https://traffic-cop-apii.vercel.app/traffic-cop-sdk.js"&gt;&lt;/script&gt;<br>
+        &lt;script&gt;<br>
+        &nbsp;&nbsp;const trafficCop = TrafficCop.init('YOUR_API_KEY', {<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;debug: true,<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;onResult: function(result) {<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;console.log('Bot detection result:', result);<br>
+        &nbsp;&nbsp;&nbsp;&nbsp;}<br>
+        &nbsp;&nbsp;});<br>
+        &lt;/script&gt;
+        </code>
+    </div>
+    
+    <h2>Configuration Options</h2>
+    <ul>
+        <li><strong>autoAnalyze</strong>: Automatically analyze visitors (default: true)</li>
+        <li><strong>trackMouse</strong>: Track mouse movements (default: true)</li>
+        <li><strong>trackBehavior</strong>: Track user behavior (default: true)</li>
+        <li><strong>debug</strong>: Enable debug logging (default: false)</li>
+        <li><strong>onResult</strong>: Callback function for results</li>
+    </ul>
+    
+    <h2>For dailyjobsindia.com Integration</h2>
+    <div class="highlight">
+        <strong>To see real traffic from dailyjobsindia.com, the website owner would need to add:</strong><br>
+        <code>&lt;script src="https://traffic-cop-apii.vercel.app/traffic-cop-sdk.js" data-traffic-cop-key="tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583"&gt;&lt;/script&gt;</code>
+    </div>
+    
+    <h2>Test Your Integration</h2>
+    <p>Use this test page to see Traffic Cop in action:</p>
+    <a href="/sdk-demo.html">SDK Demo Page</a>
+</body>
+</html>

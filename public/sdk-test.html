@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Cop SDK Live Test</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; max-width: 1000px; margin: 0 auto; padding: 20px; }
+        .test-section { background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 20px 0; }
+        .result-box { background: #d4edda; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .threat-box { background: #f8d7da; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        .info-box { background: #d1ecf1; padding: 15px; border-radius: 5px; margin: 10px 0; }
+        button { background: #667eea; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; margin: 5px; }
+        button:hover { background: #5a6fd8; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .stat-card { background: white; padding: 15px; border-radius: 8px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .stat-value { font-size: 2em; font-weight: bold; color: #667eea; }
+        .ads-demo { background: #fff3cd; padding: 15px; border-radius: 5px; margin: 10px 0; border: 2px dashed #ffc107; }
+    </style>
+</head>
+<body>
+    <h1>🛡️ Traffic Cop SDK Live Test</h1>
+    <p>This page demonstrates your real-time bot detection system protecting website content and ads.</p>
+    
+    <div class="test-section">
+        <h3>🔍 Real-Time Detection Status</h3>
+        <div id="detection-status">Initializing Traffic Cop...</div>
+        <div id="analysis-result" style="display: none;"></div>
+    </div>
+    
+    <div class="test-section">
+        <h3>📊 Live Statistics</h3>
+        <div class="stats" id="live-stats">
+            <div class="stat-card">
+                <div class="stat-value" id="total-sessions">0</div>
+                <div>Total Sessions</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="blocked-sessions">0</div>
+                <div>Blocked Bots</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="block-rate">0%</div>
+                <div>Block Rate</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="current-status">ACTIVE</div>
+                <div>Protection Status</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h3>🎯 Interactive Bot Detection Tests</h3>
+        <p>Test different behaviors to see how Traffic Cop responds:</p>
+        <button onclick="simulateHumanBehavior()">🙋‍♂️ Simulate Human Behavior</button>
+        <button onclick="simulateBotBehavior()">🤖 Simulate Bot Behavior</button>
+        <button onclick="simulateRapidClicking()">⚡ Simulate Rapid Clicking</button>
+        <button onclick="triggerReanalysis()">🔄 Re-analyze Current Session</button>
+    </div>
+    
+    <div class="test-section">
+        <h3>💰 Ad Protection Demo</h3>
+        <p>These demo ads will be automatically hidden if bot traffic is detected:</p>
+        
+        <div class="ads-demo adsbygoogle" id="demo-ad-1">
+            <strong>Demo Advertisement #1</strong><br>
+            <small>This ad would be hidden from bots to protect revenue</small>
+        </div>
+        
+        <div class="ads-demo ad" id="demo-ad-2">
+            <strong>Demo Advertisement #2</strong><br>
+            <small>Traffic Cop automatically blocks ads for detected bots</small>
+        </div>
+        
+        <div id="ad-status" class="info-box">
+            Ads Status: <span id="ads-visible">Visible (Human Traffic)</span>
+        </div>
+    </div>
+    
+    <div class="test-section">
+        <h3>📈 Behavior Tracking</h3>
+        <div id="behavior-data">
+            <p>Move your mouse, click, and scroll to generate behavior data...</p>
+            <div id="mouse-data">Mouse Movements: 0</div>
+            <div id="click-data">Clicks: 0</div>
+            <div id="scroll-data">Scroll Events: 0</div>
+            <div id="interaction-score">Interaction Score: 0</div>
+        </div>
+    </div>
+    
+    <!-- Your Traffic Cop SDK with debug mode enabled -->
+    <script src="/traffic-cop-sdk.js"></script>
+    <script>
+        // Initialize Traffic Cop with your API key and debug mode
+        const trafficCop = TrafficCop.init('tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583', {
+            debug: true,
+            mode: 'block',
+            showBlockMessage: true,
+            realTimeDetection: true,
+            autoProtect: true
+        });
+        
+        // Listen for Traffic Cop analysis results
+        window.addEventListener('trafficCopAnalysis', function(event) {
+            const result = event.detail;
+            displayAnalysisResult(result);
+            updateStats();
+            updateAdStatus();
+        });
+        
+        function displayAnalysisResult(result) {
+            const statusDiv = document.getElementById('detection-status');
+            const resultDiv = document.getElementById('analysis-result');
+            
+            statusDiv.innerHTML = '✅ Analysis Complete';
+            resultDiv.style.display = 'block';
+            
+            let resultClass = 'result-box';
+            let statusIcon = '✅';
+            
+            if (result.action === 'block') {
+                resultClass = 'threat-box';
+                statusIcon = '🚫';
+            } else if (result.action === 'challenge') {
+                resultClass = 'info-box';
+                statusIcon = '⚠️';
+            }
+            
+            resultDiv.innerHTML = `
+                <div class="${resultClass}">
+                    <h4>${statusIcon} Detection Result</h4>
+                    <p><strong>Action:</strong> ${result.action.toUpperCase()}</p>
+                    <p><strong>Risk Score:</strong> ${result.riskScore}%</p>
+                    <p><strong>Confidence:</strong> ${result.confidence}%</p>
+                    <p><strong>Threats Detected:</strong> ${result.threats.join(', ')}</p>
+                    <p><strong>Session ID:</strong> ${result.sessionId}</p>
+                    <p><strong>Response Time:</strong> ${result.responseTime}ms</p>
+                </div>
+            `;
+        }
+        
+        function updateStats() {
+            const stats = trafficCop.getStats();
+            document.getElementById('total-sessions').textContent = stats.totalSessions;
+            document.getElementById('blocked-sessions').textContent = stats.blockedSessions;
+            document.getElementById('block-rate').textContent = stats.blockRate + '%';
+            document.getElementById('current-status').textContent = stats.isCurrentlyBlocked ? 'BLOCKED' : 'ACTIVE';
+        }
+        
+        function updateAdStatus() {
+            const isBlocked = trafficCop.getStats().isCurrentlyBlocked;
+            const statusElement = document.getElementById('ads-visible');
+            
+            if (isBlocked) {
+                statusElement.textContent = 'Hidden (Bot Traffic Detected)';
+                statusElement.style.color = '#dc3545';
+            } else {
+                statusElement.textContent = 'Visible (Human Traffic)';
+                statusElement.style.color = '#28a745';
+            }
+        }
+        
+        function simulateHumanBehavior() {
+            // Simulate natural mouse movements
+            for (let i = 0; i < 20; i++) {
+                setTimeout(() => {
+                    const event = new MouseEvent('mousemove', {
+                        clientX: Math.random() * window.innerWidth,
+                        clientY: Math.random() * window.innerHeight
+                    });
+                    document.dispatchEvent(event);
+                }, i * 100);
+            }
+            
+            // Simulate natural clicks
+            setTimeout(() => {
+                for (let i = 0; i < 3; i++) {
+                    setTimeout(() => {
+                        document.dispatchEvent(new Event('click'));
+                    }, i * 1000);
+                }
+            }, 2000);
+            
+            alert('Simulated human behavior! Check the analysis result.');
+        }
+        
+        function simulateBotBehavior() {
+            // Override user agent to look like a bot
+            Object.defineProperty(navigator, 'userAgent', {
+                value: 'Python/3.9 requests/2.25.1 Bot-Scraper',
+                configurable: true
+            });
+            
+            alert('Simulated bot user agent! Re-analyze to see bot detection.');
+        }
+        
+        function simulateRapidClicking() {
+            // Simulate rapid clicking (bot behavior)
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    const event = new MouseEvent('click', {
+                        clientX: 100,
+                        clientY: 100
+                    });
+                    document.dispatchEvent(event);
+                }, i * 50); // Very fast clicking
+            }
+            
+            alert('Simulated rapid clicking! This should trigger bot detection.');
+        }
+        
+        function triggerReanalysis() {
+            document.getElementById('detection-status').innerHTML = 'Re-analyzing...';
+            document.getElementById('analysis-result').style.display = 'none';
+            trafficCop.analyze();
+        }
+        
+        // Update behavior tracking display
+        function updateBehaviorDisplay() {
+            const visitorData = trafficCop.getVisitorData();
+            const behavior = visitorData.behaviorData;
+            
+            document.getElementById('mouse-data').textContent = `Mouse Movements: ${behavior.mouseMovements}`;
+            document.getElementById('click-data').textContent = `Clicks: ${behavior.clicks}`;
+            document.getElementById('scroll-data').textContent = `Scroll Events: ${behavior.scrollEvents}`;
+            document.getElementById('interaction-score').textContent = `Interaction Score: ${behavior.pageInteractions}`;
+        }
+        
+        // Update behavior display every 2 seconds
+        setInterval(updateBehaviorDisplay, 2000);
+        
+        // Initial stats update
+        setTimeout(updateStats, 3000);
+    </script>
+</body>
+</html>
