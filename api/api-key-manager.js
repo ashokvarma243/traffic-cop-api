@@ -1,63 +1,29 @@
-// api-key-manager.js
+// api/api-key-manager.js
 const crypto = require('crypto');
+const { kv } = require('@vercel/kv');
 
 class TrafficCopAPIKeyManager {
     constructor() {
-        this.apiKeys = new Map();
-        this.revokedKeys = new Set();
-        
-        // Initialize with your existing test keys
-        this.initializeTestKeys();
+        // All data stored in Vercel KV - no in-memory storage
     }
-    
-    // Initialize existing test keys
-    initializeTestKeys() {
-        const testKeys = [
-            {
-                key: 'tc_test_123',
-                data: {
-                    id: 'test_pub',
-                    publisherName: 'Test Publisher',
-                    email: 'test@example.com',
-                    website: 'https://test.com',
-                    plan: 'professional',
-                    createdAt: new Date().toISOString(),
-                    status: 'active'
-                }
-            }
-        ];
-        
-        testKeys.forEach(item => {
-            this.apiKeys.set(item.key, item.data);
-        });
-    }
-    
-    // Step 1: Generate unique API key
+
+    // Generate cryptographically secure API key
     generateAPIKey(publisherData) {
-        // Create timestamp for uniqueness
         const timestamp = Date.now();
-        
-        // Generate random bytes (24 bytes = 48 hex characters)
         const randomBytes = crypto.randomBytes(24).toString('hex');
-        
-        // Create checksum for integrity
         const checksum = crypto.createHash('sha256')
             .update(`${timestamp}${randomBytes}${publisherData.email}`)
             .digest('hex')
             .substring(0, 8);
-        
-        // Combine into final API key
-        const apiKey = `tc_live_${timestamp}_${randomBytes}_${checksum}`;
-        
-        return apiKey;
+        return `tc_live_${timestamp}_${randomBytes}_${checksum}`;
     }
-    
-    // Step 2: Create publisher metadata
+
+    // Create comprehensive publisher metadata
     createPublisherData(publisherInfo, apiKey) {
-        const publisherData = {
-            id: `pub_${Date.now()}`,
+        return {
+            id: `pub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             apiKey: apiKey,
-            publisherName: publisherInfo.name || publisherInfo.website,
+            publisherName: publisherInfo.name || this.extractDomainName(publisherInfo.website),
             email: publisherInfo.email,
             website: publisherInfo.website,
             plan: publisherInfo.plan || 'starter',
@@ -69,91 +35,163 @@ class TrafficCopAPIKeyManager {
                 totalRequests: 0,
                 monthlyRequests: 0,
                 lastUsed: null,
-                lastResetDate: new Date().toISOString()
+                lastResetDate: new Date().toISOString(),
+                dailyRequests: 0,
+                lastDailyReset: new Date().toISOString()
             },
             security: {
                 rateLimits: this.getRateLimits(publisherInfo.plan),
-                allowedIPs: [] // Can be restricted later
+                allowedIPs: [],
+                allowedDomains: [publisherInfo.website],
+                lastLoginAt: null,
+                failedLoginAttempts: 0
+            },
+            billing: {
+                plan: publisherInfo.plan || 'starter',
+                billingCycle: 'monthly',
+                nextBillingDate: this.calculateNextBilling(),
+                isActive: true
             }
         };
-        
-        return publisherData;
     }
-    
-    // Step 3: Calculate expiration dates
+
+    // Extract clean domain name for publisher name
+    extractDomainName(website) {
+        try {
+            const url = new URL(website.startsWith('http') ? website : `https://${website}`);
+            return url.hostname.replace('www.', '');
+        } catch {
+            return website;
+        }
+    }
+
+    // Calculate expiration dates based on plan
     calculateExpiration(plan) {
         const now = new Date();
-        
-        switch(plan) {
+        switch (plan) {
             case 'trial':
-                return new Date(now.getTime() + (14 * 24 * 60 * 60 * 1000)); // 14 days
+                return new Date(now.getTime() + (14 * 24 * 60 * 60 * 1000));
             case 'starter':
-                return new Date(now.getTime() + (365 * 24 * 60 * 60 * 1000)); // 1 year
             case 'professional':
-                return new Date(now.getTime() + (365 * 24 * 60 * 60 * 1000)); // 1 year
+                return new Date(now.getTime() + (365 * 24 * 60 * 60 * 1000));
             case 'enterprise':
-                return null; // No expiration
+                return null;
             default:
-                return new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000)); // 7 days
+                return new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
         }
     }
-    
-    // Step 4: Set permissions based on plan
+
+    // Calculate next billing date
+    calculateNextBilling() {
+        const now = new Date();
+        return new Date(now.getTime() + (30 * 24 * 60 * 60 * 1000));
+    }
+
+    // Set permissions based on subscription plan
     getPermissions(plan) {
         const basePermissions = ['analyze', 'dashboard'];
-        
-        switch(plan) {
+        switch (plan) {
+            case 'trial':
+                return ['analyze'];
             case 'starter':
-                return [...basePermissions];
+                return [...basePermissions, 'basic_analytics'];
             case 'professional':
-                return [...basePermissions, 'advanced_analytics', 'alerts'];
+                return [...basePermissions, 'advanced_analytics', 'alerts', 'custom_rules'];
             case 'enterprise':
-                return [...basePermissions, 'advanced_analytics', 'alerts', 'api_access', 'custom_rules'];
+                return [...basePermissions, 'advanced_analytics', 'alerts', 'api_access', 'custom_rules', 'white_label', 'priority_support'];
             default:
-                return ['analyze']; // Trial
+                return ['analyze'];
         }
     }
-    
-    // Step 5: Set rate limits
+
+    // Set rate limits based on subscription plan
     getRateLimits(plan) {
-        switch(plan) {
+        switch (plan) {
+            case 'trial':
+                return { 
+                    requestsPerMonth: 10000, 
+                    requestsPerMinute: 10,
+                    requestsPerDay: 500
+                };
             case 'starter':
-                return { requestsPerMonth: 100000, requestsPerMinute: 100 };
+                return { 
+                    requestsPerMonth: 100000, 
+                    requestsPerMinute: 100,
+                    requestsPerDay: 5000
+                };
             case 'professional':
-                return { requestsPerMonth: 1000000, requestsPerMinute: 500 };
+                return { 
+                    requestsPerMonth: 1000000, 
+                    requestsPerMinute: 500,
+                    requestsPerDay: 50000
+                };
             case 'enterprise':
-                return { requestsPerMonth: -1, requestsPerMinute: 1000 }; // Unlimited
+                return { 
+                    requestsPerMonth: -1,
+                    requestsPerMinute: 1000,
+                    requestsPerDay: -1
+                };
             default:
-                return { requestsPerMonth: 10000, requestsPerMinute: 10 }; // Trial
+                return { 
+                    requestsPerMonth: 1000, 
+                    requestsPerMinute: 5,
+                    requestsPerDay: 100
+                };
         }
     }
-    
-    // Step 6: Complete API key creation process
-    createPublisher(publisherInfo) {
+
+    // Create new publisher and store in traffic-cop-api-keys database
+    async createPublisher(publisherInfo) {
         try {
+            // Validate required fields
+            if (!publisherInfo.email || !publisherInfo.website) {
+                return {
+                    success: false,
+                    error: 'Email and website are required'
+                };
+            }
+
+            // Check if email already exists
+            const existingPublisher = await this.getPublisherByEmail(publisherInfo.email);
+            if (existingPublisher) {
+                return {
+                    success: false,
+                    error: 'Email already registered'
+                };
+            }
+
             // Generate unique API key
             const apiKey = this.generateAPIKey(publisherInfo);
-            
-            // Create publisher data
             const publisherData = this.createPublisherData(publisherInfo, apiKey);
-            
-            // Store in memory (in production, use database)
-            this.apiKeys.set(apiKey, publisherData);
-            
-            // Return complete result
+
+            // Store in Vercel KV with multiple indexes
+            await kv.set(`api_key:${apiKey}`, publisherData);
+            await kv.set(`publisher:${publisherData.id}`, publisherData);
+            await kv.set(`email:${publisherInfo.email}`, publisherData.id);
+
             return {
                 success: true,
                 apiKey: apiKey,
                 publisherId: publisherData.id,
+                publisherName: publisherData.publisherName,
                 plan: publisherData.plan,
                 expiresAt: publisherData.expiresAt,
                 permissions: publisherData.permissions,
-                setupUrl: `https://your-domain.vercel.app/setup?key=${apiKey}`,
-                dashboardUrl: `https://your-domain.vercel.app/dashboard?key=${apiKey}`,
-                message: 'API key generated successfully'
+                rateLimits: publisherData.security.rateLimits,
+                setupUrl: `https://traffic-cop-apii.vercel.app/setup?key=${apiKey}`,
+                dashboardUrl: `https://traffic-cop-apii.vercel.app/publisher-login.html`,
+                integrationCode: this.generateIntegrationCode(apiKey, publisherInfo.website),
+                message: 'API key generated and stored in traffic-cop-api-keys database'
             };
-            
+
         } catch (error) {
+            console.error('Traffic Cop KV Error (createPublisher):', {
+                operation: 'createPublisher',
+                email: publisherInfo.email,
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+            
             return {
                 success: false,
                 error: 'Failed to generate API key',
@@ -161,36 +199,136 @@ class TrafficCopAPIKeyManager {
             };
         }
     }
-    
-    // Step 7: Validate API keys
-    validateAPIKey(apiKey) {
-        // Check if key exists
-        if (!this.apiKeys.has(apiKey)) {
-            return { valid: false, reason: 'Invalid API key' };
+
+    // Generate integration code for new publishers
+    generateIntegrationCode(apiKey, website) {
+        return `<!-- Traffic Cop Integration for ${website} -->
+<script src="https://traffic-cop-apii.vercel.app/traffic-cop-sdk.js"></script>
+<script>
+  TrafficCop.init('${apiKey}', {
+    mode: 'monitor',
+    blockThreshold: 80,
+    challengeThreshold: 60,
+    debug: false,
+    website: '${website}'
+  });
+</script>`;
+    }
+
+    // Validate API key and update usage statistics
+    async validateAPIKey(apiKey) {
+        try {
+            const keyData = await kv.get(`api_key:${apiKey}`);
+
+            if (!keyData) {
+                return { valid: false, reason: 'Invalid API key' };
+            }
+
+            // Check expiration
+            if (keyData.expiresAt && new Date() > new Date(keyData.expiresAt)) {
+                return { valid: false, reason: 'API key expired' };
+            }
+
+            // Check status
+            if (keyData.status !== 'active') {
+                return { valid: false, reason: 'API key inactive' };
+            }
+
+            // Update usage statistics
+            keyData.usage.totalRequests++;
+            keyData.usage.lastUsed = new Date().toISOString();
+            
+            // Update daily usage
+            const today = new Date().toDateString();
+            const lastReset = new Date(keyData.usage.lastDailyReset).toDateString();
+            if (today !== lastReset) {
+                keyData.usage.dailyRequests = 1;
+                keyData.usage.lastDailyReset = new Date().toISOString();
+            } else {
+                keyData.usage.dailyRequests++;
+            }
+
+            // Update monthly usage
+            const thisMonth = new Date().getMonth();
+            const lastResetMonth = new Date(keyData.usage.lastResetDate).getMonth();
+            if (thisMonth !== lastResetMonth) {
+                keyData.usage.monthlyRequests = 1;
+                keyData.usage.lastResetDate = new Date().toISOString();
+            } else {
+                keyData.usage.monthlyRequests++;
+            }
+
+            // Save updated data
+            await kv.set(`api_key:${apiKey}`, keyData);
+
+            return { valid: true, data: keyData };
+
+        } catch (error) {
+            console.error('Traffic Cop KV Error (validateAPIKey):', {
+                operation: 'validateAPIKey',
+                apiKey: apiKey.substring(0, 20) + '...',
+                error: error.message,
+                timestamp: new Date().toISOString()
+            });
+            
+            return { valid: false, reason: 'Database error' };
         }
-        
-        // Check if revoked
-        if (this.revokedKeys.has(apiKey)) {
-            return { valid: false, reason: 'API key revoked' };
+    }
+
+    // Get publisher by email
+    async getPublisherByEmail(email) {
+        try {
+            const publisherId = await kv.get(`email:${email}`);
+            if (publisherId) {
+                return await kv.get(`publisher:${publisherId}`);
+            }
+            return null;
+        } catch (error) {
+            console.error('Error getting publisher by email:', error);
+            return null;
         }
-        
-        const keyData = this.apiKeys.get(apiKey);
-        
-        // Check expiration
-        if (keyData.expiresAt && new Date() > new Date(keyData.expiresAt)) {
-            return { valid: false, reason: 'API key expired' };
+    }
+
+    // Update publisher status
+    async updatePublisherStatus(apiKey, status) {
+        try {
+            const keyData = await kv.get(`api_key:${apiKey}`);
+            
+            if (keyData) {
+                keyData.status = status;
+                keyData.updatedAt = new Date().toISOString();
+                await kv.set(`api_key:${apiKey}`, keyData);
+                await kv.set(`publisher:${keyData.id}`, keyData);
+                return { success: true };
+            }
+            
+            return { success: false, error: 'Publisher not found' };
+        } catch (error) {
+            console.error('Error updating publisher status:', error);
+            return { success: false, error: error.message };
         }
-        
-        // Check status
-        if (keyData.status !== 'active') {
-            return { valid: false, reason: 'API key inactive' };
+    }
+
+    // Get usage statistics for a publisher
+    async getUsageStats(apiKey) {
+        try {
+            const keyData = await kv.get(`api_key:${apiKey}`);
+            
+            if (keyData) {
+                return {
+                    success: true,
+                    usage: keyData.usage,
+                    rateLimits: keyData.security.rateLimits,
+                    plan: keyData.plan,
+                    status: keyData.status
+                };
+            }
+            
+            return { success: false, error: 'API key not found' };
+        } catch (error) {
+            console.error('Error getting usage stats:', error);
+            return { success: false, error: error.message };
         }
-        
-        // Update usage
-        keyData.usage.totalRequests++;
-        keyData.usage.lastUsed = new Date().toISOString();
-        
-        return { valid: true, data: keyData };
     }
 }
 
