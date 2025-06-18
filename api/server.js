@@ -870,24 +870,19 @@ function extractCountryFromIP(ipAddress) {
 module.exports = async (req, res) => {
     console.log(`${req.method} ${req.url}`);
     
-    // Complete CORS headers based on Vercel best practices [2]
-    const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version',
-        'Access-Control-Allow-Credentials': 'false',
-        'Access-Control-Max-Age': '86400'
-    };
+    // ALWAYS set CORS headers first, for every single response
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version, Origin');
+    res.setHeader('Access-Control-Allow-Credentials', 'false');
+    res.setHeader('Access-Control-Max-Age', '86400');
     
-    // Apply all CORS headers to prevent cross-origin issues [2]
-    Object.entries(corsHeaders).forEach(([key, value]) => {
-        res.setHeader(key, value);
-    });
-    
-    // Handle OPTIONS preflight request first (critical for CORS) [2]
+    // Handle OPTIONS preflight request immediately
     if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+        res.status(200).end();
+        return;
     }
+
     
     // Wrap all endpoints in try-catch to ensure CORS headers on errors [2]
     try {
