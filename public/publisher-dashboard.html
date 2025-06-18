@@ -157,7 +157,7 @@
                 // Update UI with API key info immediately
                 document.getElementById('api-key-display').textContent = apiKey.substring(0, 20) + '...';
                 
-                // Try to fetch real analytics data with better error handling
+                // Fetch real analytics data from your Traffic Cop API
                 try {
                     const analyticsResponse = await fetch('https://traffic-cop-apii.vercel.app/api/v1/analytics', {
                         method: 'GET',
@@ -197,15 +197,13 @@
             }
         }
 
-
-        // Update dashboard with real API data
+        // Update dashboard with real API data - FIXED VERSION
         function updateDashboardWithRealData(analytics) {
             document.getElementById('total-requests').textContent = analytics.totalRequests || '0';
             document.getElementById('blocked-bots').textContent = analytics.blockedBots || '0';
             document.getElementById('allowed-users').textContent = analytics.allowedUsers || '0';
             document.getElementById('risk-score').textContent = (analytics.riskScore || 0).toFixed(1);
             document.getElementById('website-name').textContent = analytics.website || 'your website';
-            document.getElementById('protected-website').textContent = analytics.website || 'your website';
             document.getElementById('website-display').textContent = `https://${analytics.website}` || 'Loading...';
             document.getElementById('plan-display').textContent = analytics.plan || 'Professional';
             document.getElementById('protection-status').textContent = analytics.protectionStatus || 'ACTIVE';
@@ -235,13 +233,13 @@
             }
         }
 
-        // Fallback data for when analytics API is not available
+        // Fallback data for when analytics API is not available - FIXED VERSION
         function updateDashboardWithFallbackData(apiKey) {
             // Determine website based on API key
             let websiteName = 'your website';
             let websiteUrl = 'https://yourwebsite.com';
             
-            if (apiKey.includes('tc_live_1750227021440')) {
+            if (apiKey && apiKey.includes('tc_live_1750227021440')) {
                 websiteName = 'dailyjobsindia.com';
                 websiteUrl = 'https://dailyjobsindia.com';
             }
@@ -251,7 +249,6 @@
             document.getElementById('allowed-users').textContent = '1,224';
             document.getElementById('risk-score').textContent = '1.8';
             document.getElementById('website-name').textContent = websiteName;
-            document.getElementById('protected-website').textContent = websiteName;
             document.getElementById('website-display').textContent = websiteUrl;
             document.getElementById('plan-display').textContent = 'Professional';
             document.getElementById('protection-status').textContent = 'ACTIVE';
