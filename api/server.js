@@ -2,68 +2,95 @@
 const url = require('url');
 const TrafficCopAPIKeyManager = require('./api-key-manager');
 
-// Initialize API Key Manager
-const apiKeyManager = new TrafficCopAPIKeyManager();
-
-// ADD THIS SECTION - Real traffic tracking for analytics
-let realTrafficData = {
-    totalRequests: 0,
-    blockedBots: 0,
-    allowedUsers: 0,
-    detectionHistory: [],
-    dailyStats: new Map()
-};
-
-// Function to get today's key for daily statistics
-function getTodayKey() {
-    return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-}
-
-// Function to record real traffic events
-function recordRealTrafficEvent(isBot, riskScore, threats, userAgent, website, action) {
-    const today = getTodayKey();
+// Analytics endpoint - PURE REAL DATA ONLY
+if (req.url === '/api/v1/analytics' && req.method === 'GET') {
+    const authHeader = req.headers.authorization;
     
-    // Initialize today's stats if not exists
-    if (!realTrafficData.dailyStats.has(today)) {
-        realTrafficData.dailyStats.set(today, {
-            totalRequests: 0,
-            blockedBots: 0,
-            allowedUsers: 0,
-            threats: new Set()
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        res.status(401).json({ error: 'Missing authorization header' });
+        return;
+    }
+    
+    const apiKey = authHeader.substring(7);
+    
+    // Validate API key
+    if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+        
+        // Get ONLY real statistics from actual traffic
+        const today = getTodayKey();
+        const todayStats = realTrafficData.dailyStats.get(today);
+        
+        // If NO real traffic today, return zeros
+        if (!todayStats) {
+            res.status(200).json({
+                website: 'dailyjobsindia.com',
+                totalRequests: 0,
+                blockedBots: 0,
+                allowedUsers: 0,
+                challengedUsers: 0,
+                riskScore: 0,
+                plan: 'Professional',
+                protectionStatus: 'ACTIVE - Waiting for traffic',
+                lastAnalysis: new Date().toISOString(),
+                topThreats: [],
+                recentActivity: [
+                    '✅ Traffic Cop protection system is active',
+                    '📊 Waiting for real traffic to analyze...',
+                    '🔍 All statistics will be based on actual detections'
+                ]
+            });
+            return;
+        }
+        
+        // Calculate ONLY real metrics
+        const totalRequests = todayStats.totalRequests;
+        const blockedBots = todayStats.blockedBots;
+        const allowedUsers = todayStats.allowedUsers;
+        const challengedUsers = todayStats.challengedUsers || 0;
+        const riskScore = totalRequests > 0 ? ((blockedBots / totalRequests) * 100).toFixed(1) : 0;
+        
+        // Get ONLY real recent activity
+        const recentActivity = realTrafficData.detectionHistory
+            .slice(-5)
+            .reverse()
+            .map(event => {
+                const time = new Date(event.timestamp).toLocaleTimeString();
+                const userAgentShort = event.userAgent.substring(0, 30) + '...';
+                
+                if (event.action === 'block') {
+                    return `🚨 BLOCKED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
+                } else if (event.action === 'challenge') {
+                    return `⚠️ CHALLENGED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
+                } else {
+                    return `✅ ALLOWED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
+                }
+            });
+        
+        // Return ONLY real analytics
+        res.status(200).json({
+            website: 'dailyjobsindia.com',
+            totalRequests: totalRequests,
+            blockedBots: blockedBots,
+            allowedUsers: allowedUsers,
+            challengedUsers: challengedUsers,
+            riskScore: parseFloat(riskScore),
+            plan: 'Professional',
+            protectionStatus: 'ACTIVE',
+            lastAnalysis: new Date().toISOString(),
+            topThreats: Array.from(todayStats.threats),
+            recentActivity: recentActivity.length > 0 ? recentActivity : [
+                '📊 No traffic analyzed yet today',
+                '🔍 All statistics will show real detection results',
+                '✅ Traffic Cop is ready to analyze incoming requests'
+            ]
         });
+        return;
     }
     
-    const todayStats = realTrafficData.dailyStats.get(today);
-    
-    // Increment real counters
-    todayStats.totalRequests++;
-    realTrafficData.totalRequests++;
-    
-    if (action === 'block') {
-        todayStats.blockedBots++;
-        realTrafficData.blockedBots++;
-        threats.forEach(threat => todayStats.threats.add(threat));
-    } else {
-        todayStats.allowedUsers++;
-        realTrafficData.allowedUsers++;
-    }
-    
-    // Store detection event for recent activity
-    realTrafficData.detectionHistory.push({
-        timestamp: new Date().toISOString(),
-        isBot: action === 'block',
-        riskScore: riskScore,
-        threats: threats,
-        userAgent: userAgent,
-        website: website,
-        action: action
-    });
-    
-    // Keep only last 100 events
-    if (realTrafficData.detectionHistory.length > 100) {
-        realTrafficData.detectionHistory.shift();
-    }
+    res.status(401).json({ error: 'Invalid API key' });
+    return;
 }
+
 
 // Simple in-memory storage for testing (use database in production)
 let sessions = new Map();
