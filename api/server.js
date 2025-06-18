@@ -948,7 +948,7 @@ module.exports = async (req, res) => {
             const apiKey = authHeader.substring(7);
             
             // Simple API key validation
-            const validKeys = ['tc_test_123', 'tc_demo_publisher_123'];
+            const validKeys = ['tc_test_123', 'tc_demo_publisher_123', 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583'];
             if (!validKeys.includes(apiKey)) {
                 res.status(401).json({ error: 'Invalid API key' });
                 return;
