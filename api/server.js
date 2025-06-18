@@ -1,6 +1,6 @@
 // server.js - Complete Traffic Cop API Server with Advanced Features
 const url = require('url');
-const TrafficCopAPIKeyManager = require('./api-key-manager');
+const TrafficCopAPIKeyManager = require('../api-key-manager');
 
 // Initialize API Key Manager
 const apiKeyManager = new TrafficCopAPIKeyManager();
