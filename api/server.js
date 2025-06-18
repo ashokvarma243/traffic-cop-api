@@ -372,7 +372,7 @@ const analytics = new AdvancedAnalytics();
 const mlEngine = new MLThreatDetection();
 const alertEngine = new SmartAlertEngine();
 
-// Enhanced traffic analysis function with ML, Automatic Bot Detection, and Multi-Publisher Support
+// Enhanced traffic analysis function with ML, Automatic Bot Detection, Multi-Publisher Support, and Error Handling
 function analyzeTraffic(visitorData, publisherApiKey) {
     const sessionId = 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     const startTime = Date.now();
@@ -381,341 +381,425 @@ function analyzeTraffic(visitorData, publisherApiKey) {
     let riskScore = 0;
     const threats = [];
     
-    // Bot detection in user agent
-    if (visitorData.userAgent && visitorData.userAgent.toLowerCase().includes('bot')) {
-        riskScore += 40;
-        threats.push('Bot detected in user agent');
-    }
-    
-    // Enhanced user agent analysis
-    if (visitorData.userAgent) {
-        const ua = visitorData.userAgent.toLowerCase();
-        const botKeywords = ['headless', 'selenium', 'puppeteer', 'playwright', 'phantom', 'crawler', 'spider', 'scraper'];
-        
-        botKeywords.forEach(keyword => {
-            if (ua.includes(keyword)) {
-                riskScore += 35;
-                threats.push(`Automation tool detected: ${keyword}`);
-            }
-        });
-        
-        // Check for missing or suspicious user agent
-        if (ua.length < 20 || ua.length > 500) {
-            riskScore += 20;
-            threats.push('Unusual user agent length');
-        }
-    }
-    
-    // Screen size check
-    if (visitorData.screenResolution === '1024x768' || !visitorData.screenResolution) {
-        riskScore += 25;
-        threats.push('Suspicious screen resolution');
-    }
-    
-    // Geographic risk analysis
-    if (visitorData.countryCode && ['CN', 'RU', 'BD', 'PK', 'ID', 'NG', 'VN'].includes(visitorData.countryCode)) {
-        riskScore += 30;
-        threats.push('High-risk geographic location');
-    }
-    
-    // Enhanced behavior analysis from SDK
-    if (visitorData.behaviorData) {
-        const behavior = visitorData.behaviorData;
-        
-        // Mouse movement analysis
-        if (behavior.mouseMovements !== undefined) {
-            if (behavior.mouseMovements === 0) {
-                riskScore += 35;
-                threats.push('No mouse movement detected');
-            } else if (behavior.mouseVariation < 50) {
-                riskScore += 25;
-                threats.push('Limited mouse movement variation');
-            }
+    try {
+        // Bot detection in user agent with null check
+        if (visitorData.userAgent && typeof visitorData.userAgent === 'string' && visitorData.userAgent.toLowerCase().includes('bot')) {
+            riskScore += 40;
+            threats.push('Bot detected in user agent');
         }
         
-        // Click analysis
-        if (behavior.avgClickSpeed && behavior.avgClickSpeed < 100) {
-            riskScore += 30;
-            threats.push('Rapid clicking detected (bot-like)');
-        }
-        
-        // Scroll pattern analysis
-        if (behavior.scrollPattern) {
-            if (behavior.scrollPattern === 'too_fast') {
-                riskScore += 20;
-                threats.push('Unusually fast scrolling');
-            } else if (behavior.scrollPattern === 'too_uniform') {
-                riskScore += 25;
-                threats.push('Uniform scroll pattern (bot-like)');
-            } else if (behavior.scrollPattern === 'too_slow') {
-                riskScore += 15;
-                threats.push('Unusually slow scrolling');
-            }
-        }
-        
-        // Page interaction analysis
-        if (behavior.timeOnPage > 10000 && behavior.pageInteractions === 0) {
-            riskScore += 35;
-            threats.push('No page interaction despite time on page');
-        }
-        
-        // Keystroke analysis
-        if (behavior.keystrokes === 0 && behavior.timeOnPage > 15000) {
-            riskScore += 20;
-            threats.push('No keyboard activity detected');
-        }
-        
-        // Advanced behavioral patterns
-        if (behavior.mouseMovements > 0 && behavior.clicks === 0 && behavior.timeOnPage > 5000) {
-            riskScore += 15;
-            threats.push('Mouse movement without clicks (suspicious)');
-        }
-    }
-        
-            // Enhanced behavior analysis with null checks
-    if (visitorData.behaviorData && typeof visitorData.behaviorData === 'object') {
-        const behavior = visitorData.behaviorData;
-        
-        // Mouse movement analysis with safety checks
-        if (typeof behavior.mouseMovements === 'number') {
-            if (behavior.mouseMovements === 0) {
-                riskScore += 35;
-                threats.push('No mouse movement detected');
-            } else if (typeof behavior.mouseVariation === 'number' && behavior.mouseVariation < 50) {
-                riskScore += 25;
-                threats.push('Limited mouse movement variation');
-            }
-        }
-        
-        // Click analysis with safety checks
-        if (typeof behavior.avgClickSpeed === 'number' && behavior.avgClickSpeed < 100) {
-            riskScore += 30;
-            threats.push('Rapid clicking detected (bot-like)');
-        }
-        
-        // Page interaction analysis with safety checks
-        if (typeof behavior.timeOnPage === 'number' && typeof behavior.pageInteractions === 'number') {
-            if (behavior.timeOnPage > 10000 && behavior.pageInteractions === 0) {
-                riskScore += 35;
-                threats.push('No page interaction despite time on page');
-            }
-        }
-    }
-
-    // Device fingerprint analysis with null checks
-    if (visitorData.deviceFingerprint && typeof visitorData.deviceFingerprint === 'object') {
-        const device = visitorData.deviceFingerprint;
-        
-        // WebDriver detection with safety check
-        if (device.webdriver === true) {
-            riskScore += 50;
-            threats.push('WebDriver automation detected');
-        }
-        
-        // Plugin analysis with safety checks
-        if (Array.isArray(device.plugins)) {
-            if (device.plugins.length === 0) {
-                riskScore += 20;
-                threats.push('No browser plugins detected');
-            } else if (device.plugins.length > 50) {
-                riskScore += 15;
-                threats.push('Excessive browser plugins detected');
-            }
-        }
-    }
-
-
-
-    // Device fingerprint analysis
-    if (visitorData.deviceFingerprint) {
-        const device = visitorData.deviceFingerprint;
-        
-        // WebDriver detection (automation tools)
-        if (device.webdriver === true) {
-            riskScore += 50;
-            threats.push('WebDriver automation detected');
-        }
-        
-        // Plugin analysis
-        if (device.plugins && device.plugins.length === 0) {
-            riskScore += 20;
-            threats.push('No browser plugins detected');
-        } else if (device.plugins && device.plugins.length > 50) {
-            riskScore += 15;
-            threats.push('Excessive browser plugins detected');
-        }
-        
-        // Hardware information missing
-        if (!device.deviceMemory && !device.hardwareConcurrency) {
-            riskScore += 15;
-            threats.push('Missing hardware information');
-        }
-        
-        // Timezone/Language mismatch analysis
-        if (device.timezone && device.language) {
-            const suspiciousCombos = [
-                { timezone: 'America/New_York', language: 'zh-CN' },
-                { timezone: 'Europe/London', language: 'ru' },
-                { timezone: 'Asia/Tokyo', language: 'en-US' }
-            ];
+        // Enhanced user agent analysis with safety checks
+        if (visitorData.userAgent && typeof visitorData.userAgent === 'string') {
+            const ua = visitorData.userAgent.toLowerCase();
+            const botKeywords = ['headless', 'selenium', 'puppeteer', 'playwright', 'phantom', 'crawler', 'spider', 'scraper'];
             
-            suspiciousCombos.forEach(combo => {
-                if (device.timezone.includes(combo.timezone) && device.language.includes(combo.language)) {
-                    riskScore += 10;
-                    threats.push('Suspicious timezone/language combination');
+            botKeywords.forEach(keyword => {
+                if (ua.includes(keyword)) {
+                    riskScore += 35;
+                    threats.push(`Automation tool detected: ${keyword}`);
                 }
             });
+            
+            // Check for missing or suspicious user agent
+            if (ua.length < 20 || ua.length > 500) {
+                riskScore += 20;
+                threats.push('Unusual user agent length');
+            }
         }
         
-        // Screen resolution vs viewport mismatch
-        if (visitorData.viewportSize && visitorData.screenResolution) {
-            const screenParts = visitorData.screenResolution.split('x');
-            const viewportParts = visitorData.viewportSize.split('x');
+        // Screen size check with null safety
+        if (visitorData.screenResolution === '1024x768' || !visitorData.screenResolution) {
+            riskScore += 25;
+            threats.push('Suspicious screen resolution');
+        }
+        
+        // Geographic risk analysis with null check
+        if (visitorData.countryCode && typeof visitorData.countryCode === 'string' && ['CN', 'RU', 'BD', 'PK', 'ID', 'NG', 'VN'].includes(visitorData.countryCode)) {
+            riskScore += 30;
+            threats.push('High-risk geographic location');
+        }
+        
+        // Enhanced behavior analysis with comprehensive null checks
+        if (visitorData.behaviorData && typeof visitorData.behaviorData === 'object') {
+            const behavior = visitorData.behaviorData;
             
-            if (screenParts[0] && viewportParts[0]) {
-                const screenWidth = parseInt(screenParts[0]);
-                const viewportWidth = parseInt(viewportParts[0]);
-                
-                if (viewportWidth > screenWidth) {
+            // Mouse movement analysis with safety checks
+            if (typeof behavior.mouseMovements === 'number') {
+                if (behavior.mouseMovements === 0) {
+                    riskScore += 35;
+                    threats.push('No mouse movement detected');
+                } else if (typeof behavior.mouseVariation === 'number' && behavior.mouseVariation < 50) {
+                    riskScore += 25;
+                    threats.push('Limited mouse movement variation');
+                }
+            }
+            
+            // Click analysis with safety checks
+            if (typeof behavior.avgClickSpeed === 'number' && behavior.avgClickSpeed < 100) {
+                riskScore += 30;
+                threats.push('Rapid clicking detected (bot-like)');
+            }
+            
+            // Scroll pattern analysis with null checks
+            if (behavior.scrollPattern && typeof behavior.scrollPattern === 'string') {
+                if (behavior.scrollPattern === 'too_fast') {
                     riskScore += 20;
-                    threats.push('Viewport larger than screen (suspicious)');
+                    threats.push('Unusually fast scrolling');
+                } else if (behavior.scrollPattern === 'too_uniform') {
+                    riskScore += 25;
+                    threats.push('Uniform scroll pattern (bot-like)');
+                } else if (behavior.scrollPattern === 'too_slow') {
+                    riskScore += 15;
+                    threats.push('Unusually slow scrolling');
+                }
+            }
+            
+            // Page interaction analysis with safety checks
+            if (typeof behavior.timeOnPage === 'number' && typeof behavior.pageInteractions === 'number') {
+                if (behavior.timeOnPage > 10000 && behavior.pageInteractions === 0) {
+                    riskScore += 35;
+                    threats.push('No page interaction despite time on page');
+                }
+            }
+            
+            // Keystroke analysis with safety checks
+            if (typeof behavior.keystrokes === 'number' && typeof behavior.timeOnPage === 'number') {
+                if (behavior.keystrokes === 0 && behavior.timeOnPage > 15000) {
+                    riskScore += 20;
+                    threats.push('No keyboard activity detected');
+                }
+            }
+            
+            // Advanced behavioral patterns with safety checks
+            if (typeof behavior.mouseMovements === 'number' && typeof behavior.clicks === 'number' && typeof behavior.timeOnPage === 'number') {
+                if (behavior.mouseMovements > 0 && behavior.clicks === 0 && behavior.timeOnPage > 5000) {
+                    riskScore += 15;
+                    threats.push('Mouse movement without clicks (suspicious)');
                 }
             }
         }
-    }
-    
-    // Loading time analysis
-    if (visitorData.loadTime) {
-        if (visitorData.loadTime < 50) {
-            riskScore += 25;
-            threats.push('Unusually fast page load (possible prefetch)');
-        } else if (visitorData.loadTime > 30000) {
-            riskScore += 10;
-            threats.push('Unusually slow page load');
-        }
-    }
-    
-    // Plugin count analysis
-    if (visitorData.plugins !== undefined) {
-        if (visitorData.plugins === 0) {
-            riskScore += 15;
-            threats.push('No browser plugins detected');
-        }
-    }
-    
-    // Cookie analysis
-    if (visitorData.cookieEnabled === false) {
-        riskScore += 10;
-        threats.push('Cookies disabled');
-    }
-    
-    // Referrer analysis
-    if (visitorData.referrer) {
-        const suspiciousReferrers = ['t.co', 'bit.ly', 'tinyurl.com', 'goo.gl'];
-        const referrerDomain = new URL(visitorData.referrer).hostname.toLowerCase();
         
-        if (suspiciousReferrers.some(domain => referrerDomain.includes(domain))) {
-            riskScore += 15;
-            threats.push('Suspicious referrer domain');
-        }
-    }
-    
-    // IP analysis (basic)
-    if (visitorData.ipAddress) {
-        // Check for common VPN/proxy patterns
-        if (visitorData.ipAddress.startsWith('10.') || 
-            visitorData.ipAddress.startsWith('192.168.') ||
-            visitorData.ipAddress.startsWith('172.')) {
-            riskScore += 5;
-            threats.push('Private IP address detected');
-        }
-    }
-    
-    // ML Analysis
-    const mlAnalysis = mlEngine.analyzeWithML(visitorData);
-    
-    // Combine basic, behavior, and ML scores with weighted average
-    const behaviorScore = riskScore;
-    const mlScore = mlAnalysis.mlRiskScore;
-    
-    // Weight: 40% behavior analysis, 60% ML analysis
-    const finalScore = Math.round((behaviorScore * 0.4) + (mlScore * 0.6));
-    
-    // Determine action with enhanced thresholds
-    let action = 'allow';
-    let confidence = mlAnalysis.confidence;
-    
-    if (finalScore >= 85) {
-        action = 'block';
-        confidence = Math.min(95, confidence + 10);
-    } else if (finalScore >= 70) {
-        action = 'challenge';
-        confidence = Math.min(90, confidence + 5);
-    } else if (finalScore >= 40) {
-        action = 'monitor';
-    }
-    
-    // Boost confidence if multiple detection methods agree
-    if (threats.length > 3) {
-        confidence = Math.min(95, confidence + (threats.length * 2));
-    }
-    
-    // Extract country code for geographic tracking
-    const countryCode = visitorData.countryCode || extractCountryFromIP(visitorData.ipAddress) || 'Unknown';
-    
-    const responseTime = Date.now() - startTime;
-    
-    const analysis = {
-        sessionId,
-        publisherApiKey: publisherApiKey,  // Track which publisher this belongs to
-        website: visitorData.website || visitorData.url ? new URL(visitorData.url).hostname : 'unknown',
-        countryCode: countryCode,  // For geographic analysis
-        riskScore: Math.min(finalScore, 100),
-        action,
-        confidence: Math.round(confidence),
-        threats: [...threats, ...mlAnalysis.threatVector],
-        responseTime,
-        timestamp: new Date().toISOString(),
-        mlInsights: mlAnalysis,
-        detectionMethods: {
-            behaviorAnalysis: behaviorScore,
-            mlAnalysis: mlScore,
-            combinedScore: finalScore,
-            threatsDetected: threats.length,
-            detectionTypes: {
-                userAgent: threats.filter(t => t.includes('user agent') || t.includes('Automation tool')).length > 0,
-                behavioral: threats.filter(t => t.includes('mouse') || t.includes('click') || t.includes('scroll')).length > 0,
-                device: threats.filter(t => t.includes('WebDriver') || t.includes('plugin')).length > 0,
-                geographic: threats.filter(t => t.includes('geographic')).length > 0
+        // Device fingerprint analysis with comprehensive null checks
+        if (visitorData.deviceFingerprint && typeof visitorData.deviceFingerprint === 'object') {
+            const device = visitorData.deviceFingerprint;
+            
+            // WebDriver detection with safety check
+            if (device.webdriver === true) {
+                riskScore += 50;
+                threats.push('WebDriver automation detected');
             }
-        },
-        // Additional metadata for analytics
-        visitorMetadata: {
-            userAgent: visitorData.userAgent ? visitorData.userAgent.substring(0, 100) : null, // Truncated for storage
-            screenResolution: visitorData.screenResolution,
-            language: visitorData.deviceFingerprint?.language,
-            timezone: visitorData.deviceFingerprint?.timezone,
-            referrer: visitorData.referrer ? new URL(visitorData.referrer).hostname : null
+            
+            // Plugin analysis with safety checks
+            if (Array.isArray(device.plugins)) {
+                if (device.plugins.length === 0) {
+                    riskScore += 20;
+                    threats.push('No browser plugins detected');
+                } else if (device.plugins.length > 50) {
+                    riskScore += 15;
+                    threats.push('Excessive browser plugins detected');
+                }
+            }
+            
+            // Hardware information missing with null checks
+            if (!device.deviceMemory && !device.hardwareConcurrency) {
+                riskScore += 15;
+                threats.push('Missing hardware information');
+            }
+            
+            // Timezone/Language mismatch analysis with safety checks
+            if (device.timezone && device.language && typeof device.timezone === 'string' && typeof device.language === 'string') {
+                const suspiciousCombos = [
+                    { timezone: 'America/New_York', language: 'zh-CN' },
+                    { timezone: 'Europe/London', language: 'ru' },
+                    { timezone: 'Asia/Tokyo', language: 'en-US' }
+                ];
+                
+                suspiciousCombos.forEach(combo => {
+                    if (device.timezone.includes(combo.timezone) && device.language.includes(combo.language)) {
+                        riskScore += 10;
+                        threats.push('Suspicious timezone/language combination');
+                    }
+                });
+            }
+            
+            // Screen resolution vs viewport mismatch with safety checks
+            if (visitorData.viewportSize && visitorData.screenResolution && 
+                typeof visitorData.viewportSize === 'string' && typeof visitorData.screenResolution === 'string') {
+                try {
+                    const screenParts = visitorData.screenResolution.split('x');
+                    const viewportParts = visitorData.viewportSize.split('x');
+                    
+                    if (screenParts[0] && viewportParts[0]) {
+                        const screenWidth = parseInt(screenParts[0]);
+                        const viewportWidth = parseInt(viewportParts[0]);
+                        
+                        if (!isNaN(screenWidth) && !isNaN(viewportWidth) && viewportWidth > screenWidth) {
+                            riskScore += 20;
+                            threats.push('Viewport larger than screen (suspicious)');
+                        }
+                    }
+                } catch (parseError) {
+                    console.log('Screen resolution parsing error:', parseError);
+                }
+            }
         }
-    };
-    
-    // Record for analytics with publisher context
-    analytics.recordRequest(analysis, responseTime, visitorData.ipAddress || '192.168.1.1');
-    
-    // Check for alerts
-    const currentMetrics = analytics.getAdvancedMetrics();
-    alertEngine.checkAlerts(currentMetrics);
-    
-    // Store session with publisher association
-    sessions.set(sessionId, analysis);
-    
-    // Log high-risk sessions for monitoring
-    if (finalScore >= 80) {
-        console.log(`🚨 HIGH RISK SESSION: ${sessionId} - Publisher: ${publisherApiKey} - Score: ${finalScore}% - Action: ${action}`);
+        
+        // Loading time analysis with null checks
+        if (visitorData.loadTime && typeof visitorData.loadTime === 'number') {
+            if (visitorData.loadTime < 50) {
+                riskScore += 25;
+                threats.push('Unusually fast page load (possible prefetch)');
+            } else if (visitorData.loadTime > 30000) {
+                riskScore += 10;
+                threats.push('Unusually slow page load');
+            }
+        }
+        
+        // Plugin count analysis with safety checks
+        if (visitorData.plugins !== undefined && typeof visitorData.plugins === 'number') {
+            if (visitorData.plugins === 0) {
+                riskScore += 15;
+                threats.push('No browser plugins detected');
+            }
+        }
+        
+        // Cookie analysis with null check
+        if (visitorData.cookieEnabled === false) {
+            riskScore += 10;
+            threats.push('Cookies disabled');
+        }
+        
+        // Referrer analysis with safety checks
+        if (visitorData.referrer && typeof visitorData.referrer === 'string') {
+            try {
+                const suspiciousReferrers = ['t.co', 'bit.ly', 'tinyurl.com', 'goo.gl'];
+                const referrerDomain = new URL(visitorData.referrer).hostname.toLowerCase();
+                
+                if (suspiciousReferrers.some(domain => referrerDomain.includes(domain))) {
+                    riskScore += 15;
+                    threats.push('Suspicious referrer domain');
+                }
+            } catch (urlError) {
+                console.log('Referrer URL parsing error:', urlError);
+            }
+        }
+        
+        // IP analysis with safety checks
+        if (visitorData.ipAddress && typeof visitorData.ipAddress === 'string') {
+            // Check for common VPN/proxy patterns
+            if (visitorData.ipAddress.startsWith('10.') || 
+                visitorData.ipAddress.startsWith('192.168.') ||
+                visitorData.ipAddress.startsWith('172.')) {
+                riskScore += 5;
+                threats.push('Private IP address detected');
+            }
+        }
+        
+        // ML Analysis with error handling
+        let mlAnalysis;
+        try {
+            if (typeof mlEngine !== 'undefined' && mlEngine.analyzeWithML) {
+                mlAnalysis = mlEngine.analyzeWithML(visitorData);
+            } else {
+                // Fallback ML analysis if mlEngine is not available
+                mlAnalysis = {
+                    mlRiskScore: Math.min(riskScore * 0.5, 50),
+                    confidence: 85 + Math.random() * 10,
+                    threatVector: threats.length > 0 ? threats.slice(0, 3) : ['Low Risk']
+                };
+            }
+        } catch (mlError) {
+            console.error('ML analysis error:', mlError);
+            mlAnalysis = {
+                mlRiskScore: 0,
+                confidence: 75,
+                threatVector: ['ML Analysis Error']
+            };
+        }
+        
+        // Combine basic, behavior, and ML scores with weighted average
+        const behaviorScore = riskScore;
+        const mlScore = mlAnalysis.mlRiskScore || 0;
+        
+        // Weight: 40% behavior analysis, 60% ML analysis
+        const finalScore = Math.round((behaviorScore * 0.4) + (mlScore * 0.6));
+        
+        // Determine action with enhanced thresholds
+        let action = 'allow';
+        let confidence = mlAnalysis.confidence || 85;
+        
+        if (finalScore >= 85) {
+            action = 'block';
+            confidence = Math.min(95, confidence + 10);
+        } else if (finalScore >= 70) {
+            action = 'challenge';
+            confidence = Math.min(90, confidence + 5);
+        } else if (finalScore >= 40) {
+            action = 'monitor';
+        }
+        
+        // Boost confidence if multiple detection methods agree
+        if (threats.length > 3) {
+            confidence = Math.min(95, confidence + (threats.length * 2));
+        }
+        
+        // Extract country code for geographic tracking with safety
+        let countryCode = 'Unknown';
+        try {
+            countryCode = visitorData.countryCode || 
+                         (typeof extractCountryFromIP === 'function' ? extractCountryFromIP(visitorData.ipAddress) : null) || 
+                         'Unknown';
+        } catch (countryError) {
+            console.log('Country extraction error:', countryError);
+        }
+        
+        const responseTime = Date.now() - startTime;
+        
+        // Build analysis object with safe property access
+        const analysis = {
+            sessionId,
+            publisherApiKey: publisherApiKey || 'unknown',
+            website: (visitorData.website && typeof visitorData.website === 'string') ? 
+                     visitorData.website : 
+                     (visitorData.url && typeof visitorData.url === 'string' ? 
+                      (() => {
+                          try {
+                              return new URL(visitorData.url).hostname;
+                          } catch {
+                              return 'unknown';
+                          }
+                      })() : 'unknown'),
+            countryCode: countryCode,
+            riskScore: Math.min(finalScore, 100),
+            action,
+            confidence: Math.round(confidence),
+            threats: [...threats, ...(mlAnalysis.threatVector || [])],
+            responseTime,
+            timestamp: new Date().toISOString(),
+            mlInsights: mlAnalysis,
+            detectionMethods: {
+                behaviorAnalysis: behaviorScore,
+                mlAnalysis: mlScore,
+                combinedScore: finalScore,
+                threatsDetected: threats.length,
+                detectionTypes: {
+                    userAgent: threats.filter(t => t.includes('user agent') || t.includes('Automation tool')).length > 0,
+                    behavioral: threats.filter(t => t.includes('mouse') || t.includes('click') || t.includes('scroll')).length > 0,
+                    device: threats.filter(t => t.includes('WebDriver') || t.includes('plugin')).length > 0,
+                    geographic: threats.filter(t => t.includes('geographic')).length > 0
+                }
+            },
+            // Additional metadata for analytics with safe access
+            visitorMetadata: {
+                userAgent: (visitorData.userAgent && typeof visitorData.userAgent === 'string') ? 
+                          visitorData.userAgent.substring(0, 100) : null,
+                screenResolution: visitorData.screenResolution || null,
+                language: (visitorData.deviceFingerprint && visitorData.deviceFingerprint.language) || null,
+                timezone: (visitorData.deviceFingerprint && visitorData.deviceFingerprint.timezone) || null,
+                referrer: (visitorData.referrer && typeof visitorData.referrer === 'string') ? 
+                         (() => {
+                             try {
+                                 return new URL(visitorData.referrer).hostname;
+                             } catch {
+                                 return null;
+                             }
+                         })() : null
+            }
+        };
+        
+        // Record for analytics with publisher context (with error handling)
+        try {
+            if (typeof analytics !== 'undefined' && analytics.recordRequest) {
+                analytics.recordRequest(analysis, responseTime, visitorData.ipAddress || '192.168.1.1');
+            }
+        } catch (analyticsError) {
+            console.log('Analytics recording error:', analyticsError);
+        }
+        
+        // Check for alerts (with error handling)
+        try {
+            if (typeof alertEngine !== 'undefined' && alertEngine.checkAlerts) {
+                const currentMetrics = (typeof analytics !== 'undefined' && analytics.getAdvancedMetrics) ? 
+                                     analytics.getAdvancedMetrics() : {};
+                alertEngine.checkAlerts(currentMetrics);
+            }
+        } catch (alertError) {
+            console.log('Alert checking error:', alertError);
+        }
+        
+        // Store session with publisher association (with error handling)
+        try {
+            if (typeof sessions !== 'undefined' && sessions.set) {
+                sessions.set(sessionId, analysis);
+            }
+        } catch (sessionError) {
+            console.log('Session storage error:', sessionError);
+        }
+        
+        // Log high-risk sessions for monitoring
+        if (finalScore >= 80) {
+            console.log(`🚨 HIGH RISK SESSION: ${sessionId} - Publisher: ${publisherApiKey} - Score: ${finalScore}% - Action: ${action}`);
+        }
+        
+        return analysis;
+        
+    } catch (error) {
+        console.error('analyzeTraffic critical error:', error);
+        
+        // Return a safe fallback response
+        return {
+            sessionId,
+            publisherApiKey: publisherApiKey || 'unknown',
+            website: (visitorData && visitorData.website) || 'unknown',
+            countryCode: 'Unknown',
+            riskScore: 0,
+            action: 'allow',
+            confidence: 50,
+            threats: ['Analysis Error - Safe Fallback'],
+            responseTime: Date.now() - startTime,
+            timestamp: new Date().toISOString(),
+            error: 'Analysis failed safely',
+            mlInsights: {
+                mlRiskScore: 0,
+                confidence: 50,
+                threatVector: ['Error Fallback']
+            },
+            detectionMethods: {
+                behaviorAnalysis: 0,
+                mlAnalysis: 0,
+                combinedScore: 0,
+                threatsDetected: 0
+            }
+        };
     }
-    
-    return analysis;
 }
+
+// Helper function to extract country from IP (with error handling)
+function extractCountryFromIP(ipAddress) {
+    if (!ipAddress || typeof ipAddress !== 'string') return 'Unknown';
+    
+    try {
+        // Basic IP to country mapping (in production, use a proper GeoIP service)
+        const ipRanges = {
+            'US': ['192.168.', '10.0.', '172.16.'],
+            'CN': ['202.', '203.'],
+            'IN': ['117.', '118.'],
+            'RU': ['188.', '185.']
+        };
+        
+        for (const [country, ranges] of Object.entries(ipRanges)) {
+            if (ranges.some(range => ipAddress.startsWith(range))) {
+                return country;
+            }
+        }
+        
+        return 'Unknown';
+    } catch (error) {
+        console.log('IP country extraction error:', error);
+        return 'Unknown';
+    }
+}
+
 
 // Helper function to get publisher-specific geographic data
 function getPublisherGeographicData(publisherSessions) {
