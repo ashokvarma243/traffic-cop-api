@@ -1372,62 +1372,76 @@ module.exports = async (req, res) => {
             // Validate API key (your existing validation logic)
             if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
                 
-                // Get real statistics from actual traffic
+                // Get ONLY real statistics from actual traffic - NO FALLBACKS
                 const today = getTodayKey();
-                const todayStats = realTrafficData.dailyStats.get(today) || {
-                    totalRequests: 0,
-                    blockedBots: 0,
-                    allowedUsers: 0,
-                    threats: new Set()
-                };
-                
-                // Calculate real metrics with fallback to demo data
-                const totalRequests = todayStats.totalRequests || 1247;
-                const blockedBots = todayStats.blockedBots || 23;
-                const allowedUsers = todayStats.allowedUsers || 1224;
-                const riskScore = totalRequests > 0 ? ((blockedBots / totalRequests) * 100).toFixed(1) : 1.8;
-                
-                // Get recent real activity
+                const todayStats = realTrafficData.dailyStats.get(today);
+
+                // If NO real traffic today, return zeros
+                if (!todayStats) {
+                    res.status(200).json({
+                        website: 'dailyjobsindia.com',
+                        totalRequests: 0,
+                        blockedBots: 0,
+                        allowedUsers: 0,
+                        challengedUsers: 0,
+                        riskScore: 0,
+                        plan: 'Professional',
+                        protectionStatus: 'ACTIVE - Waiting for traffic',
+                        lastAnalysis: new Date().toISOString(),
+                        topThreats: [],
+                        recentActivity: [
+                            '✅ Traffic Cop protection system is active',
+                            '📊 Waiting for real traffic to analyze...',
+                            '🔍 All statistics will be based on actual detections'
+                        ]
+                    });
+                    return;
+                }
+
+                // Calculate ONLY real metrics - NO FALLBACKS
+                const totalRequests = todayStats.totalRequests;
+                const blockedBots = todayStats.blockedBots;
+                const allowedUsers = todayStats.allowedUsers;
+                const challengedUsers = todayStats.challengedUsers || 0;
+                const riskScore = totalRequests > 0 ? ((blockedBots / totalRequests) * 100).toFixed(1) : 0;
+
+                // Get ONLY real recent activity - NO FALLBACKS
                 const recentActivity = realTrafficData.detectionHistory
                     .slice(-5)
                     .reverse()
                     .map(event => {
                         const time = new Date(event.timestamp).toLocaleTimeString();
+                        const userAgentShort = event.userAgent.substring(0, 30) + '...';
+                        
                         if (event.action === 'block') {
-                            return `🚨 Blocked bot (risk: ${event.riskScore}) at ${time}`;
+                            return `🚨 BLOCKED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
                         } else if (event.action === 'challenge') {
-                            return `⚠️ Challenged user (risk: ${event.riskScore}) at ${time}`;
+                            return `⚠️ CHALLENGED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
                         } else {
-                            return `✅ Allowed user (risk: ${event.riskScore}) at ${time}`;
+                            return `✅ ALLOWED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
                         }
                     });
-                
-                // Return REAL analytics
+
+                // Return ONLY real analytics - NO FALLBACKS
                 res.status(200).json({
                     website: 'dailyjobsindia.com',
                     totalRequests: totalRequests,
                     blockedBots: blockedBots,
                     allowedUsers: allowedUsers,
+                    challengedUsers: challengedUsers,
                     riskScore: parseFloat(riskScore),
                     plan: 'Professional',
                     protectionStatus: 'ACTIVE',
                     lastAnalysis: new Date().toISOString(),
-                    topThreats: Array.from(todayStats.threats).slice(0, 4).length > 0 ? 
-                                Array.from(todayStats.threats).slice(0, 4) : [
-                        'Job scraper bots detected',
-                        'Content theft attempts blocked',
-                        'Click fraud networks identified',
-                        'SEO attack bots prevented'
-                    ],
+                    topThreats: Array.from(todayStats.threats),
                     recentActivity: recentActivity.length > 0 ? recentActivity : [
-                        '✅ Bot detection active on dailyjobsindia.com',
-                        '🛡️ Real-time protection monitoring traffic quality',
-                        '📈 Analytics collecting visitor behavior data',
-                        '🚨 Alert system monitoring for suspicious activity',
-                        '🔍 ML algorithms analyzing traffic patterns'
+                        '📊 No traffic analyzed yet today',
+                        '🔍 All statistics will show real detection results',
+                        '✅ Traffic Cop is ready to analyze incoming requests'
                     ]
                 });
                 return;
+
             }
             
             res.status(401).json({ error: 'Invalid API key' });
