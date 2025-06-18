@@ -737,9 +737,9 @@ module.exports = async (req, res) => {
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version');
     res.setHeader('Access-Control-Allow-Credentials', 'false');
-    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight for 24 hours
+    res.setHeader('Access-Control-Max-Age', '86400');
     
-    // Handle OPTIONS preflight request (CRITICAL FOR CORS)
+    // Handle OPTIONS preflight request (CRITICAL)
     if (req.method === 'OPTIONS') {
         res.status(200).end();
         return;
