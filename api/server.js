@@ -733,7 +733,7 @@ module.exports = async (req, res) => {
     console.log(`${req.method} ${req.url}`);
     
     // Complete CORS headers for cross-origin requests
-    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Origin', 'https://dailyjobsindia.com/');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version');
     res.setHeader('Access-Control-Allow-Credentials', 'false');
