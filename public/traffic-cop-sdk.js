@@ -1,4 +1,4 @@
-// Enhanced Traffic Cop SDK with Automatic Bot Detection
+// Enhanced Traffic Cop SDK with Automatic Bot Detection v2.0
 (function(window) {
     'use strict';
     
@@ -6,18 +6,22 @@
         constructor(apiKey, config = {}) {
             this.apiKey = apiKey;
             this.config = {
-                endpoint: config.endpoint || 'https://your-vercel-url.vercel.app/api/v1/analyze',
+                endpoint: config.endpoint || 'https://traffic-cop-apii.vercel.app/api/v1/analyze',
                 mode: config.mode || 'block',
                 blockThreshold: config.blockThreshold || 80,
                 challengeThreshold: config.challengeThreshold || 60,
                 debug: config.debug || false,
                 autoProtect: config.autoProtect !== false,
-                realTimeDetection: config.realTimeDetection !== false
+                realTimeDetection: config.realTimeDetection !== false,
+                showBlockMessage: config.showBlockMessage !== false,
+                retryAttempts: config.retryAttempts || 3,
+                timeout: config.timeout || 10000
             };
             
             this.sessionId = this.generateSessionId();
             this.startTime = Date.now();
             this.isBlocked = false;
+            this.retryCount = 0;
             this.behaviorData = {
                 mouseMovements: [],
                 clicks: [],
@@ -44,8 +48,14 @@
             // Generate device fingerprint
             this.generateDeviceFingerprint();
             
-            // Initial analysis
-            this.analyzeCurrentVisitor();
+            // Initial analysis after page loads
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', () => {
+                    setTimeout(() => this.analyzeCurrentVisitor(), 2000);
+                });
+            } else {
+                setTimeout(() => this.analyzeCurrentVisitor(), 2000);
+            }
             
             // Set up real-time monitoring
             if (this.config.realTimeDetection) {
@@ -220,14 +230,42 @@
                 deviceMemory: navigator.deviceMemory,
                 connection: navigator.connection ? {
                     effectiveType: navigator.connection.effectiveType,
-                    downlink: navigator.connection.downlink
-                } : null
+                    downlink: navigator.connection.downlink,
+                    rtt: navigator.connection.rtt
+                } : null,
+                localStorage: this.checkLocalStorage(),
+                sessionStorage: this.checkSessionStorage(),
+                indexedDB: this.checkIndexedDB()
             };
             
             this.behaviorData.deviceFingerprint = fingerprint;
             
             // Check for bot indicators in fingerprint
             this.checkDeviceBotIndicators(fingerprint);
+        }
+        
+        checkLocalStorage() {
+            try {
+                localStorage.setItem('tc_test', 'test');
+                localStorage.removeItem('tc_test');
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+        
+        checkSessionStorage() {
+            try {
+                sessionStorage.setItem('tc_test', 'test');
+                sessionStorage.removeItem('tc_test');
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+        
+        checkIndexedDB() {
+            return 'indexedDB' in window;
         }
         
         checkDeviceBotIndicators(fingerprint) {
@@ -250,7 +288,7 @@
             }
             
             // Check for bot user agents
-            const botKeywords = ['bot', 'crawler', 'spider', 'scraper', 'headless', 'phantom', 'selenium'];
+            const botKeywords = ['bot', 'crawler', 'spider', 'scraper', 'headless', 'phantom', 'selenium', 'python'];
             const userAgentLower = fingerprint.userAgent.toLowerCase();
             
             botKeywords.forEach(keyword => {
@@ -270,6 +308,12 @@
             if (!fingerprint.deviceMemory && !fingerprint.hardwareConcurrency) {
                 botScore += 20;
                 indicators.push('Missing hardware information');
+            }
+            
+            // Check for disabled storage
+            if (!fingerprint.localStorage || !fingerprint.sessionStorage) {
+                botScore += 15;
+                indicators.push('Storage disabled');
             }
             
             if (botScore > 50) {
@@ -364,20 +408,32 @@
                 if (this.config.debug) {
                     console.error('Traffic Cop error:', error);
                 }
+                
+                // Retry logic
+                if (this.retryCount < this.config.retryAttempts) {
+                    this.retryCount++;
+                    setTimeout(() => this.analyzeCurrentVisitor(forcedAnalysis), 2000 * this.retryCount);
+                }
             }
         }
-
-                // Add this method to your TrafficCopSDK class
+        
         async sendAnalysisRequest(visitorData) {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), this.config.timeout);
+            
             try {
                 const response = await fetch(this.config.endpoint, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
-                        'Authorization': `Bearer ${this.apiKey}`
+                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Origin': window.location.origin
                     },
-                    body: JSON.stringify(visitorData)
+                    body: JSON.stringify(visitorData),
+                    signal: controller.signal
                 });
+                
+                clearTimeout(timeoutId);
                 
                 if (!response.ok) {
                     throw new Error(`HTTP error! status: ${response.status}`);
@@ -386,13 +442,26 @@
                 return response;
                 
             } catch (error) {
+                clearTimeout(timeoutId);
+                
                 if (this.config.debug) {
                     console.error('Traffic Cop API Error:', error);
                 }
-                throw error;
+                
+                // Return fallback response for network errors
+                return {
+                    ok: false,
+                    status: 500,
+                    json: async () => ({
+                        action: 'allow', // Default to allow on error
+                        riskScore: 0,
+                        threats: ['Network Error'],
+                        sessionId: this.sessionId,
+                        confidence: 0
+                    })
+                };
             }
         }
-
         
         collectVisitorData() {
             return {
@@ -410,6 +479,7 @@
                 timestamp: this.startTime,
                 loadTime: Date.now() - this.startTime,
                 plugins: navigator.plugins.length,
+                jsEnabled: true,
                 
                 // Enhanced behavior data
                 behaviorData: {
@@ -487,7 +557,9 @@
                 case 'block':
                     if (this.config.mode === 'block') {
                         this.blockAds();
-                        this.showBlockMessage();
+                        if (this.config.showBlockMessage) {
+                            this.showBlockMessage();
+                        }
                         this.logEvent('ads_blocked', analysis);
                     }
                     break;
@@ -520,7 +592,7 @@
             const adSelectors = [
                 '[class*="ad-"]', '[id*="ad-"]', '[class*="advertisement"]',
                 '[class*="adsense"]', '[class*="google-ad"]', '.ad', '#ad',
-                '[class*="banner"]', '[id*="banner"]'
+                '[class*="banner"]', '[id*="banner"]', '[class*="ads"]'
             ];
             
             adSelectors.forEach(selector => {
@@ -545,8 +617,6 @@
         }
         
         showBlockMessage() {
-            if (this.config.showBlockMessage === false) return;
-            
             const message = document.createElement('div');
             message.id = 'traffic-cop-block-message';
             message.innerHTML = `
@@ -582,7 +652,7 @@
                         </p>
                         <p style="font-size: 0.9em; color: #999;">
                             Risk Score: ${analysis.riskScore}%<br>
-                            Detection: Automated behavior patterns
+                            Detection: ${analysis.threats.join(', ')}
                         </p>
                         <button onclick="window.trafficCop.passChallenge()" 
                                style="background: #4CAF50; color: white; border: none; padding: 15px 30px; 
@@ -630,19 +700,26 @@
                 console.log(`📊 Traffic Cop Event: ${eventType}`, data);
             }
             
-            const events = JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
-            events.push({
-                type: eventType,
-                data: data,
-                timestamp: Date.now(),
-                sessionId: this.sessionId
-            });
-            
-            if (events.length > 100) {
-                events.splice(0, events.length - 100);
+            try {
+                const events = JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
+                events.push({
+                    type: eventType,
+                    data: data,
+                    timestamp: Date.now(),
+                    sessionId: this.sessionId
+                });
+                
+                if (events.length > 100) {
+                    events.splice(0, events.length - 100);
+                }
+                
+                localStorage.setItem('trafficCopEvents', JSON.stringify(events));
+            } catch (e) {
+                // Handle localStorage errors gracefully
+                if (this.config.debug) {
+                    console.warn('Failed to store event:', e);
+                }
             }
-            
-            localStorage.setItem('trafficCopEvents', JSON.stringify(events));
         }
         
         triggerEvent(eventName, data) {
@@ -651,18 +728,25 @@
         }
         
         storeAnalysis(analysis) {
-            const stored = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
-            stored.push({
-                ...analysis,
-                timestamp: Date.now(),
-                url: window.location.href
-            });
-            
-            if (stored.length > 50) {
-                stored.splice(0, stored.length - 50);
+            try {
+                const stored = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
+                stored.push({
+                    ...analysis,
+                    timestamp: Date.now(),
+                    url: window.location.href
+                });
+                
+                if (stored.length > 50) {
+                    stored.splice(0, stored.length - 50);
+                }
+                
+                localStorage.setItem('trafficCopAnalytics', JSON.stringify(stored));
+            } catch (e) {
+                // Handle localStorage errors gracefully
+                if (this.config.debug) {
+                    console.warn('Failed to store analysis:', e);
+                }
             }
-            
-            localStorage.setItem('trafficCopAnalytics', JSON.stringify(stored));
         }
         
         generateSessionId() {
@@ -670,16 +754,47 @@
         }
         
         getStats() {
-            const analytics = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
-            const total = analytics.length;
-            const blocked = analytics.filter(a => a.action === 'block').length;
+            try {
+                const analytics = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
+                const total = analytics.length;
+                const blocked = analytics.filter(a => a.action === 'block').length;
+                
+                return {
+                    totalSessions: total,
+                    blockedSessions: blocked,
+                    blockRate: total > 0 ? Math.round((blocked / total) * 100) : 0,
+                    isCurrentlyBlocked: this.isBlocked
+                };
+            } catch (e) {
+                return {
+                    totalSessions: 0,
+                    blockedSessions: 0,
+                    blockRate: 0,
+                    isCurrentlyBlocked: this.isBlocked
+                };
+            }
+        }
+        
+        // Manual analysis method
+        analyze() {
+            return this.analyzeCurrentVisitor();
+        }
+        
+        // Get current visitor data
+        getVisitorData() {
+            return this.collectVisitorData();
+        }
+        
+        // Destroy SDK instance
+        destroy() {
+            this.isBlocked = false;
+            this.allowAds();
             
-            return {
-                totalSessions: total,
-                blockedSessions: blocked,
-                blockRate: total > 0 ? Math.round((blocked / total) * 100) : 0,
-                isCurrentlyBlocked: this.isBlocked
-            };
+            // Remove event listeners would go here if we stored references
+            // For now, just clear the instance
+            if (window.trafficCop === this) {
+                window.trafficCop = null;
+            }
         }
     }
     
@@ -689,7 +804,22 @@
             window.trafficCop = new TrafficCopSDK(apiKey, config);
             return window.trafficCop;
         },
-        version: '2.0.0'
+        version: '2.0.0',
+        SDK: TrafficCopSDK
     };
+    
+    // Auto-detect if API key is provided via data attribute
+    document.addEventListener('DOMContentLoaded', function() {
+        const scripts = document.getElementsByTagName('script');
+        for (let script of scripts) {
+            const apiKey = script.getAttribute('data-traffic-cop-key');
+            if (apiKey) {
+                new TrafficCopSDK(apiKey, {
+                    debug: script.getAttribute('data-debug') === 'true'
+                });
+                break;
+            }
+        }
+    });
     
 })(window);
