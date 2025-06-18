@@ -472,7 +472,7 @@ function analyzeTraffic(visitorData, publisherApiKey) {
         }
     }
         
-        // Enhanced behavior analysis with null checks
+            // Enhanced behavior analysis with null checks
     if (visitorData.behaviorData && typeof visitorData.behaviorData === 'object') {
         const behavior = visitorData.behaviorData;
         
@@ -523,6 +523,7 @@ function analyzeTraffic(visitorData, publisherApiKey) {
             }
         }
     }
+
 
 
     // Device fingerprint analysis
