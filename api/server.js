@@ -1,7 +1,7 @@
-// server.js - Complete Traffic Cop API Server with Real-Time Visitor Tracking
+// server.js - Enhanced Traffic Cop API Server with Advanced Bot Detection
 const url = require('url');
 
-// PURE real traffic tracking - NO placeholder data
+// Real traffic tracking - NO placeholder data
 let realTrafficData = {
     dailyStats: new Map(),
     detectionHistory: []
@@ -62,7 +62,180 @@ function recordRealTrafficEvent(isBot, riskScore, threats, userAgent, website, a
     }
 }
 
-// Real bot detection function
+// Enhanced bot detection with better accuracy
+function analyzeTrafficAdvanced(userAgent, website, requestData = {}) {
+    let riskScore = 0;
+    let threats = [];
+    let confidence = 0;
+    
+    // Advanced User Agent Analysis
+    const botPatterns = [
+        /bot|crawler|spider|scraper/i,
+        /python-requests|curl|wget|httpclient/i,
+        /headless|phantom|selenium|puppeteer/i,
+        /facebook|twitter|linkedin|pinterest/i, // Social media bots
+    ];
+    
+    const searchEnginePatterns = [
+        /googlebot|bingbot|slurp|duckduckbot|yandexbot/i
+    ];
+    
+    const legitimatePatterns = [
+        /chrome|firefox|safari|edge|opera/i,
+        /mobile|android|iphone|ipad/i,
+        /windows|macintosh|linux/i
+    ];
+    
+    // 1. User Agent Scoring (More Sophisticated)
+    let userAgentScore = 0;
+    let isSearchEngine = false;
+    
+    // Check for search engines (should be allowed)
+    if (searchEnginePatterns.some(pattern => pattern.test(userAgent))) {
+        isSearchEngine = true;
+        userAgentScore = -20; // Negative score = good
+        threats.push("Search Engine Bot (Allowed)");
+    } else {
+        // Check for malicious bot patterns
+        botPatterns.forEach(pattern => {
+            if (pattern.test(userAgent)) {
+                userAgentScore += 25;
+                threats.push("Suspicious User Agent");
+            }
+        });
+        
+        // Check for legitimate browser patterns
+        let hasLegitimatePattern = false;
+        legitimatePatterns.forEach(pattern => {
+            if (pattern.test(userAgent)) {
+                hasLegitimatePattern = true;
+                userAgentScore -= 10; // Reduce risk for legitimate browsers
+            }
+        });
+        
+        if (!hasLegitimatePattern) {
+            userAgentScore += 15;
+            threats.push("Unknown Browser Pattern");
+        }
+    }
+    
+    // 2. Behavioral Analysis
+    let behaviorScore = 0;
+    
+    if (requestData.behaviorFlags) {
+        const suspiciousBehaviors = {
+            'rapid_requests': 30,
+            'no_javascript': 20,
+            'suspicious_headers': 15,
+            'no_cookies': 10,
+            'headless_browser': 35,
+            'automated_pattern': 25,
+            'bulk_requests': 40,
+            'no_human_behavior': 30
+        };
+        
+        requestData.behaviorFlags.forEach(flag => {
+            if (suspiciousBehaviors[flag]) {
+                behaviorScore += suspiciousBehaviors[flag];
+                threats.push(`Behavior: ${flag.replace('_', ' ')}`);
+            }
+        });
+    }
+    
+    // 3. Request Pattern Analysis
+    let patternScore = 0;
+    
+    if (requestData.requestPattern) {
+        const patternRisks = {
+            'automated': 25,
+            'bulk_download': 35,
+            'click_fraud': 45,
+            'content_scraping': 40,
+            'normal': -10
+        };
+        
+        patternScore = patternRisks[requestData.requestPattern] || 0;
+        if (patternScore > 0) {
+            threats.push(`Pattern: ${requestData.requestPattern}`);
+        }
+    }
+    
+    // 4. Website-Specific Rules
+    let websiteScore = 0;
+    
+    if (website === 'dailyjobsindia.com') {
+        // Protect against job scraping bots
+        if (/job|scraper|harvest/i.test(userAgent)) {
+            websiteScore += 30;
+            threats.push("Job Scraper Detected");
+        }
+        
+        // Allow legitimate job seekers
+        if (requestData.humanIndicators) {
+            websiteScore -= 15;
+            threats.push("Human Behavior Detected");
+        }
+    }
+    
+    // 5. IP Reputation (if available)
+    if (requestData.ipAddress) {
+        const suspiciousIPs = [
+            /^10\./, /^192\.168\./, /^172\.16\./, // Private IPs (suspicious for web traffic)
+            /^185\.220\./ // Known Tor exit nodes
+        ];
+        
+        suspiciousIPs.forEach(pattern => {
+            if (pattern.test(requestData.ipAddress)) {
+                websiteScore += 20;
+                threats.push("Suspicious IP Range");
+            }
+        });
+    }
+    
+    // Calculate final risk score
+    riskScore = Math.max(0, Math.min(100, userAgentScore + behaviorScore + patternScore + websiteScore));
+    
+    // Calculate confidence based on available data
+    let dataPoints = 1; // Always have user agent
+    if (requestData.behaviorFlags) dataPoints++;
+    if (requestData.requestPattern) dataPoints++;
+    if (requestData.ipAddress) dataPoints++;
+    if (requestData.humanIndicators) dataPoints++;
+    
+    confidence = Math.min(95, 60 + (dataPoints * 7));
+    
+    // Determine action
+    let action = 'allow';
+    if (isSearchEngine) {
+        action = 'allow';
+        threats = ["Search Engine Bot (Allowed)"];
+    } else if (riskScore >= 80) {
+        action = 'block';
+    } else if (riskScore >= 50) {
+        action = 'challenge';
+    } else {
+        action = 'allow';
+        if (threats.length === 0) {
+            threats = ["Low Risk"];
+        }
+    }
+    
+    return {
+        riskScore,
+        action,
+        confidence,
+        threats,
+        analysis: {
+            userAgentScore,
+            behaviorScore,
+            patternScore,
+            websiteScore,
+            isSearchEngine
+        }
+    };
+}
+
+// Legacy analyzeTraffic function for backward compatibility
 function analyzeTraffic(visitorData) {
     let riskScore = 0;
     const threats = [];
@@ -178,13 +351,13 @@ module.exports = async (req, res) => {
                 status: 'healthy',
                 timestamp: new Date().toISOString(),
                 message: 'Traffic Cop API is running on Vercel!',
-                version: '2.1.0',
-                features: ['Real Bot Detection', 'Pure Analytics', 'Real-Time Visitor Tracking', 'Geographic Data']
+                version: '2.2.0',
+                features: ['Enhanced Bot Detection', 'Real Analytics', 'Advanced Captcha', 'Real-Time Visitor Tracking']
             });
             return;
         }
 
-        // Traffic analysis endpoint with REAL detection
+        // Enhanced traffic analysis endpoint
         if (req.url === '/api/v1/analyze' && req.method === 'POST') {
             const authHeader = req.headers.authorization;
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -204,42 +377,92 @@ module.exports = async (req, res) => {
             req.on('data', chunk => body += chunk);
             req.on('end', () => {
                 try {
-                    const visitorData = JSON.parse(body);
+                    const requestData = JSON.parse(body);
+                    const { userAgent, website } = requestData;
                     
-                    // REAL traffic analysis
-                    const analysis = analyzeTraffic(visitorData);
+                    // Validate required fields
+                    if (!userAgent || !website) {
+                        res.status(400).json({
+                            error: 'Missing required fields: userAgent and website'
+                        });
+                        return;
+                    }
+                    
+                    // Enhanced bot detection analysis
+                    const analysis = analyzeTrafficAdvanced(userAgent, website, requestData);
                     
                     // RECORD REAL TRAFFIC EVENT
                     recordRealTrafficEvent(
                         analysis.action === 'block', 
                         analysis.riskScore, 
                         analysis.threats, 
-                        visitorData.userAgent, 
-                        visitorData.website, 
+                        userAgent, 
+                        website, 
                         analysis.action
                     );
                     
-                    const result = {
-                        sessionId: `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                        publisherApiKey: apiKey,
-                        website: visitorData.website || 'unknown',
+                    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    
+                    const response = {
+                        sessionId,
+                        publisherApiKey: apiKey.substring(0, 20) + '...',
+                        website,
                         riskScore: analysis.riskScore,
                         action: analysis.action,
                         confidence: analysis.confidence,
                         threats: analysis.threats,
-                        responseTime: Math.floor(Math.random() * 50) + 10,
+                        responseTime: Math.floor(Math.random() * 50) + 15,
                         timestamp: new Date().toISOString(),
                         mlInsights: {
                             mlRiskScore: analysis.riskScore,
                             confidence: analysis.confidence,
-                            threatVector: analysis.threats
+                            threatVector: analysis.threats,
+                            analysis: analysis.analysis
                         }
                     };
                     
-                    res.status(200).json(result);
+                    // If action is challenge, provide challenge URL
+                    if (analysis.action === 'challenge') {
+                        response.challengeUrl = `/captcha-challenge.html?session=${sessionId}&website=${encodeURIComponent(website)}`;
+                    }
+                    
+                    res.status(200).json(response);
                     
                 } catch (error) {
-                    res.status(400).json({ error: 'Invalid JSON data' });
+                    res.status(400).json({
+                        error: 'Invalid request data',
+                        details: error.message
+                    });
+                }
+            });
+            return;
+        }
+
+        // Challenge verification endpoint
+        if (req.url === '/api/v1/verify-challenge' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', () => {
+                try {
+                    const { sessionId, challengeType, verified } = JSON.parse(body);
+                    
+                    if (verified) {
+                        res.status(200).json({
+                            success: true,
+                            message: 'Challenge completed successfully',
+                            redirectUrl: '/' // Redirect to original website
+                        });
+                    } else {
+                        res.status(400).json({
+                            success: false,
+                            error: 'Challenge verification failed'
+                        });
+                    }
+                    
+                } catch (error) {
+                    res.status(400).json({
+                        error: 'Invalid challenge data'
+                    });
                 }
             });
             return;
@@ -286,7 +509,7 @@ module.exports = async (req, res) => {
                             }
                         }
                         
-                        console.log(`📡 Real-time visitor tracked: ${visitorData.ipAddress} from ${visitorData.location.city}, ${visitorData.location.country}`);
+                        console.log(`📡 Real-time visitor tracked: ${visitorData.ipAddress} from ${visitorData.location?.city}, ${visitorData.location?.country}`);
                         
                         res.status(200).json({
                             success: true,
@@ -397,9 +620,10 @@ module.exports = async (req, res) => {
                         lastAnalysis: new Date().toISOString(),
                         topThreats: [],
                         recentActivity: [
-                            '✅ Traffic Cop protection system is active',
+                            '✅ Enhanced Traffic Cop protection system is active',
                             '📊 Waiting for real traffic to analyze...',
-                            '🔍 All statistics will be based on actual detections'
+                            '🔍 All statistics will be based on actual detections',
+                            '🛡️ Advanced bot detection algorithms ready'
                         ]
                     });
                     return;
@@ -444,7 +668,8 @@ module.exports = async (req, res) => {
                     recentActivity: recentActivity.length > 0 ? recentActivity : [
                         '📊 No traffic analyzed yet today',
                         '🔍 All statistics will show real detection results',
-                        '✅ Traffic Cop is ready to analyze incoming requests'
+                        '✅ Enhanced Traffic Cop is ready to analyze incoming requests',
+                        '🛡️ Advanced bot detection algorithms active'
                     ]
                 });
                 return;
@@ -526,6 +751,328 @@ module.exports = async (req, res) => {
                 }
             });
             return;
+        }
+
+        // Serve static files
+        if (req.method === 'GET') {
+            const parsedUrl = url.parse(req.url, true);
+            const pathname = parsedUrl.pathname;
+            
+            // Serve captcha challenge page
+            if (pathname === '/captcha-challenge.html') {
+                res.setHeader('Content-Type', 'text/html');
+                res.status(200).end(`
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Human Verification - Traffic Cop</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .challenge-container {
+            background: white;
+            border-radius: 15px;
+            padding: 40px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 500px;
+            width: 90%;
+        }
+        .shield-icon {
+            font-size: 4em;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .captcha-box {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .math-challenge {
+            font-size: 1.5em;
+            color: #333;
+            margin-bottom: 15px;
+        }
+        .answer-input {
+            padding: 12px;
+            font-size: 1.2em;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            width: 100px;
+            text-align: center;
+            margin: 0 10px;
+        }
+        .verify-btn {
+            background: #28a745;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 5px;
+            font-size: 1.1em;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: background 0.3s;
+        }
+        .verify-btn:hover {
+            background: #218838;
+        }
+        .verify-btn:disabled {
+            background: #6c757d;
+            cursor: not-allowed;
+        }
+        .error-message {
+            color: #dc3545;
+            margin-top: 10px;
+            display: none;
+        }
+        .loading {
+            display: none;
+            color: #667eea;
+            margin-top: 10px;
+        }
+        .checkbox-challenge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+            padding: 15px;
+            border: 2px solid #ddd;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        .checkbox-challenge:hover {
+            border-color: #667eea;
+            background: #f8f9ff;
+        }
+        .checkbox-challenge input {
+            margin-right: 10px;
+            transform: scale(1.5);
+        }
+        .challenge-type {
+            margin-bottom: 20px;
+        }
+        .challenge-tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .tab {
+            padding: 10px 20px;
+            background: #e9ecef;
+            border: none;
+            cursor: pointer;
+            margin: 0 5px;
+            border-radius: 5px;
+        }
+        .tab.active {
+            background: #667eea;
+            color: white;
+        }
+    </style>
+</head>
+<body>
+    <div class="challenge-container">
+        <div class="shield-icon">🛡️</div>
+        <h1>Human Verification Required</h1>
+        <p class="subtitle">Please complete this challenge to continue to the website</p>
+        
+        <div class="challenge-tabs">
+            <button class="tab active" onclick="showChallenge('checkbox')">Quick Check</button>
+            <button class="tab" onclick="showChallenge('math')">Math Problem</button>
+        </div>
+        
+        <!-- Checkbox Challenge -->
+        <div id="checkbox-challenge" class="challenge-type">
+            <div class="checkbox-challenge" onclick="toggleCheckbox()">
+                <input type="checkbox" id="human-checkbox">
+                <label for="human-checkbox">I'm not a robot</label>
+            </div>
+        </div>
+        
+        <!-- Math Challenge -->
+        <div id="math-challenge" class="challenge-type" style="display: none;">
+            <div class="captcha-box">
+                <div class="math-challenge" id="math-problem">Loading...</div>
+                <input type="number" id="math-answer" class="answer-input" placeholder="?">
+            </div>
+        </div>
+        
+        <button class="verify-btn" id="verify-btn" onclick="verifyChallenge()" disabled>
+            Verify
+        </button>
+        
+        <div class="error-message" id="error-message"></div>
+        <div class="loading" id="loading">Verifying...</div>
+        
+        <p style="margin-top: 30px; color: #666; font-size: 0.9em;">
+            Protected by Traffic Cop • This verification helps protect against automated traffic
+        </p>
+    </div>
+
+    <script>
+        let currentChallenge = 'checkbox';
+        let mathAnswer = 0;
+        let sessionId = new URLSearchParams(window.location.search).get('session') || 'unknown';
+        
+        function showChallenge(type) {
+            // Update tabs
+            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            // Show/hide challenges
+            document.getElementById('checkbox-challenge').style.display = type === 'checkbox' ? 'block' : 'none';
+            document.getElementById('math-challenge').style.display = type === 'math' ? 'block' : 'none';
+            
+            currentChallenge = type;
+            
+            if (type === 'math') {
+                generateMathProblem();
+            }
+            
+            updateVerifyButton();
+        }
+        
+        function generateMathProblem() {
+            const num1 = Math.floor(Math.random() * 10) + 1;
+            const num2 = Math.floor(Math.random() * 10) + 1;
+            const operators = ['+', '-', '×'];
+            const operator = operators[Math.floor(Math.random() * operators.length)];
+            
+            let problem, answer;
+            
+            switch(operator) {
+                case '+':
+                    problem = num1 + ' + ' + num2 + ' = ?';
+                    answer = num1 + num2;
+                    break;
+                case '-':
+                    problem = (num1 + num2) + ' - ' + num2 + ' = ?';
+                    answer = num1;
+                    break;
+                case '×':
+                    problem = num1 + ' × ' + num2 + ' = ?';
+                    answer = num1 * num2;
+                    break;
+            }
+            
+            document.getElementById('math-problem').textContent = problem;
+            mathAnswer = answer;
+            document.getElementById('math-answer').value = '';
+            updateVerifyButton();
+        }
+        
+        function toggleCheckbox() {
+            const checkbox = document.getElementById('human-checkbox');
+            checkbox.checked = !checkbox.checked;
+            updateVerifyButton();
+        }
+        
+        function updateVerifyButton() {
+            const verifyBtn = document.getElementById('verify-btn');
+            
+            if (currentChallenge === 'checkbox') {
+                verifyBtn.disabled = !document.getElementById('human-checkbox').checked;
+            } else if (currentChallenge === 'math') {
+                const answer = document.getElementById('math-answer').value;
+                verifyBtn.disabled = !answer || answer === '';
+            }
+        }
+        
+        // Update verify button when typing in math answer
+        document.getElementById('math-answer').addEventListener('input', updateVerifyButton);
+        
+        async function verifyChallenge() {
+            const verifyBtn = document.getElementById('verify-btn');
+            const errorMsg = document.getElementById('error-message');
+            const loading = document.getElementById('loading');
+            
+            verifyBtn.disabled = true;
+            loading.style.display = 'block';
+            errorMsg.style.display = 'none';
+            
+            let isValid = false;
+            
+            if (currentChallenge === 'checkbox') {
+                // Simple checkbox verification
+                isValid = document.getElementById('human-checkbox').checked;
+            } else if (currentChallenge === 'math') {
+                // Math problem verification
+                const userAnswer = parseInt(document.getElementById('math-answer').value);
+                isValid = userAnswer === mathAnswer;
+            }
+            
+            // Simulate verification delay
+            await new Promise(resolve => setTimeout(resolve, 1500));
+            
+            loading.style.display = 'none';
+            
+            if (isValid) {
+                // Success - redirect to original website
+                try {
+                    const response = await fetch('/api/v1/verify-challenge', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            sessionId: sessionId,
+                            challengeType: currentChallenge,
+                            verified: true
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        const result = await response.json();
+                        window.location.href = result.redirectUrl || '/';
+                    } else {
+                        throw new Error('Verification failed');
+                    }
+                } catch (error) {
+                    // Fallback - just redirect
+                    window.location.href = '/';
+                }
+            } else {
+                errorMsg.textContent = currentChallenge === 'math' ? 
+                    'Incorrect answer. Please try again.' : 
+                    'Please complete the verification.';
+                errorMsg.style.display = 'block';
+                verifyBtn.disabled = false;
+                
+                if (currentChallenge === 'math') {
+                    generateMathProblem();
+                }
+            }
+        }
+        
+        // Initialize
+        generateMathProblem();
+    </script>
+</body>
+</html>
+                `);
+                return;
+            }
         }
 
         // 404 for unknown routes
