@@ -1,11 +1,17 @@
-// server.js - Complete Traffic Cop API Server with ONLY Real Analytics
+// server.js - Complete Traffic Cop API Server with Real-Time Visitor Tracking
 const url = require('url');
+// For proxy/VPN lookup
+const fetch = require('node-fetch');  // npm install node-fetch
 
 // PURE real traffic tracking - NO placeholder data
 let realTrafficData = {
     dailyStats: new Map(),
     detectionHistory: []
 };
+
+// Real-time visitor tracking storage
+let realTimeVisitors = new Map();
+let visitorHistory = [];
 
 // Function to get today's key for daily statistics
 function getTodayKey() {
@@ -150,6 +156,19 @@ function analyzeTraffic(visitorData) {
     }
 }
 
+// Proxy/VPN detection via ipapi.co
+async function isProxyIP(ip) {
+  try {
+    const resp = await fetch(`https://ipapi.co/${ip}/json/`);
+    const data = await resp.json();
+    return data.security && (data.security.is_proxy || data.security.is_vpn || data.security.is_tor);
+  } catch (e) {
+    console.error('Proxy check error:', e);
+    return false;
+  }
+}
+
+
 // Main server function
 module.exports = async (req, res) => {
     console.log(`${req.method} ${req.url}`);
@@ -174,8 +193,8 @@ module.exports = async (req, res) => {
                 status: 'healthy',
                 timestamp: new Date().toISOString(),
                 message: 'Traffic Cop API is running on Vercel!',
-                version: '2.0.0',
-                features: ['Real Bot Detection', 'Pure Analytics', 'Zero Placeholder Data']
+                version: '2.1.0',
+                features: ['Real Bot Detection', 'Pure Analytics', 'Real-Time Visitor Tracking', 'Geographic Data']
             });
             return;
         }
@@ -238,6 +257,146 @@ module.exports = async (req, res) => {
                     res.status(400).json({ error: 'Invalid JSON data' });
                 }
             });
+            return;
+        }
+
+        // Real-time visitor tracking endpoint
+        if (req.url === '/api/v1/real-time-visitor' && req.method === 'POST') {
+            const authHeader = req.headers.authorization;
+            
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                res.status(401).json({ error: 'Missing authorization header' });
+                return;
+            }
+            
+            const apiKey = authHeader.substring(7);
+            
+            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', async () => {
+                    try {
+                        const visitorData = JSON.parse(body);
+
+                        // Block proxy/VPN users
+                        if (await isProxyIP(ip)) {
+                        recordRealTrafficEvent(
+                            true,                  // isBot
+                            85,                    // riskScore
+                            ['proxy/VPN detected'],// threats
+                            visitorData.userAgent,
+                            visitorData.website,
+                            'block'
+                        );
+                        return res.status(403).json({
+                            success: false,
+                            message: 'Blocked due to proxy/VPN usage'
+                        });
+                        }
+
+                        
+                        // Store real-time visitor
+                        realTimeVisitors.set(visitorData.sessionId, {
+                            ...visitorData,
+                            lastSeen: Date.now(),
+                            isOnline: true
+                        });
+                        
+                        // Add to history
+                        visitorHistory.push(visitorData);
+                        
+                        // Keep only last 1000 visitors
+                        if (visitorHistory.length > 1000) {
+                            visitorHistory.shift();
+                        }
+                        
+                        // Clean up offline visitors (older than 5 minutes)
+                        const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+                        for (const [sessionId, visitor] of realTimeVisitors.entries()) {
+                            if (visitor.lastSeen < fiveMinutesAgo) {
+                                realTimeVisitors.delete(sessionId);
+                            }
+                        }
+                        
+                        console.log(`📡 Real-time visitor tracked: ${visitorData.ipAddress} from ${visitorData.location.city}, ${visitorData.location.country}`);
+                        
+                        res.status(200).json({
+                            success: true,
+                            message: 'Visitor tracked successfully',
+                            sessionId: visitorData.sessionId
+                        });
+                        
+                    } catch (error) {
+                        res.status(400).json({ error: 'Invalid visitor data' });
+                    }
+                });
+                return;
+            }
+            
+            res.status(401).json({ error: 'Invalid API key' });
+            return;
+        }
+
+        // Real-time dashboard endpoint
+        if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
+            const authHeader = req.headers.authorization;
+            
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                res.status(401).json({ error: 'Missing authorization header' });
+                return;
+            }
+            
+            const apiKey = authHeader.substring(7);
+            
+            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+                
+                // Get current online visitors
+                const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+                const onlineVisitors = Array.from(realTimeVisitors.values())
+                    .filter(visitor => visitor.lastSeen > fiveMinutesAgo)
+                    .sort((a, b) => b.lastSeen - a.lastSeen);
+                
+                // Get recent visitor history (last 24 hours)
+                const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
+                const recentVisitors = visitorHistory
+                    .filter(visitor => new Date(visitor.timestamp).getTime() > twentyFourHoursAgo)
+                    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                
+                // Generate geographic statistics
+                const countryStats = {};
+                const cityStats = {};
+                
+                recentVisitors.forEach(visitor => {
+                    if (visitor.location) {
+                        const country = visitor.location.country || 'Unknown';
+                        const city = `${visitor.location.city || 'Unknown'}, ${visitor.location.country || 'Unknown'}`;
+                        
+                        countryStats[country] = (countryStats[country] || 0) + 1;
+                        cityStats[city] = (cityStats[city] || 0) + 1;
+                    }
+                });
+                
+                res.status(200).json({
+                    timestamp: new Date().toISOString(),
+                    onlineVisitors: onlineVisitors,
+                    onlineCount: onlineVisitors.length,
+                    recentVisitors: recentVisitors.slice(0, 50), // Last 50 visitors
+                    totalVisitors24h: recentVisitors.length,
+                    geographicStats: {
+                        countries: Object.entries(countryStats)
+                            .sort(([,a], [,b]) => b - a)
+                            .slice(0, 10)
+                            .map(([country, count]) => ({ country, count })),
+                        cities: Object.entries(cityStats)
+                            .sort(([,a], [,b]) => b - a)
+                            .slice(0, 10)
+                            .map(([city, count]) => ({ city, count }))
+                    }
+                });
+                return;
+            }
+            
+            res.status(401).json({ error: 'Invalid API key' });
             return;
         }
 

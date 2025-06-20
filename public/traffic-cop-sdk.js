@@ -1,4 +1,4 @@
-// Enhanced Traffic Cop SDK with Automatic Bot Detection v2.0
+// Enhanced Traffic Cop SDK with Real-Time Visitor Tracking v2.1
 (function(window) {
     'use strict';
     
@@ -15,7 +15,8 @@
                 realTimeDetection: config.realTimeDetection !== false,
                 showBlockMessage: config.showBlockMessage !== false,
                 retryAttempts: config.retryAttempts || 3,
-                timeout: config.timeout || 10000
+                timeout: config.timeout || 10000,
+                enableRealTimeTracking: config.enableRealTimeTracking !== false
             };
             
             this.sessionId = this.generateSessionId();
@@ -32,6 +33,15 @@
                 deviceFingerprint: null
             };
             
+            // Real-time visitor tracking data
+            this.visitorSession = {
+                startTime: Date.now(),
+                pageViews: [],
+                interactions: 0,
+                ipData: null,
+                geoData: null
+            };
+            
             if (this.config.autoProtect) {
                 this.init();
             }
@@ -40,6 +50,11 @@
         init() {
             if (this.config.debug) {
                 console.log('🛡️ Traffic Cop SDK initialized with automatic bot detection', this.config);
+            }
+            
+            // Initialize real-time visitor tracking first
+            if (this.config.enableRealTimeTracking) {
+                this.initRealTimeTracking();
             }
             
             // Start comprehensive behavior tracking
@@ -60,6 +75,172 @@
             // Set up real-time monitoring
             if (this.config.realTimeDetection) {
                 this.setupRealTimeMonitoring();
+            }
+        }
+        
+        // Real-time visitor tracking initialization
+        async initRealTimeTracking() {
+            try {
+                console.log('🌍 Initializing real-time visitor tracking...');
+                await this.getVisitorIPAndLocation();
+                this.setupRealTimeVisitorTracking();
+                console.log('✅ Real-time visitor tracking active');
+            } catch (error) {
+                console.warn('⚠️ Real-time tracking initialization failed:', error);
+            }
+        }
+        
+        // Get visitor's real IP address and geographic data
+        async getVisitorIPAndLocation() {
+            try {
+                // Method 1: Use ipapi.co for IP and location
+                const ipResponse = await fetch('https://ipapi.co/json/');
+                const ipData = await ipResponse.json();
+                
+                this.visitorSession.ipData = {
+                    ip: ipData.ip,
+                    city: ipData.city,
+                    region: ipData.region,
+                    country: ipData.country_name,
+                    countryCode: ipData.country_code,
+                    latitude: ipData.latitude,
+                    longitude: ipData.longitude,
+                    timezone: ipData.timezone,
+                    isp: ipData.org,
+                    postal: ipData.postal
+                };
+                
+                if (this.config.debug) {
+                    console.log('🌍 Visitor location detected:', this.visitorSession.ipData);
+                }
+                
+                return this.visitorSession.ipData;
+                
+            } catch (error) {
+                if (this.config.debug) {
+                    console.warn('⚠️ IP detection failed, using fallback');
+                }
+                
+                // Fallback method
+                try {
+                    const fallbackResponse = await fetch('https://api.ipify.org?format=json');
+                    const fallbackData = await fallbackResponse.json();
+                    
+                    this.visitorSession.ipData = {
+                        ip: fallbackData.ip,
+                        city: 'Unknown',
+                        region: 'Unknown',
+                        country: 'Unknown',
+                        countryCode: 'XX',
+                        latitude: 0,
+                        longitude: 0,
+                        timezone: 'Unknown',
+                        isp: 'Unknown',
+                        postal: 'Unknown'
+                    };
+                    
+                    return this.visitorSession.ipData;
+                } catch (fallbackError) {
+                    console.error('❌ All IP detection methods failed');
+                    return null;
+                }
+            }
+        }
+        
+        // Setup real-time visitor tracking
+        setupRealTimeVisitorTracking() {
+            // Track page views
+            this.trackPageView();
+            
+            // Send initial visitor data
+            this.sendRealTimeVisitorData('page_load');
+            
+            // Track page visibility changes
+            document.addEventListener('visibilitychange', () => {
+                if (!document.hidden) {
+                    this.sendRealTimeVisitorData('page_focus');
+                }
+            });
+            
+            // Send periodic updates
+            setInterval(() => {
+                this.sendRealTimeVisitorData('periodic_update');
+            }, 30000); // Every 30 seconds
+        }
+        
+        // Track page views
+        trackPageView() {
+            this.visitorSession.pageViews.push({
+                url: window.location.href,
+                title: document.title,
+                timestamp: Date.now()
+            });
+            
+            this.sendRealTimeVisitorData('page_view');
+        }
+        
+        // Send real-time visitor data to dashboard
+        async sendRealTimeVisitorData(trigger) {
+            if (!this.visitorSession.ipData) {
+                if (this.config.debug) {
+                    console.warn('⚠️ No IP data available for real-time tracking');
+                }
+                return;
+            }
+            
+            const visitorData = {
+                sessionId: `visitor_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                timestamp: new Date().toISOString(),
+                trigger: trigger,
+                website: window.location.hostname,
+                url: window.location.href,
+                referrer: document.referrer,
+                
+                // Real IP and geographic data
+                ipAddress: this.visitorSession.ipData.ip,
+                location: {
+                    city: this.visitorSession.ipData.city,
+                    region: this.visitorSession.ipData.region,
+                    country: this.visitorSession.ipData.country,
+                    countryCode: this.visitorSession.ipData.countryCode,
+                    latitude: this.visitorSession.ipData.latitude,
+                    longitude: this.visitorSession.ipData.longitude,
+                    timezone: this.visitorSession.ipData.timezone,
+                    isp: this.visitorSession.ipData.isp,
+                    postal: this.visitorSession.ipData.postal
+                },
+                
+                // Browser and device data
+                userAgent: navigator.userAgent,
+                language: navigator.language,
+                platform: navigator.platform,
+                screenResolution: `${screen.width}x${screen.height}`,
+                
+                // Session data
+                timeOnPage: Math.round((Date.now() - this.visitorSession.startTime) / 1000),
+                interactions: this.visitorSession.interactions,
+                pageViews: this.visitorSession.pageViews.length
+            };
+            
+            try {
+                // Send to Traffic Cop real-time API
+                const response = await fetch('https://traffic-cop-apii.vercel.app/api/v1/real-time-visitor', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${this.apiKey}`
+                    },
+                    body: JSON.stringify(visitorData)
+                });
+                
+                if (response.ok && this.config.debug) {
+                    console.log('📡 Real-time visitor data sent successfully');
+                }
+                
+            } catch (error) {
+                if (this.config.debug) {
+                    console.warn('⚠️ Failed to send real-time data:', error);
+                }
             }
         }
         
@@ -99,6 +280,7 @@
                 });
                 
                 this.behaviorData.pageInteractions++;
+                this.visitorSession.interactions++; // Also track for real-time
                 
                 // Keep only last 20 clicks
                 if (this.behaviorData.clicks.length > 20) {
@@ -107,6 +289,11 @@
                 
                 // Check for rapid clicking (bot behavior)
                 this.checkRapidClicking();
+                
+                // Send real-time update on interactions
+                if (this.visitorSession.interactions % 5 === 0) {
+                    this.sendRealTimeVisitorData('user_interaction');
+                }
             });
             
             // Track scroll behavior
@@ -464,7 +651,7 @@
         }
         
         collectVisitorData() {
-            return {
+            const baseData = {
                 sessionId: this.sessionId,
                 url: window.location.href,
                 website: window.location.hostname,
@@ -499,6 +686,28 @@
                 // Device fingerprint
                 deviceFingerprint: this.behaviorData.deviceFingerprint
             };
+            
+            // Add real-time visitor data if available
+            if (this.visitorSession.ipData) {
+                baseData.realTimeData = {
+                    ipAddress: this.visitorSession.ipData.ip,
+                    location: {
+                        city: this.visitorSession.ipData.city,
+                        region: this.visitorSession.ipData.region,
+                        country: this.visitorSession.ipData.country,
+                        countryCode: this.visitorSession.ipData.countryCode,
+                        latitude: this.visitorSession.ipData.latitude,
+                        longitude: this.visitorSession.ipData.longitude,
+                        timezone: this.visitorSession.ipData.timezone,
+                        isp: this.visitorSession.ipData.isp,
+                        postal: this.visitorSession.ipData.postal
+                    },
+                    pageViews: this.visitorSession.pageViews.length,
+                    sessionInteractions: this.visitorSession.interactions
+                };
+            }
+            
+            return baseData;
         }
         
         calculateMouseVariation() {
@@ -785,6 +994,11 @@
             return this.collectVisitorData();
         }
         
+        // Get real-time visitor data
+        getRealTimeData() {
+            return this.visitorSession;
+        }
+        
         // Destroy SDK instance
         destroy() {
             this.isBlocked = false;
@@ -804,7 +1018,7 @@
             window.trafficCop = new TrafficCopSDK(apiKey, config);
             return window.trafficCop;
         },
-        version: '2.0.0',
+        version: '2.1.0',
         SDK: TrafficCopSDK
     };
     
