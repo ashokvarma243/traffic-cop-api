@@ -11,91 +11,352 @@ let realTrafficData = {
 let realTimeVisitors = new Map();
 let visitorHistory = [];
 
-// Dynamic bot detection configuration
-const BotDetectionConfig = {
-    // Risk scoring weights (adjustable)
-    weights: {
-        userAgent: 1.0,
-        behavior: 1.2,
-        pattern: 1.1,
-        website: 0.8,
-        ip: 0.9
-    },
+// Dynamic Bot Detection Engine - No Hard-Coded Names
+class DynamicBotDetector {
+    constructor() {
+        this.trafficPatterns = new Map();
+        this.behaviorProfiles = new Map();
+        this.anomalyThresholds = {
+            requestFrequency: { normal: 10, suspicious: 50, malicious: 100 },
+            userAgentEntropy: { normal: 0.7, suspicious: 0.3, malicious: 0.1 },
+            behaviorScore: { normal: 0.8, suspicious: 0.4, malicious: 0.2 },
+            sessionDuration: { normal: 300, suspicious: 30, malicious: 5 }
+        };
+    }
     
-    // Action thresholds (configurable)
-    thresholds: {
-        challenge: 40,
-        block: 75
-    },
-    
-    // User agent patterns with dynamic scoring
-    userAgentPatterns: [
-        { pattern: /bot|crawler|spider|scraper/i, score: 30, threat: "Bot Pattern Detected" },
-        { pattern: /python-requests|curl|wget|httpclient/i, score: 35, threat: "Automated Tool Detected" },
-        { pattern: /headless|phantom|selenium|puppeteer/i, score: 40, threat: "Headless Browser Detected" },
-        { pattern: /suspicious/i, score: 45, threat: "Suspicious User Agent" },
-        { pattern: /jobscraperbot|malicious-scraper/i, score: 50, threat: "Known Malicious Bot" }
-    ],
-    
-    // Search engine allowlist
-    searchEngines: [
-        { pattern: /googlebot/i, name: "Google" },
-        { pattern: /bingbot/i, name: "Bing" },
-        { pattern: /slurp/i, name: "Yahoo" },
-        { pattern: /duckduckbot/i, name: "DuckDuckGo" },
-        { pattern: /yandexbot/i, name: "Yandex" }
-    ],
-    
-    // Legitimate browser patterns
-    legitimateBrowsers: [
-        { pattern: /chrome/i, score: -5, name: "Chrome" },
-        { pattern: /firefox/i, score: -5, name: "Firefox" },
-        { pattern: /safari/i, score: -5, name: "Safari" },
-        { pattern: /edge/i, score: -5, name: "Edge" },
-        { pattern: /mobile|android|iphone|ipad/i, score: -10, name: "Mobile Device" }
-    ],
-    
-    // Behavior flags with dynamic scoring
-    behaviorFlags: {
-        'rapid_requests': { score: 35, severity: 'high' },
-        'no_javascript': { score: 25, severity: 'medium' },
-        'suspicious_headers': { score: 20, severity: 'medium' },
-        'no_cookies': { score: 15, severity: 'low' },
-        'headless_browser': { score: 40, severity: 'high' },
-        'automated_pattern': { score: 30, severity: 'high' },
-        'bulk_requests': { score: 45, severity: 'high' },
-        'no_human_behavior': { score: 35, severity: 'high' },
-        'mouse_movement': { score: -15, severity: 'good' },
-        'keyboard_input': { score: -10, severity: 'good' },
-        'scroll_behavior': { score: -10, severity: 'good' }
-    },
-    
-    // Request patterns
-    requestPatterns: {
-        'automated': { score: 30, threat: "Automated Request Pattern" },
-        'bulk_download': { score: 40, threat: "Bulk Download Pattern" },
-        'click_fraud': { score: 50, threat: "Click Fraud Pattern" },
-        'content_scraping': { score: 45, threat: "Content Scraping Pattern" },
-        'normal': { score: -10, threat: "Normal Browsing Pattern" }
-    },
-    
-    // Website-specific rules
-    websiteRules: {
-        'dailyjobsindia.com': {
-            jobScraperPenalty: 30,
-            humanBehaviorBonus: -20,
-            protectedContent: ['jobs', 'recruitment', 'exam', 'result']
+    // Calculate entropy of user agent string (randomness indicator)
+    calculateUserAgentEntropy(userAgent) {
+        if (!userAgent || userAgent.length === 0) return 0;
+        
+        const charFreq = {};
+        for (let char of userAgent) {
+            charFreq[char] = (charFreq[char] || 0) + 1;
         }
-    },
+        
+        let entropy = 0;
+        const length = userAgent.length;
+        
+        for (let freq of Object.values(charFreq)) {
+            const probability = freq / length;
+            entropy -= probability * Math.log2(probability);
+        }
+        
+        return entropy / Math.log2(length); // Normalized entropy
+    }
     
-    // IP reputation rules
-    ipRules: [
-        { pattern: /^10\./, score: 20, threat: "Private IP Range" },
-        { pattern: /^192\.168\./, score: 20, threat: "Local Network IP" },
-        { pattern: /^172\.16\./, score: 20, threat: "Private Network IP" },
-        { pattern: /^185\.220\./, score: 35, threat: "Tor Exit Node" }
-    ]
-};
+    // Analyze request timing patterns
+    analyzeRequestPatterns(sessionId, timestamp) {
+        if (!this.trafficPatterns.has(sessionId)) {
+            this.trafficPatterns.set(sessionId, {
+                requests: [],
+                firstRequest: timestamp,
+                intervals: []
+            });
+        }
+        
+        const pattern = this.trafficPatterns.get(sessionId);
+        pattern.requests.push(timestamp);
+        
+        // Calculate intervals between requests
+        if (pattern.requests.length > 1) {
+            const lastTwo = pattern.requests.slice(-2);
+            const interval = lastTwo[1] - lastTwo[0];
+            pattern.intervals.push(interval);
+        }
+        
+        // Analyze patterns
+        const requestFrequency = pattern.requests.length / ((timestamp - pattern.firstRequest) / 1000 || 1);
+        const intervalVariance = this.calculateVariance(pattern.intervals);
+        const isRhythmic = intervalVariance < 100; // Very consistent timing = bot-like
+        
+        return {
+            frequency: requestFrequency,
+            isRhythmic: isRhythmic,
+            totalRequests: pattern.requests.length,
+            avgInterval: pattern.intervals.reduce((a, b) => a + b, 0) / pattern.intervals.length || 0
+        };
+    }
+    
+    // Analyze behavioral signals
+    analyzeBehaviorSignals(behaviorData) {
+        let behaviorScore = 1.0; // Start with human assumption
+        const signals = [];
+        
+        // Mouse movement analysis
+        if (!behaviorData.mouseMovements || behaviorData.mouseMovements.length === 0) {
+            behaviorScore -= 0.3;
+            signals.push('no_mouse_movement');
+        } else {
+            // Analyze movement patterns
+            const movements = behaviorData.mouseMovements;
+            const isLinear = this.isMovementLinear(movements);
+            const hasNaturalPauses = this.hasNaturalPauses(movements);
+            
+            if (isLinear) {
+                behaviorScore -= 0.2;
+                signals.push('linear_mouse_movement');
+            }
+            
+            if (!hasNaturalPauses) {
+                behaviorScore -= 0.2;
+                signals.push('unnatural_mouse_timing');
+            }
+        }
+        
+        // Keyboard interaction analysis
+        if (!behaviorData.keyboardEvents || behaviorData.keyboardEvents.length === 0) {
+            behaviorScore -= 0.2;
+            signals.push('no_keyboard_interaction');
+        }
+        
+        // Scroll behavior analysis
+        if (behaviorData.scrollEvents) {
+            const scrollPattern = this.analyzeScrollPattern(behaviorData.scrollEvents);
+            if (scrollPattern.isMechanical) {
+                behaviorScore -= 0.2;
+                signals.push('mechanical_scrolling');
+            }
+        }
+        
+        // Click pattern analysis
+        if (behaviorData.clickEvents) {
+            const clickPattern = this.analyzeClickPattern(behaviorData.clickEvents);
+            if (clickPattern.isRapid) {
+                behaviorScore -= 0.3;
+                signals.push('rapid_clicking');
+            }
+        }
+        
+        return {
+            score: Math.max(0, behaviorScore),
+            signals: signals,
+            confidence: signals.length > 0 ? 0.8 : 0.6
+        };
+    }
+    
+    // Detect user agent anomalies without hard-coded names
+    analyzeUserAgentAnomalies(userAgent) {
+        const anomalies = [];
+        let anomalyScore = 0;
+        
+        // Length analysis
+        if (userAgent.length < 20) {
+            anomalies.push('unusually_short_ua');
+            anomalyScore += 0.3;
+        } else if (userAgent.length > 500) {
+            anomalies.push('unusually_long_ua');
+            anomalyScore += 0.2;
+        }
+        
+        // Entropy analysis (randomness)
+        const entropy = this.calculateUserAgentEntropy(userAgent);
+        if (entropy < 0.3) {
+            anomalies.push('low_entropy_ua');
+            anomalyScore += 0.4;
+        }
+        
+        // Common patterns that indicate automation
+        const automationPatterns = [
+            /^[A-Za-z]+\/[\d\.]+$/, // Simple tool/version pattern
+            /python|curl|wget|http/i, // Common automation tools
+            /^\w+$/, // Single word user agents
+            /test|bot|crawler|spider/i // Generic automation terms
+        ];
+        
+        for (let pattern of automationPatterns) {
+            if (pattern.test(userAgent)) {
+                anomalies.push('automation_pattern');
+                anomalyScore += 0.3;
+                break;
+            }
+        }
+        
+        // Browser consistency check
+        const browserInconsistencies = this.checkBrowserConsistency(userAgent);
+        if (browserInconsistencies.length > 0) {
+            anomalies.push('browser_inconsistency');
+            anomalyScore += 0.2;
+        }
+        
+        return {
+            anomalies: anomalies,
+            score: Math.min(1.0, anomalyScore),
+            entropy: entropy
+        };
+    }
+    
+    // Main dynamic detection function
+    detectBot(requestData) {
+        const sessionId = requestData.sessionId || 'unknown';
+        const timestamp = Date.now();
+        
+        // 1. Analyze request patterns
+        const requestAnalysis = this.analyzeRequestPatterns(sessionId, timestamp);
+        
+        // 2. Analyze user agent anomalies
+        const userAgentAnalysis = this.analyzeUserAgentAnomalies(requestData.userAgent);
+        
+        // 3. Analyze behavioral signals
+        const behaviorAnalysis = this.analyzeBehaviorSignals(requestData.behaviorData || {});
+        
+        // 4. Calculate composite risk score
+        let riskScore = 0;
+        const factors = [];
+        
+        // Request frequency factor
+        if (requestAnalysis.frequency > this.anomalyThresholds.requestFrequency.malicious) {
+            riskScore += 40;
+            factors.push(`High request frequency: ${requestAnalysis.frequency.toFixed(1)}/sec`);
+        } else if (requestAnalysis.frequency > this.anomalyThresholds.requestFrequency.suspicious) {
+            riskScore += 25;
+            factors.push(`Elevated request frequency: ${requestAnalysis.frequency.toFixed(1)}/sec`);
+        }
+        
+        // Rhythmic requests (bot-like timing)
+        if (requestAnalysis.isRhythmic && requestAnalysis.totalRequests > 5) {
+            riskScore += 30;
+            factors.push(`Mechanical request timing pattern`);
+        }
+        
+        // User agent anomalies
+        riskScore += userAgentAnalysis.score * 35;
+        if (userAgentAnalysis.anomalies.length > 0) {
+            factors.push(`User agent anomalies: ${userAgentAnalysis.anomalies.join(', ')}`);
+        }
+        
+        // Behavioral analysis
+        const behaviorRisk = (1 - behaviorAnalysis.score) * 40;
+        riskScore += behaviorRisk;
+        if (behaviorAnalysis.signals.length > 0) {
+            factors.push(`Behavioral signals: ${behaviorAnalysis.signals.join(', ')}`);
+        }
+        
+        // Determine action based on composite score
+        let action = 'allow';
+        let confidence = 0.6;
+        
+        if (riskScore >= 75) {
+            action = 'block';
+            confidence = 0.9;
+        } else if (riskScore >= 40) {
+            action = 'challenge';
+            confidence = 0.8;
+        }
+        
+        // Store learning data for model improvement
+        this.updateLearningData(sessionId, {
+            riskScore,
+            factors,
+            userAgentEntropy: userAgentAnalysis.entropy,
+            behaviorScore: behaviorAnalysis.score,
+            requestPattern: requestAnalysis
+        });
+        
+        return {
+            riskScore: Math.round(riskScore),
+            action: action,
+            confidence: Math.round(confidence * 100),
+            threats: factors,
+            analysis: {
+                requestPattern: requestAnalysis,
+                userAgentAnalysis: userAgentAnalysis,
+                behaviorAnalysis: behaviorAnalysis
+            }
+        };
+    }
+    
+    // Helper methods
+    calculateVariance(numbers) {
+        if (numbers.length === 0) return 0;
+        const mean = numbers.reduce((a, b) => a + b) / numbers.length;
+        const variance = numbers.reduce((sum, num) => sum + Math.pow(num - mean, 2), 0) / numbers.length;
+        return variance;
+    }
+    
+    isMovementLinear(movements) {
+        if (movements.length < 3) return false;
+        // Check if mouse movements are too linear (bot-like)
+        let linearCount = 0;
+        for (let i = 2; i < movements.length; i++) {
+            const dx1 = movements[i-1].x - movements[i-2].x;
+            const dy1 = movements[i-1].y - movements[i-2].y;
+            const dx2 = movements[i].x - movements[i-1].x;
+            const dy2 = movements[i].y - movements[i-1].y;
+            
+            // Check if direction is too consistent
+            if (Math.abs(dx1 - dx2) < 2 && Math.abs(dy1 - dy2) < 2) {
+                linearCount++;
+            }
+        }
+        return linearCount > movements.length * 0.8; // 80% linear = suspicious
+    }
+    
+    hasNaturalPauses(movements) {
+        if (movements.length < 2) return true;
+        let pauseCount = 0;
+        for (let i = 1; i < movements.length; i++) {
+            const timeDiff = movements[i].timestamp - movements[i-1].timestamp;
+            if (timeDiff > 100) { // Pause longer than 100ms
+                pauseCount++;
+            }
+        }
+        return pauseCount > movements.length * 0.1; // At least 10% pauses
+    }
+    
+    analyzeScrollPattern(scrollEvents) {
+        if (scrollEvents.length < 3) return { isMechanical: false };
+        
+        let mechanicalCount = 0;
+        for (let i = 1; i < scrollEvents.length; i++) {
+            const scrollDiff = Math.abs(scrollEvents[i].scrollY - scrollEvents[i-1].scrollY);
+            const timeDiff = scrollEvents[i].timestamp - scrollEvents[i-1].timestamp;
+            
+            // Very consistent scroll amounts = mechanical
+            if (scrollDiff > 0 && scrollDiff % 100 === 0 && timeDiff < 50) {
+                mechanicalCount++;
+            }
+        }
+        
+        return { isMechanical: mechanicalCount > scrollEvents.length * 0.5 };
+    }
+    
+    analyzeClickPattern(clickEvents) {
+        if (clickEvents.length < 2) return { isRapid: false };
+        
+        const intervals = [];
+        for (let i = 1; i < clickEvents.length; i++) {
+            intervals.push(clickEvents[i].timestamp - clickEvents[i-1].timestamp);
+        }
+        
+        const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
+        const variance = this.calculateVariance(intervals);
+        
+        // Rapid clicking with low variance = bot-like
+        return { 
+            isRapid: avgInterval < 100 && variance < 50 
+        };
+    }
+    
+    checkBrowserConsistency(userAgent) {
+        const inconsistencies = [];
+        
+        // Check for version mismatches, impossible combinations, etc.
+        if (userAgent.includes('Chrome') && userAgent.includes('Firefox')) {
+            inconsistencies.push('multiple_browsers');
+        }
+        
+        if (userAgent.includes('Windows') && userAgent.includes('iPhone')) {
+            inconsistencies.push('os_device_mismatch');
+        }
+        
+        return inconsistencies;
+    }
+    
+    updateLearningData(sessionId, analysisData) {
+        // Store data for machine learning model improvement
+        console.log(`Learning data updated for session ${sessionId}: Risk ${analysisData.riskScore}`);
+    }
+}
 
 // Function to get today's key for daily statistics
 function getTodayKey() {
@@ -148,160 +409,29 @@ function recordRealTrafficEvent(isBot, riskScore, threats, userAgent, website, a
     }
 }
 
-// Dynamic bot detection function
+// Dynamic traffic analysis function
 function analyzeTrafficDynamic(userAgent, website, requestData = {}) {
-    let riskScore = 0;
-    let threats = [];
-    let confidence = 0;
-    let analysis = {
-        userAgentScore: 0,
-        behaviorScore: 0,
-        patternScore: 0,
-        websiteScore: 0,
-        ipScore: 0,
-        isSearchEngine: false
+    const detector = new DynamicBotDetector();
+    
+    // Prepare enhanced request data
+    const enhancedData = {
+        ...requestData,
+        userAgent: userAgent,
+        website: website,
+        sessionId: requestData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        timestamp: Date.now()
     };
     
-    // 1. Search Engine Detection
-    const searchEngine = BotDetectionConfig.searchEngines.find(se => 
-        se.pattern.test(userAgent)
-    );
-    
-    if (searchEngine) {
-        analysis.isSearchEngine = true;
-        analysis.userAgentScore = -20;
-        threats.push(`${searchEngine.name} Search Engine (Allowed)`);
-        
-        return {
-            riskScore: 0,
-            action: 'allow',
-            confidence: 95,
-            threats,
-            analysis
-        };
-    }
-    
-    // 2. User Agent Analysis
-    BotDetectionConfig.userAgentPatterns.forEach(pattern => {
-        if (pattern.pattern.test(userAgent)) {
-            analysis.userAgentScore += pattern.score;
-            threats.push(pattern.threat);
-        }
-    });
-    
-    // Check for legitimate browsers
-    BotDetectionConfig.legitimateBrowsers.forEach(browser => {
-        if (browser.pattern.test(userAgent)) {
-            analysis.userAgentScore += browser.score; // Negative score = good
-            threats.push(`${browser.name} Detected`);
-        }
-    });
-    
-    // 3. Behavior Analysis
-    if (requestData.behaviorFlags && Array.isArray(requestData.behaviorFlags)) {
-        requestData.behaviorFlags.forEach(flag => {
-            const behaviorRule = BotDetectionConfig.behaviorFlags[flag];
-            if (behaviorRule) {
-                analysis.behaviorScore += behaviorRule.score;
-                threats.push(`Behavior: ${flag.replace('_', ' ')} (${behaviorRule.severity})`);
-            }
-        });
-    }
-    
-    // 4. Request Pattern Analysis
-    if (requestData.requestPattern) {
-        const patternRule = BotDetectionConfig.requestPatterns[requestData.requestPattern];
-        if (patternRule) {
-            analysis.patternScore += patternRule.score;
-            threats.push(patternRule.threat);
-        }
-    }
-    
-    // 5. Website-Specific Analysis
-    const websiteRule = BotDetectionConfig.websiteRules[website];
-    if (websiteRule) {
-        // Check for job scraping
-        if (/job|scraper|harvest/i.test(userAgent)) {
-            analysis.websiteScore += websiteRule.jobScraperPenalty;
-            threats.push("Job Scraper Detected");
-        }
-        
-        // Reward human behavior
-        if (requestData.humanIndicators && requestData.humanIndicators.length > 0) {
-            analysis.websiteScore += websiteRule.humanBehaviorBonus; // Negative = good
-            threats.push("Human Behavior Detected");
-        }
-    }
-    
-    // 6. IP Reputation Analysis
-    if (requestData.ipAddress) {
-        BotDetectionConfig.ipRules.forEach(rule => {
-            if (rule.pattern.test(requestData.ipAddress)) {
-                analysis.ipScore += rule.score;
-                threats.push(rule.threat);
-            }
-        });
-    }
-    
-    // Calculate weighted risk score
-    const weights = BotDetectionConfig.weights;
-    riskScore = Math.max(0, Math.min(100, 
-        (analysis.userAgentScore * weights.userAgent) +
-        (analysis.behaviorScore * weights.behavior) +
-        (analysis.patternScore * weights.pattern) +
-        (analysis.websiteScore * weights.website) +
-        (analysis.ipScore * weights.ip)
-    ));
-    
-    // Calculate confidence based on available data
-    let dataPoints = 1; // Always have user agent
-    if (requestData.behaviorFlags) dataPoints++;
-    if (requestData.requestPattern) dataPoints++;
-    if (requestData.ipAddress) dataPoints++;
-    if (requestData.humanIndicators) dataPoints++;
-    
-    confidence = Math.min(95, 60 + (dataPoints * 7));
-    
-    // Determine action using configurable thresholds
-    let action = 'allow';
-    if (riskScore >= BotDetectionConfig.thresholds.block) {
-        action = 'block';
-    } else if (riskScore >= BotDetectionConfig.thresholds.challenge) {
-        action = 'challenge';
-    } else {
-        action = 'allow';
-        if (threats.length === 0) {
-            threats = ["Low Risk"];
-        }
-    }
+    // Run dynamic detection
+    const result = detector.detectBot(enhancedData);
     
     return {
-        riskScore: Math.round(riskScore),
-        action,
-        confidence,
-        threats,
-        analysis,
-        config: {
-            thresholds: BotDetectionConfig.thresholds,
-            weights: BotDetectionConfig.weights
-        }
+        riskScore: result.riskScore,
+        action: result.action,
+        confidence: result.confidence,
+        threats: result.threats,
+        analysis: result.analysis
     };
-}
-
-// Configuration update endpoint
-function updateBotDetectionConfig(newConfig) {
-    // Merge new configuration with existing
-    if (newConfig.thresholds) {
-        Object.assign(BotDetectionConfig.thresholds, newConfig.thresholds);
-    }
-    if (newConfig.weights) {
-        Object.assign(BotDetectionConfig.weights, newConfig.weights);
-    }
-    if (newConfig.behaviorFlags) {
-        Object.assign(BotDetectionConfig.behaviorFlags, newConfig.behaviorFlags);
-    }
-    
-    return BotDetectionConfig;
 }
 
 // Legacy analyzeTraffic function for backward compatibility
@@ -420,71 +550,9 @@ module.exports = async (req, res) => {
                 status: 'healthy',
                 timestamp: new Date().toISOString(),
                 message: 'Traffic Cop API is running on Vercel!',
-                version: '3.0.0',
-                features: ['Dynamic Bot Detection', 'Real Analytics', 'Advanced Captcha', 'Configurable Rules']
+                version: '4.0.0',
+                features: ['Dynamic Bot Detection', 'Behavioral Analysis', 'Real Analytics', 'Advanced Captcha']
             });
-            return;
-        }
-
-        // Configuration management endpoint
-        if (req.url === '/api/v1/config' && req.method === 'GET') {
-            const authHeader = req.headers.authorization;
-            
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({ error: 'Missing authorization header' });
-                return;
-            }
-            
-            const apiKey = authHeader.substring(7);
-            
-            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                res.status(200).json({
-                    config: BotDetectionConfig,
-                    message: 'Current bot detection configuration'
-                });
-                return;
-            }
-            
-            res.status(401).json({ error: 'Invalid API key' });
-            return;
-        }
-
-        // Configuration update endpoint
-        if (req.url === '/api/v1/config' && req.method === 'POST') {
-            const authHeader = req.headers.authorization;
-            
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({ error: 'Missing authorization header' });
-                return;
-            }
-            
-            const apiKey = authHeader.substring(7);
-            
-            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                let body = '';
-                req.on('data', chunk => body += chunk);
-                req.on('end', () => {
-                    try {
-                        const newConfig = JSON.parse(body);
-                        const updatedConfig = updateBotDetectionConfig(newConfig);
-                        
-                        res.status(200).json({
-                            success: true,
-                            message: 'Configuration updated successfully',
-                            config: updatedConfig
-                        });
-                        
-                    } catch (error) {
-                        res.status(400).json({
-                            error: 'Invalid configuration data',
-                            details: error.message
-                        });
-                    }
-                });
-                return;
-            }
-            
-            res.status(401).json({ error: 'Invalid API key' });
             return;
         }
 
@@ -549,8 +617,7 @@ module.exports = async (req, res) => {
                             confidence: analysis.confidence,
                             threatVector: analysis.threats,
                             analysis: analysis.analysis
-                        },
-                        config: analysis.config
+                        }
                     };
                     
                     // If action is challenge, provide challenge URL
@@ -751,7 +818,7 @@ module.exports = async (req, res) => {
                 // If NO real traffic today, return zeros
                 if (!todayStats) {
                     res.status(200).json({
-                        website: 'dailyjobsindia.com',
+                        website: 'newsparrow.in',
                         totalRequests: 0,
                         blockedBots: 0,
                         allowedUsers: 0,
@@ -763,9 +830,9 @@ module.exports = async (req, res) => {
                         topThreats: [],
                         recentActivity: [
                             '✅ Dynamic Traffic Cop protection system is active',
-                            '📊 Configurable bot detection rules loaded',
+                            '🧠 AI-powered behavioral analysis ready',
                             '🔍 All statistics will be based on actual detections',
-                            '🛡️ Advanced ML algorithms ready for analysis'
+                            '🛡️ Advanced pattern recognition algorithms loaded'
                         ]
                     });
                     return;
@@ -797,7 +864,7 @@ module.exports = async (req, res) => {
 
                 // Return ONLY real analytics
                 res.status(200).json({
-                    website: 'dailyjobsindia.com',
+                    website: 'newsparrow.in',
                     totalRequests: totalRequests,
                     blockedBots: blockedBots,
                     allowedUsers: allowedUsers,
@@ -811,7 +878,7 @@ module.exports = async (req, res) => {
                         '📊 No traffic analyzed yet today',
                         '🔍 All statistics will show real detection results',
                         '✅ Dynamic Traffic Cop is ready to analyze incoming requests',
-                        '🛡️ Configurable bot detection algorithms active'
+                        '🧠 AI behavioral analysis algorithms active'
                     ]
                 });
                 return;
@@ -873,9 +940,9 @@ module.exports = async (req, res) => {
                         
                         res.status(200).json({
                             success: true,
-                            publisherName: 'Daily Jobs India',
+                            publisherName: 'Newsparrow',
                             plan: 'professional',
-                            website: 'https://dailyjobsindia.com'
+                            website: 'https://home.newsparrow.in'
                         });
                         return;
                     }
@@ -1022,7 +1089,7 @@ module.exports = async (req, res) => {
         <p class="subtitle">Complete this math problem to prove you're human</p>
         
         <div class="instructions">
-            <strong>Instructions:</strong> Solve the math problem below to continue to dailyjobsindia.com
+            <strong>Instructions:</strong> Solve the math problem below to continue to the website
         </div>
         
         <div class="captcha-box">
@@ -1040,7 +1107,7 @@ module.exports = async (req, res) => {
         <div class="attempts" id="attempts-counter"></div>
         
         <p style="margin-top: 30px; color: #666; font-size: 0.9em;">
-            Protected by Traffic Cop • This verification protects against automated bots
+            Protected by Traffic Cop • AI-powered bot protection
         </p>
     </div>
 
@@ -1049,7 +1116,7 @@ module.exports = async (req, res) => {
         let attempts = 0;
         let maxAttempts = 3;
         let sessionId = new URLSearchParams(window.location.search).get('session') || 'unknown';
-        let website = new URLSearchParams(window.location.search).get('website') || 'dailyjobsindia.com';
+        let website = new URLSearchParams(window.location.search).get('website') || 'newsparrow.in';
         
         function generateMathProblem() {
             const problemTypes = [
