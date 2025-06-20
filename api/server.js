@@ -1,7 +1,5 @@
 // server.js - Complete Traffic Cop API Server with Real-Time Visitor Tracking
 const url = require('url');
-// For proxy/VPN lookup
-const fetch = require('node-fetch');  // npm install node-fetch
 
 // PURE real traffic tracking - NO placeholder data
 let realTrafficData = {
@@ -156,19 +154,6 @@ function analyzeTraffic(visitorData) {
     }
 }
 
-// Proxy/VPN detection via ipapi.co
-async function isProxyIP(ip) {
-  try {
-    const resp = await fetch(`https://ipapi.co/${ip}/json/`);
-    const data = await resp.json();
-    return data.security && (data.security.is_proxy || data.security.is_vpn || data.security.is_tor);
-  } catch (e) {
-    console.error('Proxy check error:', e);
-    return false;
-  }
-}
-
-
 // Main server function
 module.exports = async (req, res) => {
     console.log(`${req.method} ${req.url}`);
@@ -274,26 +259,9 @@ module.exports = async (req, res) => {
             if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
                 let body = '';
                 req.on('data', chunk => body += chunk);
-                req.on('end', async () => {
+                req.on('end', () => {
                     try {
                         const visitorData = JSON.parse(body);
-
-                        // Block proxy/VPN users
-                        if (await isProxyIP(ip)) {
-                        recordRealTrafficEvent(
-                            true,                  // isBot
-                            85,                    // riskScore
-                            ['proxy/VPN detected'],// threats
-                            visitorData.userAgent,
-                            visitorData.website,
-                            'block'
-                        );
-                        return res.status(403).json({
-                            success: false,
-                            message: 'Blocked due to proxy/VPN usage'
-                        });
-                        }
-
                         
                         // Store real-time visitor
                         realTimeVisitors.set(visitorData.sessionId, {
