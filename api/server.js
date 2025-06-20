@@ -438,35 +438,46 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Challenge verification endpoint
+        // Enhanced challenge verification endpoint
         if (req.url === '/api/v1/verify-challenge' && req.method === 'POST') {
             let body = '';
             req.on('data', chunk => body += chunk);
             req.on('end', () => {
                 try {
-                    const { sessionId, challengeType, verified } = JSON.parse(body);
+                    const { sessionId, challengeType, verified, answer, correctAnswer, attempts } = JSON.parse(body);
                     
-                    if (verified) {
+                    // Strict verification - must have correct math answer
+                    if (verified && challengeType === 'math' && answer === correctAnswer) {
+                        // Log successful challenge completion
+                        console.log(`✅ Challenge completed: Session ${sessionId}, Answer: ${answer}, Attempts: ${attempts}`);
+                        
                         res.status(200).json({
                             success: true,
                             message: 'Challenge completed successfully',
-                            redirectUrl: '/' // Redirect to original website
+                            redirectUrl: '/',
+                            sessionId: sessionId
                         });
                     } else {
+                        // Failed verification
+                        console.log(`❌ Challenge failed: Session ${sessionId}, Answer: ${answer}, Expected: ${correctAnswer}`);
+                        
                         res.status(400).json({
                             success: false,
-                            error: 'Challenge verification failed'
+                            error: 'Challenge verification failed',
+                            attempts: attempts || 0
                         });
                     }
                     
                 } catch (error) {
                     res.status(400).json({
-                        error: 'Invalid challenge data'
+                        error: 'Invalid challenge data',
+                        details: error.message
                     });
                 }
             });
             return;
         }
+
 
         // Real-time visitor tracking endpoint
         if (req.url === '/api/v1/real-time-visitor' && req.method === 'POST') {
@@ -758,321 +769,313 @@ module.exports = async (req, res) => {
             const parsedUrl = url.parse(req.url, true);
             const pathname = parsedUrl.pathname;
             
-            // Serve captcha challenge page
-            if (pathname === '/captcha-challenge.html') {
-                res.setHeader('Content-Type', 'text/html');
-                res.status(200).end(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Human Verification - Traffic Cop</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .challenge-container {
-            background: white;
-            border-radius: 15px;
-            padding: 40px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            text-align: center;
-            max-width: 500px;
-            width: 90%;
-        }
-        .shield-icon {
-            font-size: 4em;
-            color: #667eea;
-            margin-bottom: 20px;
-        }
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-        }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-        }
-        .captcha-box {
-            background: #f8f9fa;
-            border: 2px solid #e9ecef;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-        }
-        .math-challenge {
-            font-size: 1.5em;
-            color: #333;
-            margin-bottom: 15px;
-        }
-        .answer-input {
-            padding: 12px;
-            font-size: 1.2em;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            width: 100px;
-            text-align: center;
-            margin: 0 10px;
-        }
-        .verify-btn {
-            background: #28a745;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 5px;
-            font-size: 1.1em;
-            cursor: pointer;
-            margin-top: 20px;
-            transition: background 0.3s;
-        }
-        .verify-btn:hover {
-            background: #218838;
-        }
-        .verify-btn:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-        }
-        .error-message {
-            color: #dc3545;
-            margin-top: 10px;
-            display: none;
-        }
-        .loading {
-            display: none;
-            color: #667eea;
-            margin-top: 10px;
-        }
-        .checkbox-challenge {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 20px 0;
-            padding: 15px;
-            border: 2px solid #ddd;
-            border-radius: 5px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        .checkbox-challenge:hover {
-            border-color: #667eea;
-            background: #f8f9ff;
-        }
-        .checkbox-challenge input {
-            margin-right: 10px;
-            transform: scale(1.5);
-        }
-        .challenge-type {
-            margin-bottom: 20px;
-        }
-        .challenge-tabs {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
-        }
-        .tab {
-            padding: 10px 20px;
-            background: #e9ecef;
-            border: none;
-            cursor: pointer;
-            margin: 0 5px;
-            border-radius: 5px;
-        }
-        .tab.active {
-            background: #667eea;
-            color: white;
-        }
-    </style>
-</head>
-<body>
-    <div class="challenge-container">
-        <div class="shield-icon">🛡️</div>
-        <h1>Human Verification Required</h1>
-        <p class="subtitle">Please complete this challenge to continue to the website</p>
-        
-        <div class="challenge-tabs">
-            <button class="tab active" onclick="showChallenge('checkbox')">Quick Check</button>
-            <button class="tab" onclick="showChallenge('math')">Math Problem</button>
-        </div>
-        
-        <!-- Checkbox Challenge -->
-        <div id="checkbox-challenge" class="challenge-type">
-            <div class="checkbox-challenge" onclick="toggleCheckbox()">
-                <input type="checkbox" id="human-checkbox">
-                <label for="human-checkbox">I'm not a robot</label>
-            </div>
-        </div>
-        
-        <!-- Math Challenge -->
-        <div id="math-challenge" class="challenge-type" style="display: none;">
-            <div class="captcha-box">
-                <div class="math-challenge" id="math-problem">Loading...</div>
-                <input type="number" id="math-answer" class="answer-input" placeholder="?">
-            </div>
-        </div>
-        
-        <button class="verify-btn" id="verify-btn" onclick="verifyChallenge()" disabled>
-            Verify
-        </button>
-        
-        <div class="error-message" id="error-message"></div>
-        <div class="loading" id="loading">Verifying...</div>
-        
-        <p style="margin-top: 30px; color: #666; font-size: 0.9em;">
-            Protected by Traffic Cop • This verification helps protect against automated traffic
-        </p>
-    </div>
-
-    <script>
-        let currentChallenge = 'checkbox';
-        let mathAnswer = 0;
-        let sessionId = new URLSearchParams(window.location.search).get('session') || 'unknown';
-        
-        function showChallenge(type) {
-            // Update tabs
-            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-            event.target.classList.add('active');
-            
-            // Show/hide challenges
-            document.getElementById('checkbox-challenge').style.display = type === 'checkbox' ? 'block' : 'none';
-            document.getElementById('math-challenge').style.display = type === 'math' ? 'block' : 'none';
-            
-            currentChallenge = type;
-            
-            if (type === 'math') {
-                generateMathProblem();
-            }
-            
-            updateVerifyButton();
-        }
-        
-        function generateMathProblem() {
-            const num1 = Math.floor(Math.random() * 10) + 1;
-            const num2 = Math.floor(Math.random() * 10) + 1;
-            const operators = ['+', '-', '×'];
-            const operator = operators[Math.floor(Math.random() * operators.length)];
-            
-            let problem, answer;
-            
-            switch(operator) {
-                case '+':
-                    problem = num1 + ' + ' + num2 + ' = ?';
-                    answer = num1 + num2;
-                    break;
-                case '-':
-                    problem = (num1 + num2) + ' - ' + num2 + ' = ?';
-                    answer = num1;
-                    break;
-                case '×':
-                    problem = num1 + ' × ' + num2 + ' = ?';
-                    answer = num1 * num2;
-                    break;
-            }
-            
-            document.getElementById('math-problem').textContent = problem;
-            mathAnswer = answer;
-            document.getElementById('math-answer').value = '';
-            updateVerifyButton();
-        }
-        
-        function toggleCheckbox() {
-            const checkbox = document.getElementById('human-checkbox');
-            checkbox.checked = !checkbox.checked;
-            updateVerifyButton();
-        }
-        
-        function updateVerifyButton() {
-            const verifyBtn = document.getElementById('verify-btn');
-            
-            if (currentChallenge === 'checkbox') {
-                verifyBtn.disabled = !document.getElementById('human-checkbox').checked;
-            } else if (currentChallenge === 'math') {
-                const answer = document.getElementById('math-answer').value;
-                verifyBtn.disabled = !answer || answer === '';
-            }
-        }
-        
-        // Update verify button when typing in math answer
-        document.getElementById('math-answer').addEventListener('input', updateVerifyButton);
-        
-        async function verifyChallenge() {
-            const verifyBtn = document.getElementById('verify-btn');
-            const errorMsg = document.getElementById('error-message');
-            const loading = document.getElementById('loading');
-            
-            verifyBtn.disabled = true;
-            loading.style.display = 'block';
-            errorMsg.style.display = 'none';
-            
-            let isValid = false;
-            
-            if (currentChallenge === 'checkbox') {
-                // Simple checkbox verification
-                isValid = document.getElementById('human-checkbox').checked;
-            } else if (currentChallenge === 'math') {
-                // Math problem verification
-                const userAnswer = parseInt(document.getElementById('math-answer').value);
-                isValid = userAnswer === mathAnswer;
-            }
-            
-            // Simulate verification delay
-            await new Promise(resolve => setTimeout(resolve, 1500));
-            
-            loading.style.display = 'none';
-            
-            if (isValid) {
-                // Success - redirect to original website
-                try {
-                    const response = await fetch('/api/v1/verify-challenge', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            sessionId: sessionId,
-                            challengeType: currentChallenge,
-                            verified: true
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        const result = await response.json();
-                        window.location.href = result.redirectUrl || '/';
-                    } else {
-                        throw new Error('Verification failed');
-                    }
-                } catch (error) {
-                    // Fallback - just redirect
-                    window.location.href = '/';
+        // In your server.js, replace the captcha-challenge.html section with:
+        if (pathname === '/captcha-challenge.html') {
+            res.setHeader('Content-Type', 'text/html');
+            res.status(200).end(`
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Human Verification - Traffic Cop</title>
+            <style>
+                body {
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    margin: 0;
+                    padding: 0;
+                    display: flex;
+                    justify-content: center;
+                    align-items: center;
+                    min-height: 100vh;
                 }
-            } else {
-                errorMsg.textContent = currentChallenge === 'math' ? 
-                    'Incorrect answer. Please try again.' : 
-                    'Please complete the verification.';
-                errorMsg.style.display = 'block';
-                verifyBtn.disabled = false;
+                .challenge-container {
+                    background: white;
+                    border-radius: 15px;
+                    padding: 40px;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+                    text-align: center;
+                    max-width: 500px;
+                    width: 90%;
+                }
+                .shield-icon {
+                    font-size: 4em;
+                    color: #667eea;
+                    margin-bottom: 20px;
+                }
+                h1 {
+                    color: #333;
+                    margin-bottom: 10px;
+                }
+                .subtitle {
+                    color: #666;
+                    margin-bottom: 30px;
+                }
+                .captcha-box {
+                    background: #f8f9fa;
+                    border: 2px solid #e9ecef;
+                    border-radius: 10px;
+                    padding: 20px;
+                    margin: 20px 0;
+                }
+                .math-challenge {
+                    font-size: 1.8em;
+                    color: #333;
+                    margin-bottom: 15px;
+                    font-weight: bold;
+                }
+                .answer-input {
+                    padding: 15px;
+                    font-size: 1.3em;
+                    border: 2px solid #ddd;
+                    border-radius: 8px;
+                    width: 120px;
+                    text-align: center;
+                    margin: 10px;
+                }
+                .verify-btn {
+                    background: #28a745;
+                    color: white;
+                    padding: 15px 30px;
+                    border: none;
+                    border-radius: 5px;
+                    font-size: 1.1em;
+                    cursor: pointer;
+                    margin-top: 20px;
+                    transition: background 0.3s;
+                }
+                .verify-btn:hover {
+                    background: #218838;
+                }
+                .verify-btn:disabled {
+                    background: #6c757d;
+                    cursor: not-allowed;
+                }
+                .error-message {
+                    color: #dc3545;
+                    margin-top: 15px;
+                    display: none;
+                    font-weight: bold;
+                }
+                .success-message {
+                    color: #28a745;
+                    margin-top: 15px;
+                    display: none;
+                    font-weight: bold;
+                }
+                .loading {
+                    display: none;
+                    color: #667eea;
+                    margin-top: 10px;
+                }
+                .instructions {
+                    background: #e3f2fd;
+                    padding: 15px;
+                    border-radius: 8px;
+                    margin: 20px 0;
+                    color: #1565c0;
+                    font-weight: 500;
+                }
+                .attempts {
+                    color: #dc3545;
+                    font-size: 0.9em;
+                    margin-top: 10px;
+                }
+            </style>
+        </head>
+        <body>
+            <div class="challenge-container">
+                <div class="shield-icon">🛡️</div>
+                <h1>Human Verification Required</h1>
+                <p class="subtitle">Complete this math problem to prove you're human</p>
                 
-                if (currentChallenge === 'math') {
-                    generateMathProblem();
+                <div class="instructions">
+                    <strong>Instructions:</strong> Solve the math problem below to continue to dailyjobsindia.com
+                </div>
+                
+                <div class="captcha-box">
+                    <div class="math-challenge" id="math-problem">Loading...</div>
+                    <input type="number" id="math-answer" class="answer-input" placeholder="Enter answer" min="0" max="100">
+                </div>
+                
+                <button class="verify-btn" id="verify-btn" onclick="verifyChallenge()">
+                    Verify Answer
+                </button>
+                
+                <div class="error-message" id="error-message"></div>
+                <div class="success-message" id="success-message"></div>
+                <div class="loading" id="loading">Verifying your answer...</div>
+                <div class="attempts" id="attempts-counter"></div>
+                
+                <p style="margin-top: 30px; color: #666; font-size: 0.9em;">
+                    Protected by Traffic Cop • This verification protects against automated bots
+                </p>
+            </div>
+
+            <script>
+                let mathAnswer = 0;
+                let attempts = 0;
+                let maxAttempts = 3;
+                let sessionId = new URLSearchParams(window.location.search).get('session') || 'unknown';
+                let website = new URLSearchParams(window.location.search).get('website') || 'dailyjobsindia.com';
+                
+                function generateMathProblem() {
+                    const problemTypes = [
+                        // Addition
+                        () => {
+                            const num1 = Math.floor(Math.random() * 20) + 1;
+                            const num2 = Math.floor(Math.random() * 20) + 1;
+                            return {
+                                problem: num1 + ' + ' + num2 + ' = ?',
+                                answer: num1 + num2
+                            };
+                        },
+                        // Subtraction
+                        () => {
+                            const answer = Math.floor(Math.random() * 15) + 1;
+                            const num2 = Math.floor(Math.random() * 10) + 1;
+                            const num1 = answer + num2;
+                            return {
+                                problem: num1 + ' - ' + num2 + ' = ?',
+                                answer: answer
+                            };
+                        },
+                        // Multiplication (small numbers)
+                        () => {
+                            const num1 = Math.floor(Math.random() * 8) + 2;
+                            const num2 = Math.floor(Math.random() * 5) + 2;
+                            return {
+                                problem: num1 + ' × ' + num2 + ' = ?',
+                                answer: num1 * num2
+                            };
+                        },
+                        // Word problems
+                        () => {
+                            const items = Math.floor(Math.random() * 10) + 5;
+                            const taken = Math.floor(Math.random() * items/2) + 1;
+                            return {
+                                problem: 'If you have ' + items + ' items and take away ' + taken + ', how many are left?',
+                                answer: items - taken
+                            };
+                        }
+                    ];
+                    
+                    const selectedProblem = problemTypes[Math.floor(Math.random() * problemTypes.length)]();
+                    
+                    document.getElementById('math-problem').textContent = selectedProblem.problem;
+                    mathAnswer = selectedProblem.answer;
+                    document.getElementById('math-answer').value = '';
+                    document.getElementById('math-answer').focus();
                 }
-            }
+                
+                async function verifyChallenge() {
+                    const verifyBtn = document.getElementById('verify-btn');
+                    const errorMsg = document.getElementById('error-message');
+                    const successMsg = document.getElementById('success-message');
+                    const loading = document.getElementById('loading');
+                    const attemptsCounter = document.getElementById('attempts-counter');
+                    const userAnswer = parseInt(document.getElementById('math-answer').value);
+                    
+                    // Hide previous messages
+                    errorMsg.style.display = 'none';
+                    successMsg.style.display = 'none';
+                    
+                    // Validate input
+                    if (isNaN(userAnswer) || document.getElementById('math-answer').value === '') {
+                        errorMsg.textContent = 'Please enter a valid number';
+                        errorMsg.style.display = 'block';
+                        return;
+                    }
+                    
+                    verifyBtn.disabled = true;
+                    loading.style.display = 'block';
+                    
+                    // Simulate verification delay (important for security)
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                    
+                    loading.style.display = 'none';
+                    attempts++;
+                    
+                    if (userAnswer === mathAnswer) {
+                        // Correct answer - verify with server
+                        try {
+                            const response = await fetch('/api/v1/verify-challenge', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    sessionId: sessionId,
+                                    challengeType: 'math',
+                                    verified: true,
+                                    answer: userAnswer,
+                                    correctAnswer: mathAnswer,
+                                    attempts: attempts
+                                })
+                            });
+                            
+                            if (response.ok) {
+                                successMsg.textContent = '✅ Correct! Redirecting to ' + website + '...';
+                                successMsg.style.display = 'block';
+                                
+                                // Redirect after success message
+                                setTimeout(() => {
+                                    window.location.href = 'https://' + website;
+                                }, 2000);
+                                return;
+                            } else {
+                                throw new Error('Server verification failed');
+                            }
+                        } catch (error) {
+                            console.error('Verification error:', error);
+                            errorMsg.textContent = 'Verification failed. Please try again.';
+                            errorMsg.style.display = 'block';
+                        }
+                    } else {
+                        // Wrong answer
+                        if (attempts >= maxAttempts) {
+                            errorMsg.textContent = 'Too many incorrect attempts. Please refresh the page to try again.';
+                            errorMsg.style.display = 'block';
+                            verifyBtn.disabled = true;
+                            document.getElementById('math-answer').disabled = true;
+                            return;
+                        } else {
+                            errorMsg.textContent = 'Incorrect answer. Try again. (Attempt ' + attempts + '/' + maxAttempts + ')';
+                            errorMsg.style.display = 'block';
+                            attemptsCounter.textContent = 'Attempts remaining: ' + (maxAttempts - attempts);
+                            attemptsCounter.style.display = 'block';
+                            
+                            // Generate new problem after wrong answer
+                            setTimeout(() => {
+                                generateMathProblem();
+                            }, 1500);
+                        }
+                    }
+                    
+                    verifyBtn.disabled = false;
+                }
+                
+                // Allow Enter key to submit
+                document.getElementById('math-answer').addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        verifyChallenge();
+                    }
+                });
+                
+                // Initialize with first problem
+                generateMathProblem();
+                
+                // Update attempts counter
+                document.getElementById('attempts-counter').textContent = 'Attempts remaining: ' + maxAttempts;
+                document.getElementById('attempts-counter').style.display = 'block';
+            </script>
+        </body>
+        </html>
+            `);
+            return;
         }
-        
-        // Initialize
-        generateMathProblem();
-    </script>
-</body>
-</html>
-                `);
-                return;
-            }
+
         }
 
         // 404 for unknown routes
