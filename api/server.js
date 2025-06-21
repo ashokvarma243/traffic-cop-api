@@ -348,14 +348,16 @@ class TrafficCopStorage {
             try {
                 const currentStatsStr = await kv.get(statsKey);
                 
-                if (currentStatsStr && currentStatsStr !== 'null' && currentStatsStr !== 'undefined') {
-                    // Handle both JSON strings and PowerShell object strings
-                    if (typeof currentStatsStr === 'string' && currentStatsStr.startsWith('@{')) {
-                        // Convert PowerShell object format to JSON
-                        console.log('🔄 Converting PowerShell object to JSON format');
-                        currentStats = null; // Force recreation with proper JSON
-                    } else {
+                // CRITICAL FIX: Handle both string and object responses
+                if (currentStatsStr) {
+                    if (typeof currentStatsStr === 'string') {
+                        // It's already a JSON string, parse it
                         currentStats = JSON.parse(currentStatsStr);
+                    } else if (typeof currentStatsStr === 'object') {
+                        // It's already an object, use it directly
+                        currentStats = currentStatsStr;
+                    } else {
+                        currentStats = null;
                     }
                 } else {
                     currentStats = null;
@@ -398,16 +400,17 @@ class TrafficCopStorage {
                 currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
             }
             
-            // CRITICAL: Store as proper JSON string
+            // CRITICAL: Always store as JSON string
             const statsToStore = JSON.stringify(currentStats);
             await kv.setex(statsKey, 604800, statsToStore);
-            console.log('✅ Daily stats updated and stored as JSON:', currentStats);
+            console.log('✅ Daily stats stored as JSON string:', statsToStore);
             
         } catch (error) {
             console.error('❌ Daily stats error:', error);
             throw error;
         }
     }
+
 
     
     // Get daily statistics (KV only) - FIXED JSON PARSING
@@ -420,66 +423,58 @@ class TrafficCopStorage {
             
             console.log('📊 getDailyStats: Looking for key:', statsKey);
             
-            const statsStr = await kv.get(statsKey);
-            console.log('📊 getDailyStats: Raw KV result:', statsStr);
+            const statsData = await kv.get(statsKey);
+            console.log('📊 getDailyStats: Raw KV result type:', typeof statsData);
+            console.log('📊 getDailyStats: Raw KV result:', statsData);
             
-            if (statsStr && statsStr !== 'null') {
-                // Handle PowerShell object format conversion
-                if (typeof statsStr === 'string' && statsStr.startsWith('@{')) {
-                    console.log('🔄 Converting PowerShell object format to JSON');
-                    
-                    // Extract values from PowerShell object string
-                    const totalRequestsMatch = statsStr.match(/totalRequests=(\d+)/);
-                    const allowedUsersMatch = statsStr.match(/allowedUsers=(\d+)/);
-                    const blockedBotsMatch = statsStr.match(/blockedBots=(\d+)/);
-                    
-                    const convertedStats = {
-                        date: targetDate,
-                        totalRequests: totalRequestsMatch ? parseInt(totalRequestsMatch[1]) : 0,
-                        blockedBots: blockedBotsMatch ? parseInt(blockedBotsMatch[1]) : 0,
-                        allowedUsers: allowedUsersMatch ? parseInt(allowedUsersMatch[1]) : 0,
-                        challengedUsers: 0,
-                        threats: [],
-                        countries: {},
-                        cities: {}
-                    };
-                    
-                    console.log('📊 Converted PowerShell data:', convertedStats);
-                    return convertedStats;
+            if (statsData) {
+                let stats;
+                
+                // CRITICAL FIX: Handle different data types
+                if (typeof statsData === 'string') {
+                    try {
+                        stats = JSON.parse(statsData);
+                        console.log('📊 Parsed JSON string successfully');
+                    } catch (parseError) {
+                        console.error('❌ Failed to parse JSON string:', parseError);
+                        return this.getEmptyStats(targetDate);
+                    }
+                } else if (typeof statsData === 'object' && statsData !== null) {
+                    // It's already an object, use it directly
+                    stats = statsData;
+                    console.log('📊 Using object data directly');
                 } else {
-                    // Normal JSON parsing
-                    const stats = JSON.parse(statsStr);
-                    console.log('📊 getDailyStats: Parsed JSON stats:', stats);
-                    return stats;
+                    console.log('📊 Invalid data type, returning empty stats');
+                    return this.getEmptyStats(targetDate);
                 }
+                
+                console.log('📊 Final stats:', stats);
+                return stats;
             } else {
-                console.log('📊 getDailyStats: No data found, returning empty stats');
-                return {
-                    date: targetDate,
-                    totalRequests: 0,
-                    blockedBots: 0,
-                    allowedUsers: 0,
-                    challengedUsers: 0,
-                    threats: [],
-                    countries: {},
-                    cities: {}
-                };
+                console.log('📊 No data found, returning empty stats');
+                return this.getEmptyStats(targetDate);
             }
             
         } catch (error) {
             console.error('❌ getDailyStats error:', error);
-            return {
-                date: date || new Date().toISOString().split('T')[0],
-                totalRequests: 0,
-                blockedBots: 0,
-                allowedUsers: 0,
-                challengedUsers: 0,
-                threats: [],
-                countries: {},
-                cities: {}
-            };
+            return this.getEmptyStats(date);
         }
     }
+
+    // Add this helper method
+    getEmptyStats(date = null) {
+        return {
+            date: date || new Date().toISOString().split('T')[0],
+            totalRequests: 0,
+            blockedBots: 0,
+            allowedUsers: 0,
+            challengedUsers: 0,
+            threats: [],
+            countries: {},
+            cities: {}
+        };
+    }
+
 
     
     // Get live visitors (KV only)
@@ -1209,6 +1204,7 @@ module.exports = async (req, res) => {
                     
                     // Store in KV
                     await storage.storeVisitorSession(visitorData);
+                    console.log('✅ Visitor session stored successfully');
                     
                     console.log(`💾 STORED IN KV: ${visitorData.sessionId}, Risk: ${analysis.riskScore}, Action: ${analysis.action}`);
                     
@@ -1753,13 +1749,32 @@ module.exports = async (req, res) => {
             return;
         }
 
+        // Fixed KV contents debug endpoint
         if (req.url === '/api/v1/debug/kv-contents' && req.method === 'GET') {
             try {
                 await storage.ensureKVReady();
                 
                 const today = new Date().toISOString().split('T')[0];
                 const dailyStatsKey = `tc_daily:${today}`;
-                const dailyStats = await kv.get(dailyStatsKey);
+                
+                // Get raw data without parsing
+                const dailyStatsRaw = await kv.get(dailyStatsKey);
+                
+                let dailyStatsContent = null;
+                let parseError = null;
+                
+                if (dailyStatsRaw) {
+                    try {
+                        if (typeof dailyStatsRaw === 'string') {
+                            dailyStatsContent = JSON.parse(dailyStatsRaw);
+                        } else {
+                            dailyStatsContent = dailyStatsRaw;
+                        }
+                    } catch (error) {
+                        parseError = error.message;
+                        dailyStatsContent = { error: 'Failed to parse', rawData: dailyStatsRaw };
+                    }
+                }
                 
                 const activityLog = await kv.lrange('tc_activity_log', 0, 10);
                 
@@ -1767,8 +1782,10 @@ module.exports = async (req, res) => {
                     success: true,
                     today: today,
                     dailyStatsKey: dailyStatsKey,
-                    dailyStatsExists: !!dailyStats,
-                    dailyStatsContent: dailyStats ? JSON.parse(dailyStats) : null,
+                    dailyStatsExists: !!dailyStatsRaw,
+                    dailyStatsContent: dailyStatsContent,
+                    dailyStatsType: typeof dailyStatsRaw,
+                    parseError: parseError,
                     activityLogLength: activityLog ? activityLog.length : 0,
                     activityLogSample: activityLog ? activityLog.slice(0, 2) : [],
                     kvPrefix: storage.kvPrefix
@@ -1782,6 +1799,7 @@ module.exports = async (req, res) => {
             }
             return;
         }
+
 
                 if (req.url === '/api/v1/test-kv-simple' && req.method === 'GET') {
             try {
