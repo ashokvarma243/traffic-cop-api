@@ -1070,6 +1070,51 @@ module.exports = async (req, res) => {
             });
             return;
         }
+        
+        // Debug endpoint to check storage status
+        if (req.url === '/api/v1/debug/storage-test' && req.method === 'POST') {
+            try {
+                console.log('🔍 Testing storage function directly...');
+                
+                const testData = {
+                    sessionId: 'debug_test_' + Date.now(),
+                    userAgent: 'Debug Test',
+                    website: 'newsparrow.in',
+                    ipAddress: '127.0.0.1',
+                    riskScore: 10,
+                    action: 'allow',
+                    threats: [],
+                    publisherId: 'pub_newsparrow',
+                    timestamp: new Date().toISOString()
+                };
+                
+                // Test storage directly
+                await storage.storeVisitorSession(testData);
+                
+                console.log('✅ Storage function completed');
+                
+                // Try to retrieve data
+                const liveVisitors = await storage.getLiveVisitors();
+                const dailyStats = await storage.getDailyStats();
+                
+                res.status(200).json({
+                    success: true,
+                    message: 'Storage test completed',
+                    storedData: testData,
+                    liveVisitorsCount: liveVisitors.length,
+                    dailyStats: dailyStats
+                });
+                
+            } catch (error) {
+                console.error('❌ Storage test failed:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message,
+                    stack: error.stack
+                });
+            }
+            return;
+        }
 
 
         // Enhanced visitor tracking endpoint
