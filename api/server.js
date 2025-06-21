@@ -1,15 +1,388 @@
-// server.js - Enhanced Traffic Cop API Server with Dynamic Bot Detection
+// server.js - Enhanced Traffic Cop API Server with KV Storage and Dynamic API Keys
 const url = require('url');
 
-// Real traffic tracking - NO placeholder data
+// Dynamic import for KV (since it's ES6 module)
+let kv;
+(async () => {
+    try {
+        const kvModule = await import('@vercel/kv');
+        kv = kvModule.kv;
+        console.log('✅ Vercel KV initialized successfully');
+    } catch (error) {
+        console.warn('⚠️ KV initialization failed, using fallback storage:', error);
+    }
+})();
+
+// Fallback in-memory storage (when KV is not available)
 let realTrafficData = {
     dailyStats: new Map(),
     detectionHistory: []
 };
-
-// Real-time visitor tracking storage
 let realTimeVisitors = new Map();
 let visitorHistory = [];
+
+// API Key Management with KV Storage
+class APIKeyManager {
+    constructor() {
+        this.kvPrefix = 'tc_api_';
+        this.initialized = false;
+    }
+    
+    async ensureKVReady() {
+        if (!kv) {
+            const kvModule = await import('@vercel/kv');
+            kv = kvModule.kv;
+        }
+        this.initialized = true;
+    }
+    
+    // Generate new API key
+    generateAPIKey(publisherId, plan = 'starter') {
+        const timestamp = Date.now();
+        const randomPart = Math.random().toString(36).substr(2, 32);
+        const planPrefix = plan.substring(0, 4);
+        return `tc_${planPrefix}_${timestamp}_${randomPart}`;
+    }
+    
+    // Store API key with metadata
+    async storeAPIKey(apiKeyData) {
+        try {
+            await this.ensureKVReady();
+            
+            const keyData = {
+                ...apiKeyData,
+                createdAt: new Date().toISOString(),
+                lastUsed: new Date().toISOString(),
+                requestCount: 0,
+                status: 'active'
+            };
+            
+            // Store API key data
+            await kv.set(`${this.kvPrefix}key:${apiKeyData.apiKey}`, JSON.stringify(keyData));
+            
+            // Store publisher mapping
+            await kv.set(`${this.kvPrefix}publisher:${apiKeyData.publisherId}`, apiKeyData.apiKey);
+            
+            // Add to active keys list
+            await kv.sadd(`${this.kvPrefix}active_keys`, apiKeyData.apiKey);
+            
+            console.log(`🔑 API key stored: ${apiKeyData.apiKey.substring(0, 20)}...`);
+            
+            return keyData;
+            
+        } catch (error) {
+            console.error('API key storage error:', error);
+            throw error;
+        }
+    }
+    
+    // Validate API key
+    async validateAPIKey(apiKey) {
+        try {
+            await this.ensureKVReady();
+            
+            const keyDataStr = await kv.get(`${this.kvPrefix}key:${apiKey}`);
+            if (!keyDataStr) {
+                return { valid: false, reason: 'API key not found' };
+            }
+            
+            const keyData = JSON.parse(keyDataStr);
+            
+            // Check if key is active
+            if (keyData.status !== 'active') {
+                return { valid: false, reason: 'API key is inactive' };
+            }
+            
+            // Update last used timestamp and request count
+            keyData.lastUsed = new Date().toISOString();
+            keyData.requestCount = (keyData.requestCount || 0) + 1;
+            
+            await kv.set(`${this.kvPrefix}key:${apiKey}`, JSON.stringify(keyData));
+            
+            return { 
+                valid: true, 
+                keyData: keyData,
+                publisherId: keyData.publisherId,
+                plan: keyData.plan,
+                website: keyData.website
+            };
+            
+        } catch (error) {
+            console.error('API key validation error:', error);
+            // Fallback to hardcoded key for existing users
+            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+                return {
+                    valid: true,
+                    keyData: { plan: 'professional', website: 'newsparrow.in' },
+                    publisherId: 'pub_newsparrow',
+                    plan: 'professional',
+                    website: 'newsparrow.in'
+                };
+            }
+            return { valid: false, reason: 'Validation error' };
+        }
+    }
+}
+
+// KV Storage Helper Functions
+class TrafficCopStorage {
+    constructor() {
+        this.kvPrefix = 'tc_';
+    }
+    
+    async ensureKVReady() {
+        if (!kv) {
+            const kvModule = await import('@vercel/kv');
+            kv = kvModule.kv;
+        }
+    }
+    
+    // Store visitor session
+    async storeVisitorSession(visitorData) {
+        try {
+            await this.ensureKVReady();
+            
+            const sessionKey = `${this.kvPrefix}session:${visitorData.sessionId}`;
+            const sessionData = {
+                ...visitorData,
+                timestamp: new Date().toISOString(),
+                expiresAt: Date.now() + (30 * 60 * 1000) // 30 minutes
+            };
+            
+            // Store session with 30-minute expiry
+            await kv.setex(sessionKey, 1800, JSON.stringify(sessionData));
+            
+            // Add to activity log
+            await this.addToActivityLog(visitorData);
+            
+            // Update daily stats
+            await this.updateDailyStats(visitorData);
+            
+            console.log(`💾 Stored visitor session: ${visitorData.sessionId}`);
+            
+        } catch (error) {
+            console.error('KV storage error:', error);
+            this.fallbackStorage(visitorData);
+        }
+    }
+    
+    // Add to activity log
+    async addToActivityLog(visitorData) {
+        try {
+            await this.ensureKVReady();
+            
+            const logEntry = {
+                ...visitorData,
+                timestamp: new Date().toISOString(),
+                id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+            };
+            
+            // Add to activity log list
+            await kv.lpush(`${this.kvPrefix}activity_log`, JSON.stringify(logEntry));
+            
+            // Keep only last 10000 entries
+            await kv.ltrim(`${this.kvPrefix}activity_log`, 0, 9999);
+            
+        } catch (error) {
+            console.error('Activity log error:', error);
+        }
+    }
+    
+    // Update daily statistics
+    async updateDailyStats(visitorData) {
+        try {
+            await this.ensureKVReady();
+            
+            const today = new Date().toISOString().split('T')[0];
+            const statsKey = `${this.kvPrefix}daily:${today}`;
+            
+            // Get current stats
+            const currentStatsStr = await kv.get(statsKey);
+            const currentStats = currentStatsStr ? JSON.parse(currentStatsStr) : {
+                date: today,
+                totalRequests: 0,
+                blockedBots: 0,
+                allowedUsers: 0,
+                challengedUsers: 0,
+                threats: [],
+                countries: {},
+                cities: {}
+            };
+            
+            // Update counters
+            currentStats.totalRequests++;
+            
+            if (visitorData.action === 'block') {
+                currentStats.blockedBots++;
+                if (visitorData.threats) {
+                    currentStats.threats.push(...visitorData.threats);
+                }
+            } else if (visitorData.action === 'challenge') {
+                currentStats.challengedUsers++;
+            } else {
+                currentStats.allowedUsers++;
+            }
+            
+            // Update geographic data
+            if (visitorData.geolocation) {
+                const country = visitorData.geolocation.country || 'Unknown';
+                const city = visitorData.geolocation.city || 'Unknown';
+                
+                currentStats.countries[country] = (currentStats.countries[country] || 0) + 1;
+                currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
+            }
+            
+            // Store updated stats with 7-day expiry
+            await kv.setex(statsKey, 604800, JSON.stringify(currentStats));
+            
+        } catch (error) {
+            console.error('Daily stats error:', error);
+        }
+    }
+    
+    // Get live visitor sessions
+    async getLiveVisitors() {
+        try {
+            await this.ensureKVReady();
+            
+            const pattern = `${this.kvPrefix}session:*`;
+            const sessionKeys = await kv.keys(pattern);
+            
+            const sessions = [];
+            for (const key of sessionKeys) {
+                const sessionDataStr = await kv.get(key);
+                if (sessionDataStr) {
+                    const session = JSON.parse(sessionDataStr);
+                    
+                    // Check if session is still active (last 5 minutes)
+                    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+                    if (session.timestamp && new Date(session.timestamp).getTime() > fiveMinutesAgo) {
+                        sessions.push(session);
+                    }
+                }
+            }
+            
+            return sessions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+        } catch (error) {
+            console.error('Get live visitors error:', error);
+            return [];
+        }
+    }
+    
+    // Get daily statistics
+    async getDailyStats(date = null) {
+        try {
+            await this.ensureKVReady();
+            
+            const targetDate = date || new Date().toISOString().split('T')[0];
+            const statsKey = `${this.kvPrefix}daily:${targetDate}`;
+            
+            const statsStr = await kv.get(statsKey);
+            return statsStr ? JSON.parse(statsStr) : {
+                date: targetDate,
+                totalRequests: 0,
+                blockedBots: 0,
+                allowedUsers: 0,
+                challengedUsers: 0,
+                threats: [],
+                countries: {},
+                cities: {}
+            };
+            
+        } catch (error) {
+            console.error('Get daily stats error:', error);
+            return this.getFallbackStats();
+        }
+    }
+    
+    // Fallback in-memory storage
+    fallbackStorage(visitorData) {
+        console.log('📝 Using fallback in-memory storage');
+        recordRealTrafficEvent(
+            visitorData.action === 'block',
+            visitorData.riskScore,
+            visitorData.threats,
+            visitorData.userAgent,
+            visitorData.website,
+            visitorData.action
+        );
+    }
+    
+    // Get fallback stats from in-memory storage
+    getFallbackStats() {
+        const today = getTodayKey();
+        const todayStats = realTrafficData.dailyStats.get(today);
+        
+        if (!todayStats) {
+            return {
+                date: today,
+                totalRequests: 0,
+                blockedBots: 0,
+                allowedUsers: 0,
+                challengedUsers: 0,
+                threats: [],
+                countries: {},
+                cities: {}
+            };
+        }
+        
+        return {
+            date: today,
+            totalRequests: todayStats.totalRequests,
+            blockedBots: todayStats.blockedBots,
+            allowedUsers: todayStats.allowedUsers,
+            challengedUsers: todayStats.challengedUsers,
+            threats: Array.from(todayStats.threats),
+            countries: {},
+            cities: {}
+        };
+    }
+}
+
+// Enhanced geolocation detection
+async function getGeolocationFromIP(ipAddress) {
+    try {
+        // Use multiple geolocation services for reliability
+        const services = [
+            `http://ip-api.com/json/${ipAddress}`,
+            `https://ipapi.co/${ipAddress}/json/`
+        ];
+        
+        for (const service of services) {
+            try {
+                const response = await fetch(service, { timeout: 3000 });
+                if (response.ok) {
+                    const data = await response.json();
+                    
+                    // Normalize response format
+                    return {
+                        country: data.country || data.country_name || 'Unknown',
+                        countryCode: data.countryCode || data.country_code || 'XX',
+                        region: data.regionName || data.region || data.state || 'Unknown',
+                        city: data.city || 'Unknown',
+                        latitude: data.lat || data.latitude || 0,
+                        longitude: data.lon || data.longitude || 0,
+                        timezone: data.timezone || 'UTC',
+                        isp: data.isp || data.org || 'Unknown'
+                    };
+                }
+            } catch (serviceError) {
+                console.warn(`Geolocation service failed: ${service}`, serviceError);
+                continue;
+            }
+        }
+        
+        return null;
+    } catch (error) {
+        console.error('All geolocation services failed:', error);
+        return null;
+    }
+}
+
+// Initialize managers
+const apiKeyManager = new APIKeyManager();
+const storage = new TrafficCopStorage();
 
 // Dynamic Bot Detection Engine - No Hard-Coded Names
 class DynamicBotDetector {
@@ -23,18 +396,12 @@ class DynamicBotDetector {
             sessionDuration: { normal: 300, suspicious: 30, malicious: 5 }
         };
 
-        // Default action thresholds (can be overridden by global config)
-        this.actionThresholds = {
-            challenge: 40,
-            block: 75
-        };
-
         // Use global config if available, otherwise use defaults
         this.actionThresholds = global.trafficCopConfig?.thresholds || {
             challenge: 40,
             block: 75
         };
-
+        
         console.log('🤖 DynamicBotDetector initialized with thresholds:', this.actionThresholds);
     }
     
@@ -291,7 +658,6 @@ class DynamicBotDetector {
             }
         };
     }
-
     
     // Helper methods
     calculateVariance(numbers) {
@@ -391,7 +757,7 @@ function getTodayKey() {
     return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
 }
 
-// Function to record ONLY real traffic events
+// Function to record ONLY real traffic events (fallback)
 function recordRealTrafficEvent(isBot, riskScore, threats, userAgent, website, action) {
     const today = getTodayKey();
     
@@ -462,96 +828,44 @@ function analyzeTrafficDynamic(userAgent, website, requestData = {}) {
     };
 }
 
-// Legacy analyzeTraffic function for backward compatibility
-function analyzeTraffic(visitorData) {
-    let riskScore = 0;
-    const threats = [];
+// Enhanced authentication function
+async function authenticateAPIKey(req) {
+    const authHeader = req.headers.authorization;
     
-    try {
-        // 1. User Agent Analysis
-        if (visitorData.userAgent && typeof visitorData.userAgent === 'string') {
-            const ua = visitorData.userAgent.toLowerCase();
-            
-            // Check for bot signatures
-            const botKeywords = ['python', 'bot', 'crawler', 'spider', 'scraper', 'headless', 'selenium', 'puppeteer', 'phantom'];
-            botKeywords.forEach(keyword => {
-                if (ua.includes(keyword)) {
-                    riskScore += 40;
-                    threats.push(`${keyword} bot detected`);
-                }
-            });
-            
-            // Check user agent length
-            if (ua.length < 20 || ua.length > 500) {
-                riskScore += 20;
-                threats.push('Unusual user agent length');
-            }
-        } else {
-            riskScore += 30;
-            threats.push('Missing user agent');
-        }
-        
-        // 2. Request Frequency Analysis
-        if (visitorData.requestsPerMinute && visitorData.requestsPerMinute > 60) {
-            riskScore += 35;
-            threats.push('High request frequency detected');
-        }
-        
-        // 3. JavaScript Capability Check
-        if (visitorData.jsEnabled === false) {
-            riskScore += 25;
-            threats.push('JavaScript disabled - possible bot');
-        }
-        
-        // 4. Mouse Movement Analysis
-        if (!visitorData.mouseMovements || visitorData.mouseMovements.length < 3) {
-            riskScore += 30;
-            threats.push('Minimal user interaction detected');
-        }
-        
-        // 5. Screen Resolution Check
-        if (visitorData.screenResolution === '1024x768' || !visitorData.screenResolution) {
-            riskScore += 20;
-            threats.push('Suspicious screen resolution');
-        }
-        
-        // 6. Behavioral Analysis
-        if (visitorData.behaviorData) {
-            if (visitorData.behaviorData.mouseMovements === 0) {
-                riskScore += 35;
-                threats.push('No mouse movement detected');
-            }
-            
-            if (visitorData.behaviorData.avgClickSpeed && visitorData.behaviorData.avgClickSpeed < 100) {
-                riskScore += 30;
-                threats.push('Rapid clicking detected');
-            }
-        }
-        
-        // Determine action based on risk score
-        let action = 'allow';
-        if (riskScore >= 80) {
-            action = 'block';
-        } else if (riskScore >= 60) {
-            action = 'challenge';
-        }
-        
-        return {
-            riskScore: Math.min(riskScore, 100),
-            action: action,
-            threats: threats.length > 0 ? threats : ['Low Risk'],
-            confidence: Math.min(95, 60 + (riskScore / 2))
-        };
-        
-    } catch (error) {
-        console.error('Traffic analysis error:', error);
-        return {
-            riskScore: 0,
-            action: 'allow',
-            threats: ['Analysis Error'],
-            confidence: 50
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+        return { authenticated: false, error: 'Missing authorization header' };
+    }
+    
+    const apiKey = authHeader.substring(7);
+    
+    // Validate API key using KV storage
+    const validation = await apiKeyManager.validateAPIKey(apiKey);
+    
+    if (!validation.valid) {
+        return { 
+            authenticated: false, 
+            error: validation.reason,
+            apiKey: apiKey.substring(0, 20) + '...'
         };
     }
+    
+    return {
+        authenticated: true,
+        apiKey: apiKey,
+        publisherId: validation.publisherId,
+        plan: validation.plan,
+        website: validation.website,
+        keyData: validation.keyData
+    };
+}
+
+// Helper function to calculate severity
+function calculateSeverity(riskScore) {
+    if (riskScore >= 80) return 'critical';
+    if (riskScore >= 60) return 'high';
+    if (riskScore >= 40) return 'medium';
+    if (riskScore >= 20) return 'low';
+    return 'minimal';
 }
 
 // Main server function
@@ -577,123 +891,103 @@ module.exports = async (req, res) => {
             res.status(200).json({
                 status: 'healthy',
                 timestamp: new Date().toISOString(),
-                message: 'Traffic Cop API is running on Vercel!',
-                version: '4.0.0',
-                features: ['Dynamic Bot Detection', 'Behavioral Analysis', 'Real Analytics', 'Advanced Captcha']
+                message: 'Traffic Cop API with KV Storage is running!',
+                version: '5.0.0',
+                features: ['Dynamic Bot Detection', 'KV Persistent Storage', 'Dynamic API Keys', 'Real-Time Analytics', 'Global Timezone Support', 'Geolocation Tracking']
             });
             return;
         }
 
-        // Add this after the health endpoint in your server.js
-
         // Configuration management endpoint - GET current config
         if (req.url === '/api/v1/config' && req.method === 'GET') {
-            const authHeader = req.headers.authorization;
+            const auth = await authenticateAPIKey(req);
             
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({ error: 'Missing authorization header' });
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
                 return;
             }
             
-            const apiKey = authHeader.substring(7);
+            // Get current configuration from DynamicBotDetector
+            const detector = new DynamicBotDetector();
             
-            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                // Get current configuration from DynamicBotDetector
-                const detector = new DynamicBotDetector();
-                
-                res.status(200).json({
-                    success: true,
-                    config: {
-                        thresholds: {
-                            challenge: detector.actionThresholds?.challenge || 40,
-                            block: detector.actionThresholds?.block || 75
-                        },
-                        anomalyThresholds: detector.anomalyThresholds,
-                        version: '4.0.0',
-                        lastUpdated: new Date().toISOString()
+            res.status(200).json({
+                success: true,
+                config: {
+                    thresholds: {
+                        challenge: detector.actionThresholds?.challenge || 40,
+                        block: detector.actionThresholds?.block || 75
                     },
-                    message: 'Current bot detection configuration'
-                });
-                return;
-            }
-            
-            res.status(401).json({ error: 'Invalid API key' });
+                    anomalyThresholds: detector.anomalyThresholds,
+                    version: '5.0.0',
+                    lastUpdated: new Date().toISOString()
+                },
+                message: 'Current bot detection configuration'
+            });
             return;
         }
 
         // Configuration management endpoint - POST update config
         if (req.url === '/api/v1/config' && req.method === 'POST') {
-            const authHeader = req.headers.authorization;
+            const auth = await authenticateAPIKey(req);
             
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({ error: 'Missing authorization header' });
-                return;
-            }
-            
-            const apiKey = authHeader.substring(7);
-            
-            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                let body = '';
-                req.on('data', chunk => body += chunk);
-                req.on('end', () => {
-                    try {
-                        const newConfig = JSON.parse(body);
-                        
-                        // Update global configuration
-                        if (newConfig.thresholds) {
-                            // Store in global variable for persistence
-                            global.trafficCopConfig = global.trafficCopConfig || {};
-                            global.trafficCopConfig.thresholds = {
-                                challenge: newConfig.thresholds.challenge || 40,
-                                block: newConfig.thresholds.block || 75
-                            };
-                            
-                            console.log('🔧 Configuration updated:', global.trafficCopConfig.thresholds);
-                        }
-                        
-                        res.status(200).json({
-                            success: true,
-                            message: 'Configuration updated successfully',
-                            updatedConfig: {
-                                thresholds: global.trafficCopConfig?.thresholds || { challenge: 40, block: 75 },
-                                timestamp: new Date().toISOString()
-                            }
-                        });
-                        
-                    } catch (error) {
-                        res.status(400).json({
-                            error: 'Invalid configuration data',
-                            details: error.message
-                        });
-                    }
-                });
-                return;
-            }
-            
-            res.status(401).json({ error: 'Invalid API key' });
-            return;
-        }
-
-
-        // Enhanced traffic analysis endpoint
-        if (req.url === '/api/v1/analyze' && req.method === 'POST') {
-            const authHeader = req.headers.authorization;
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({ error: 'Missing API key' });
-                return;
-            }
-            
-            const apiKey = authHeader.substring(7);
-            
-            // Validate API key
-            if (apiKey !== 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                res.status(401).json({ error: 'Invalid API key' });
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
                 return;
             }
             
             let body = '';
             req.on('data', chunk => body += chunk);
             req.on('end', () => {
+                try {
+                    const newConfig = JSON.parse(body);
+                    
+                    // Update global configuration
+                    if (newConfig.thresholds) {
+                        // Store in global variable for persistence
+                        global.trafficCopConfig = global.trafficCopConfig || {};
+                        global.trafficCopConfig.thresholds = {
+                            challenge: newConfig.thresholds.challenge || 40,
+                            block: newConfig.thresholds.block || 75
+                        };
+                        
+                        console.log('🔧 Configuration updated:', global.trafficCopConfig.thresholds);
+                    }
+                    
+                    res.status(200).json({
+                        success: true,
+                        message: 'Configuration updated successfully',
+                        updatedConfig: {
+                            thresholds: global.trafficCopConfig?.thresholds || { challenge: 40, block: 75 },
+                            timestamp: new Date().toISOString()
+                        }
+                    });
+                    
+                } catch (error) {
+                    res.status(400).json({
+                        error: 'Invalid configuration data',
+                        details: error.message
+                    });
+                }
+            });
+            return;
+        }
+
+        // Enhanced traffic analysis endpoint with dynamic API key validation
+        if (req.url === '/api/v1/analyze' && req.method === 'POST') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ 
+                    error: 'Authentication failed',
+                    reason: auth.error,
+                    apiKey: auth.apiKey
+                });
+                return;
+            }
+            
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', async () => {
                 try {
                     const requestData = JSON.parse(body);
                     const { userAgent, website } = requestData;
@@ -706,29 +1000,51 @@ module.exports = async (req, res) => {
                         return;
                     }
                     
+                    // Get real IP address
+                    const realIP = req.headers['x-forwarded-for']?.split(',')[0] || 
+                                  req.headers['x-real-ip'] || 
+                                  req.connection.remoteAddress || 
+                                  requestData.ipAddress || 
+                                  'unknown';
+                    
+                    // Get geolocation data
+                    const geolocation = await getGeolocationFromIP(realIP);
+                    
+                    // Enhanced request data with geolocation
+                    const enhancedRequestData = {
+                        ...requestData,
+                        ipAddress: realIP,
+                        geolocation: geolocation
+                    };
+                    
                     // Dynamic bot detection analysis
-                    const analysis = analyzeTrafficDynamic(userAgent, website, requestData);
+                    const analysis = analyzeTrafficDynamic(userAgent, website, enhancedRequestData);
                     
-                    // RECORD REAL TRAFFIC EVENT
-                    recordRealTrafficEvent(
-                        analysis.action === 'block', 
-                        analysis.riskScore, 
-                        analysis.threats, 
-                        userAgent, 
-                        website, 
-                        analysis.action
-                    );
+                    // Store visitor data in KV
+                    const visitorData = {
+                        sessionId: enhancedRequestData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        userAgent: userAgent,
+                        website: website,
+                        ipAddress: realIP,
+                        geolocation: geolocation,
+                        riskScore: analysis.riskScore,
+                        action: analysis.action,
+                        threats: analysis.threats,
+                        publisherId: auth.publisherId
+                    };
                     
-                    const sessionId = `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    await storage.storeVisitorSession(visitorData);
                     
                     const response = {
-                        sessionId,
-                        publisherApiKey: apiKey.substring(0, 20) + '...',
+                        sessionId: visitorData.sessionId,
+                        publisherApiKey: auth.apiKey.substring(0, 20) + '...',
+                        publisherId: auth.publisherId,
                         website,
                         riskScore: analysis.riskScore,
                         action: analysis.action,
                         confidence: analysis.confidence,
                         threats: analysis.threats,
+                        geolocation: geolocation,
                         responseTime: Math.floor(Math.random() * 50) + 15,
                         timestamp: new Date().toISOString(),
                         mlInsights: {
@@ -741,15 +1057,346 @@ module.exports = async (req, res) => {
                     
                     // If action is challenge, provide challenge URL
                     if (analysis.action === 'challenge') {
-                        response.challengeUrl = `/captcha-challenge.html?session=${sessionId}&website=${encodeURIComponent(website)}`;
+                        response.challengeUrl = `/captcha-challenge.html?session=${visitorData.sessionId}&website=${encodeURIComponent(website)}`;
                     }
                     
                     res.status(200).json(response);
                     
                 } catch (error) {
+                    console.error('Analyze endpoint error:', error);
                     res.status(400).json({
                         error: 'Invalid request data',
                         details: error.message
+                    });
+                }
+            });
+            return;
+        }
+
+        // Enhanced visitor tracking endpoint
+        if (req.url === '/api/v1/track-visitor' && req.method === 'POST') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
+                return;
+            }
+            
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', async () => {
+                try {
+                    const visitorData = JSON.parse(body);
+                    
+                    // Get real IP address
+                    const realIP = req.headers['x-forwarded-for']?.split(',')[0] || 
+                                  req.headers['x-real-ip'] || 
+                                  req.connection.remoteAddress || 
+                                  visitorData.ipAddress || 
+                                  'unknown';
+                    
+                    // Get geolocation data
+                    const geolocation = await getGeolocationFromIP(realIP);
+                    
+                    // Enhanced visitor data
+                    const enhancedVisitorData = {
+                        ...visitorData,
+                        ipAddress: realIP,
+                        geolocation: geolocation,
+                        userAgent: req.headers['user-agent'] || visitorData.userAgent,
+                        publisherId: auth.publisherId
+                    };
+                    
+                    // Store in KV
+                    await storage.storeVisitorSession(enhancedVisitorData);
+                    
+                    console.log(`👤 Visitor tracked and stored: ${realIP} from ${geolocation?.city}, ${geolocation?.country}`);
+                    
+                    res.status(200).json({
+                        success: true,
+                        message: 'Visitor tracked and stored successfully',
+                        sessionId: enhancedVisitorData.sessionId,
+                        geolocation: geolocation,
+                        storage: 'kv'
+                    });
+                    
+                } catch (error) {
+                    console.error('Visitor tracking error:', error);
+                    res.status(400).json({ error: 'Invalid visitor data' });
+                }
+            });
+            return;
+        }
+
+        // Enhanced real-time dashboard with KV data
+        if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
+                return;
+            }
+            
+            const userTimezone = req.headers['x-user-timezone'] || 'UTC';
+            
+            try {
+                // Get live visitors from KV
+                const liveVisitors = await storage.getLiveVisitors();
+                
+                // Get daily stats from KV
+                const dailyStats = await storage.getDailyStats();
+                
+                // Calculate bot statistics
+                const botStats = {
+                    total: liveVisitors.filter(v => v.action === 'block').length,
+                    critical: liveVisitors.filter(v => (v.riskScore || 0) >= 80).length,
+                    high: liveVisitors.filter(v => (v.riskScore || 0) >= 60 && (v.riskScore || 0) < 80).length,
+                    medium: liveVisitors.filter(v => (v.riskScore || 0) >= 40 && (v.riskScore || 0) < 60).length,
+                    low: liveVisitors.filter(v => (v.riskScore || 0) >= 20 && (v.riskScore || 0) < 40).length,
+                    minimal: liveVisitors.filter(v => (v.riskScore || 0) < 20).length
+                };
+                
+                // Format timestamps in user timezone
+                const formatTime = (timestamp) => {
+                    try {
+                        return new Date(timestamp).toLocaleString('en-US', {
+                            timeZone: userTimezone,
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: true
+                        });
+                    } catch (error) {
+                        return new Date(timestamp).toLocaleTimeString();
+                    }
+                };
+                
+                // Prepare geographic stats
+                const countryStats = Object.entries(dailyStats.countries || {})
+                    .sort(([,a], [,b]) => b - a)
+                    .slice(0, 10)
+                    .map(([country, count]) => ({ country, count }));
+                
+                res.status(200).json({
+                    timestamp: new Date().toISOString(),
+                    liveStats: {
+                        onlineUsers: liveVisitors.filter(v => v.action !== 'block').length,
+                        totalVisitors: liveVisitors.length,
+                        botsDetected: botStats.total,
+                        botSeverity: botStats
+                    },
+                    dailyStats: {
+                        totalRequests: dailyStats.totalRequests,
+                        blockedBots: dailyStats.blockedBots,
+                        allowedUsers: dailyStats.allowedUsers,
+                        challengedUsers: dailyStats.challengedUsers
+                    },
+                    onlineVisitors: liveVisitors.map(visitor => ({
+                        ...visitor,
+                        lastSeenFormatted: formatTime(visitor.timestamp),
+                        severity: calculateSeverity(visitor.riskScore || 0)
+                    })),
+                    geographicStats: {
+                        countries: countryStats,
+                        cities: []
+                    },
+                    storage: 'kv'
+                });
+                
+            } catch (error) {
+                console.error('Real-time dashboard error:', error);
+                res.status(500).json({ error: 'Failed to load dashboard data' });
+            }
+            return;
+        }
+
+        // Enhanced analytics endpoint with timezone support
+        if (req.url === '/api/v1/analytics' && req.method === 'GET') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
+                return;
+            }
+            
+            const userTimezone = req.headers['x-user-timezone'] || 'UTC';
+            const timezoneOffset = req.headers['x-timezone-offset'] || 'UTC+0:00';
+            
+            console.log(`📊 Analytics request from timezone: ${userTimezone} (${timezoneOffset})`);
+
+            try {
+                // Get daily stats from KV
+                const dailyStats = await storage.getDailyStats();
+                
+                // If NO real traffic today, return zeros
+                if (dailyStats.totalRequests === 0) {
+                    res.status(200).json({
+                        website: auth.website || 'newsparrow.in',
+                        totalRequests: 0,
+                        blockedBots: 0,
+                        allowedUsers: 0,
+                        challengedUsers: 0,
+                        riskScore: 0,
+                        plan: auth.plan || 'Professional',
+                        protectionStatus: 'ACTIVE - Waiting for traffic',
+                        lastAnalysis: new Date().toISOString(),
+                        userTimezone: userTimezone,
+                        timezoneOffset: timezoneOffset,
+                        topThreats: [],
+                        recentActivity: [
+                            '✅ Enhanced Traffic Cop protection system is active',
+                            '🌍 Dashboard timezone auto-detected and configured',
+                            '🔍 All statistics will be based on actual detections',
+                            '🛡️ Advanced pattern recognition algorithms loaded'
+                        ]
+                    });
+                    return;
+                }
+
+                // Calculate real metrics
+                const totalRequests = dailyStats.totalRequests;
+                const blockedBots = dailyStats.blockedBots;
+                const allowedUsers = dailyStats.allowedUsers;
+                const challengedUsers = dailyStats.challengedUsers || 0;
+                const riskScore = totalRequests > 0 ? ((blockedBots / totalRequests) * 100).toFixed(1) : 0;
+
+                // Return real analytics with timezone info
+                res.status(200).json({
+                    website: auth.website || 'newsparrow.in',
+                    totalRequests: totalRequests,
+                    blockedBots: blockedBots,
+                    allowedUsers: allowedUsers,
+                    challengedUsers: challengedUsers,
+                    riskScore: parseFloat(riskScore),
+                    plan: auth.plan || 'Professional',
+                    protectionStatus: 'ACTIVE',
+                    lastAnalysis: new Date().toISOString(),
+                    userTimezone: userTimezone,
+                    timezoneOffset: timezoneOffset,
+                    topThreats: dailyStats.threats || [],
+                    recentActivity: [
+                        '📊 Real traffic data from KV storage',
+                        '🌍 Dashboard configured for your timezone',
+                        '✅ Dynamic Traffic Cop ready for incoming requests',
+                        '🛡️ AI behavioral analysis algorithms active'
+                    ]
+                });
+                
+            } catch (error) {
+                console.error('Analytics error:', error);
+                res.status(500).json({ error: 'Failed to load analytics' });
+            }
+            return;
+        }
+
+        // Enhanced publisher signup with dynamic API key generation
+        if (req.url === '/api/v1/publisher/signup' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', async () => {
+                try {
+                    const publisherInfo = JSON.parse(body);
+                    
+                    if (!publisherInfo.email || !publisherInfo.website) {
+                        res.status(400).json({
+                            success: false,
+                            error: 'Email and website are required'
+                        });
+                        return;
+                    }
+                    
+                    // Generate unique publisher ID
+                    const publisherId = `pub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    
+                    // Generate API key based on plan
+                    const plan = publisherInfo.plan || 'starter';
+                    const apiKey = apiKeyManager.generateAPIKey(publisherId, plan);
+                    
+                    // Prepare API key data
+                    const apiKeyData = {
+                        apiKey: apiKey,
+                        publisherId: publisherId,
+                        publisherName: publisherInfo.name || publisherInfo.website,
+                        email: publisherInfo.email,
+                        website: publisherInfo.website,
+                        plan: plan,
+                        maxRequests: plan === 'starter' ? 100000 : plan === 'professional' ? 1000000 : -1,
+                        features: plan === 'starter' ? ['basic_protection'] : 
+                                 plan === 'professional' ? ['basic_protection', 'advanced_analytics', 'custom_rules'] :
+                                 ['basic_protection', 'advanced_analytics', 'custom_rules', 'priority_support']
+                    };
+                    
+                    // Store API key in KV
+                    await apiKeyManager.storeAPIKey(apiKeyData);
+                    
+                    res.status(200).json({
+                        success: true,
+                        apiKey: apiKey,
+                        publisherId: publisherId,
+                        publisherName: apiKeyData.publisherName,
+                        plan: plan,
+                        maxRequests: apiKeyData.maxRequests,
+                        features: apiKeyData.features,
+                        message: 'API key generated and stored successfully',
+                        dashboardUrl: `https://traffic-cop-apii.vercel.app/publisher-dashboard.html?session=${btoa(apiKey)}`
+                    });
+                    
+                } catch (error) {
+                    console.error('Publisher signup error:', error);
+                    res.status(500).json({
+                        success: false,
+                        error: 'Internal server error'
+                    });
+                }
+            });
+            return;
+        }
+
+        // Publisher login endpoint with dynamic API key validation
+        if (req.url === '/api/v1/publisher/login' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', async () => {
+                try {
+                    const loginData = JSON.parse(body);
+                    const { email, apiKey } = loginData;
+                    
+                    // Validate API key
+                    const validation = await apiKeyManager.validateAPIKey(apiKey);
+                    
+                    if (validation.valid && validation.keyData.email === email) {
+                        res.status(200).json({
+                            success: true,
+                            publisherName: validation.keyData.publisherName,
+                            plan: validation.keyData.plan,
+                            website: validation.keyData.website
+                        });
+                        return;
+                    }
+                    
+                    // Fallback for existing hardcoded key
+                    if (email === 'ashokvarma416@gmail.com' && 
+                        apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+                        
+                        res.status(200).json({
+                            success: true,
+                            publisherName: 'Newsparrow',
+                            plan: 'professional',
+                            website: 'https://home.newsparrow.in'
+                        });
+                        return;
+                    }
+                    
+                    res.status(401).json({
+                        success: false,
+                        error: 'Invalid API key or email'
+                    });
+                    
+                } catch (error) {
+                    console.error('Publisher login error:', error);
+                    res.status(400).json({
+                        success: false,
+                        error: 'Invalid login data'
                     });
                 }
             });
@@ -796,323 +1443,11 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Real-time visitor tracking endpoint
-        if (req.url === '/api/v1/real-time-visitor' && req.method === 'POST') {
-            const authHeader = req.headers.authorization;
-            
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({ error: 'Missing authorization header' });
-                return;
-            }
-            
-            const apiKey = authHeader.substring(7);
-            
-            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                let body = '';
-                req.on('data', chunk => body += chunk);
-                req.on('end', () => {
-                    try {
-                        const visitorData = JSON.parse(body);
-                        
-                        // Store real-time visitor
-                        realTimeVisitors.set(visitorData.sessionId, {
-                            ...visitorData,
-                            lastSeen: Date.now(),
-                            isOnline: true
-                        });
-                        
-                        // Add to history
-                        visitorHistory.push(visitorData);
-                        
-                        // Keep only last 1000 visitors
-                        if (visitorHistory.length > 1000) {
-                            visitorHistory.shift();
-                        }
-                        
-                        // Clean up offline visitors (older than 5 minutes)
-                        const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-                        for (const [sessionId, visitor] of realTimeVisitors.entries()) {
-                            if (visitor.lastSeen < fiveMinutesAgo) {
-                                realTimeVisitors.delete(sessionId);
-                            }
-                        }
-                        
-                        console.log(`📡 Real-time visitor tracked: ${visitorData.ipAddress} from ${visitorData.location?.city}, ${visitorData.location?.country}`);
-                        
-                        res.status(200).json({
-                            success: true,
-                            message: 'Visitor tracked successfully',
-                            sessionId: visitorData.sessionId
-                        });
-                        
-                    } catch (error) {
-                        res.status(400).json({ error: 'Invalid visitor data' });
-                    }
-                });
-                return;
-            }
-            
-            res.status(401).json({ error: 'Invalid API key' });
-            return;
-        }
-
-        // Real-time dashboard endpoint
-        if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
-            const authHeader = req.headers.authorization;
-            
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({ error: 'Missing authorization header' });
-                return;
-            }
-            
-            const apiKey = authHeader.substring(7);
-            
-            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                
-                // Get current online visitors
-                const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-                const onlineVisitors = Array.from(realTimeVisitors.values())
-                    .filter(visitor => visitor.lastSeen > fiveMinutesAgo)
-                    .sort((a, b) => b.lastSeen - a.lastSeen);
-                
-                // Get recent visitor history (last 24 hours)
-                const twentyFourHoursAgo = Date.now() - (24 * 60 * 60 * 1000);
-                const recentVisitors = visitorHistory
-                    .filter(visitor => new Date(visitor.timestamp).getTime() > twentyFourHoursAgo)
-                    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                
-                // Generate geographic statistics
-                const countryStats = {};
-                const cityStats = {};
-                
-                recentVisitors.forEach(visitor => {
-                    if (visitor.location) {
-                        const country = visitor.location.country || 'Unknown';
-                        const city = `${visitor.location.city || 'Unknown'}, ${visitor.location.country || 'Unknown'}`;
-                        
-                        countryStats[country] = (countryStats[country] || 0) + 1;
-                        cityStats[city] = (cityStats[city] || 0) + 1;
-                    }
-                });
-                
-                res.status(200).json({
-                    timestamp: new Date().toISOString(),
-                    onlineVisitors: onlineVisitors,
-                    onlineCount: onlineVisitors.length,
-                    recentVisitors: recentVisitors.slice(0, 50), // Last 50 visitors
-                    totalVisitors24h: recentVisitors.length,
-                    geographicStats: {
-                        countries: Object.entries(countryStats)
-                            .sort(([,a], [,b]) => b - a)
-                            .slice(0, 10)
-                            .map(([country, count]) => ({ country, count })),
-                        cities: Object.entries(cityStats)
-                            .sort(([,a], [,b]) => b - a)
-                            .slice(0, 10)
-                            .map(([city, count]) => ({ city, count }))
-                    }
-                });
-                return;
-            }
-            
-            res.status(401).json({ error: 'Invalid API key' });
-            return;
-        }
-
-        // Analytics endpoint - PURE REAL DATA ONLY
-        if (req.url === '/api/v1/analytics' && req.method === 'GET') {
-            const authHeader = req.headers.authorization;
-            
-            if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                res.status(401).json({ error: 'Missing authorization header' });
-                return;
-            }
-            
-            const apiKey = authHeader.substring(7);
-            
-            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                const today = getTodayKey();
-                const todayStats = realTrafficData.dailyStats.get(today);
-
-                // Get user timezone from headers (sent by dashboard)
-                const userTimezone = req.headers['x-user-timezone'] || 'UTC';
-                const timezoneOffset = req.headers['x-timezone-offset'] || 'UTC+0:00';
-                
-                console.log(`📊 Analytics request from timezone: ${userTimezone} (${timezoneOffset})`);
-
-                // If NO real traffic today, return zeros
-                if (!todayStats) {
-                    res.status(200).json({
-                        website: 'newsparrow.in',
-                        totalRequests: 0,
-                        blockedBots: 0,
-                        allowedUsers: 0,
-                        challengedUsers: 0,
-                        riskScore: 0,
-                        plan: 'Professional',
-                        protectionStatus: 'ACTIVE - Waiting for traffic',
-                        lastAnalysis: new Date().toISOString(),
-                        topThreats: [],
-                        recentActivity: [
-                            '✅ Dynamic Traffic Cop protection system is active',
-                            '🧠 AI-powered behavioral analysis ready',
-                            '🔍 All statistics will be based on actual detections',
-                            '🛡️ Advanced pattern recognition algorithms loaded'
-                        ]
-                    });
-                    return;
-                }
-
-                // Calculate ONLY real metrics
-                const totalRequests = todayStats.totalRequests;
-                const blockedBots = todayStats.blockedBots;
-                const allowedUsers = todayStats.allowedUsers;
-                const challengedUsers = todayStats.challengedUsers || 0;
-                const riskScore = totalRequests > 0 ? ((blockedBots / totalRequests) * 100).toFixed(1) : 0;
-
-                // Get ONLY real recent activity with DYNAMIC timezone conversion
-                const recentActivity = realTrafficData.detectionHistory
-                    .slice(-5)
-                    .reverse()
-                    .map(event => {
-                        // Convert UTC timestamp to user's timezone
-                        const utcTime = new Date(event.timestamp);
-                        let localTime;
-                        
-                        try {
-                            // Format time in user's timezone
-                            localTime = utcTime.toLocaleString('en-US', {
-                                timeZone: userTimezone,
-                                hour: '2-digit',
-                                minute: '2-digit',
-                                second: '2-digit',
-                                hour12: true
-                            });
-                        } catch (error) {
-                            // Fallback to UTC if timezone conversion fails
-                            console.warn(`Timezone conversion failed for ${userTimezone}:`, error);
-                            localTime = utcTime.toLocaleTimeString('en-US', { hour12: true });
-                        }
-                        
-                        const userAgentShort = event.userAgent ? event.userAgent.substring(0, 30) + '...' : 'Unknown';
-                        
-                        if (event.action === 'block') {
-                            return `🚨 BLOCKED: ${userAgentShort} (risk: ${event.riskScore}) at ${localTime}`;
-                        } else if (event.action === 'challenge') {
-                            return `⚠️ CHALLENGED: ${userAgentShort} (risk: ${event.riskScore}) at ${localTime}`;
-                        } else {
-                            return `✅ ALLOWED: ${userAgentShort} (risk: ${event.riskScore}) at ${localTime}`;
-                        }
-                    });
-
-                // Return ONLY real analytics with timezone info
-                res.status(200).json({
-                    website: 'newsparrow.in',
-                    totalRequests: totalRequests,
-                    blockedBots: blockedBots,
-                    allowedUsers: allowedUsers,
-                    challengedUsers: challengedUsers,
-                    riskScore: parseFloat(riskScore),
-                    plan: 'Professional',
-                    protectionStatus: 'ACTIVE',
-                    lastAnalysis: new Date().toISOString(),
-                    userTimezone: userTimezone,
-                    timezoneOffset: timezoneOffset,
-                    topThreats: Array.from(todayStats.threats),
-                    recentActivity: recentActivity.length > 0 ? recentActivity : [
-                        '📊 No traffic analyzed yet today',
-                        '🌍 Dashboard configured for your timezone',
-                        '✅ Dynamic Traffic Cop ready for incoming requests',
-                        '🛡️ AI behavioral analysis algorithms active'
-                    ]
-                });
-                return;
-            }
-            
-            res.status(401).json({ error: 'Invalid API key' });
-            return;
-        }
-
-        // Publisher signup endpoint
-        if (req.url === '/api/v1/publisher/signup' && req.method === 'POST') {
-            let body = '';
-            req.on('data', chunk => body += chunk);
-            req.on('end', () => {
-                try {
-                    const publisherInfo = JSON.parse(body);
-                    
-                    if (!publisherInfo.email || !publisherInfo.website) {
-                        res.status(400).json({
-                            success: false,
-                            error: 'Email and website are required'
-                        });
-                        return;
-                    }
-                    
-                    const testApiKey = `tc_live_${Date.now()}_test_key`;
-                    
-                    res.status(200).json({
-                        success: true,
-                        apiKey: testApiKey,
-                        publisherId: `pub_${Date.now()}`,
-                        publisherName: publisherInfo.name || publisherInfo.website,
-                        plan: publisherInfo.plan || 'starter',
-                        message: 'Test API key generated (KV integration pending)',
-                        dashboardUrl: 'https://traffic-cop-apii.vercel.app/publisher-login.html'
-                    });
-                    
-                } catch (error) {
-                    res.status(400).json({
-                        success: false,
-                        error: 'Invalid JSON data'
-                    });
-                }
-            });
-            return;
-        }
-
-        // Publisher login endpoint
-        if (req.url === '/api/v1/publisher/login' && req.method === 'POST') {
-            let body = '';
-            req.on('data', chunk => body += chunk);
-            req.on('end', () => {
-                try {
-                    const loginData = JSON.parse(body);
-                    const { email, apiKey } = loginData;
-                    
-                    if (email === 'ashokvarma416@gmail.com' && 
-                        apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                        
-                        res.status(200).json({
-                            success: true,
-                            publisherName: 'Newsparrow',
-                            plan: 'professional',
-                            website: 'https://home.newsparrow.in'
-                        });
-                        return;
-                    }
-                    
-                    res.status(401).json({
-                        success: false,
-                        error: 'Invalid API key or expired account'
-                    });
-                    
-                } catch (error) {
-                    res.status(400).json({
-                        success: false,
-                        error: 'Invalid login data'
-                    });
-                }
-            });
-            return;
-        }
-
-        // Serve static files
+        // Serve captcha challenge page
         if (req.method === 'GET') {
             const parsedUrl = url.parse(req.url, true);
             const pathname = parsedUrl.pathname;
             
-            // Serve captcha challenge page
             if (pathname === '/captcha-challenge.html') {
                 res.setHeader('Content-Type', 'text/html');
                 res.status(200).end(`
@@ -1252,7 +1587,7 @@ module.exports = async (req, res) => {
         <div class="attempts" id="attempts-counter"></div>
         
         <p style="margin-top: 30px; color: #666; font-size: 0.9em;">
-            Protected by Traffic Cop • AI-powered bot protection
+            Protected by Traffic Cop • AI-powered bot protection with KV storage
         </p>
     </div>
 
@@ -1289,6 +1624,7 @@ module.exports = async (req, res) => {
                     const num1 = Math.floor(Math.random() * 8) + 2;
                     const num2 = Math.floor(Math.random() * 5) + 2;
                     return {
+                        problem:
                         problem: num1 + ' × ' + num2 + ' = ?',
                         answer: num1 * num2
                     };
@@ -1418,6 +1754,87 @@ module.exports = async (req, res) => {
                 `);
                 return;
             }
+        }
+
+        // Activity logs endpoint with date filtering
+        if (req.url.startsWith('/api/v1/activity-logs') && req.method === 'GET') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
+                return;
+            }
+            
+            const urlParts = url.parse(req.url, true);
+            const query = urlParts.query;
+            
+            const userTimezone = req.headers['x-user-timezone'] || 'UTC';
+            const filter = query.filter || 'today';
+            const page = parseInt(query.page) || 1;
+            const limit = parseInt(query.limit) || 50;
+            
+            try {
+                // Get activity logs from KV with filtering
+                const logsData = await storage.getActivityLogs(filter, page, limit);
+                
+                // Format timestamps in user timezone
+                const formatTime = (timestamp) => {
+                    try {
+                        return new Date(timestamp).toLocaleString('en-US', {
+                            timeZone: userTimezone,
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                            second: '2-digit',
+                            hour12: true
+                        });
+                    } catch (error) {
+                        return new Date(timestamp).toLocaleString();
+                    }
+                };
+                
+                res.status(200).json({
+                    ...logsData,
+                    activities: logsData.activities.map(activity => ({
+                        ...activity,
+                        timestampFormatted: formatTime(activity.timestamp),
+                        severity: calculateSeverity(activity.riskScore || 0)
+                    }))
+                });
+                
+            } catch (error) {
+                console.error('Activity logs error:', error);
+                res.status(500).json({ error: 'Failed to load activity logs' });
+            }
+            return;
+        }
+
+        // API key details endpoint
+        if (req.url === '/api/v1/api-key/details' && req.method === 'GET') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
+                return;
+            }
+            
+            try {
+                const usage = await apiKeyManager.getAPIKeyUsage(auth.apiKey);
+                
+                res.status(200).json({
+                    success: true,
+                    apiKey: auth.apiKey.substring(0, 20) + '...',
+                    publisherId: auth.publisherId,
+                    plan: auth.plan,
+                    website: auth.website,
+                    usage: usage
+                });
+            } catch (error) {
+                res.status(500).json({ error: 'Failed to get API key details' });
+            }
+            return;
         }
 
         // 404 for unknown routes
