@@ -1020,7 +1020,7 @@ module.exports = async (req, res) => {
                     // Dynamic bot detection analysis
                     const analysis = analyzeTrafficDynamic(userAgent, website, enhancedRequestData);
                     
-                    // Store visitor data in KV
+                    // 🔥 ADD THIS: Store visitor data in KV
                     const visitorData = {
                         sessionId: enhancedRequestData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         userAgent: userAgent,
@@ -1030,10 +1030,14 @@ module.exports = async (req, res) => {
                         riskScore: analysis.riskScore,
                         action: analysis.action,
                         threats: analysis.threats,
-                        publisherId: auth.publisherId
+                        publisherId: auth.publisherId,
+                        timestamp: new Date().toISOString()
                     };
                     
+                    // 🔥 CRITICAL: Store in KV storage
                     await storage.storeVisitorSession(visitorData);
+                    
+                    console.log(`💾 Stored visitor data: ${visitorData.sessionId}, Risk: ${analysis.riskScore}, Action: ${analysis.action}`);
                     
                     const response = {
                         sessionId: visitorData.sessionId,
