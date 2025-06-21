@@ -3,15 +3,26 @@ const url = require('url');
 
 // Dynamic import for KV (since it's ES6 module)
 let kv;
-(async () => {
+let kvInitialized = false;
+
+async function initializeKV() {
     try {
-        const kvModule = await import('@vercel/kv');
-        kv = kvModule.kv;
-        console.log('✅ Vercel KV initialized successfully');
+        if (!kv) {
+            const kvModule = await import('@vercel/kv');
+            kv = kvModule.kv;
+            kvInitialized = true;
+            console.log('✅ Vercel KV initialized successfully');
+        }
+        return true;
     } catch (error) {
-        console.warn('⚠️ KV initialization failed, using fallback storage:', error);
+        console.error('❌ KV initialization failed:', error);
+        kvInitialized = false;
+        return false;
     }
-})();
+}
+
+// Initialize KV immediately
+initializeKV();
 
 // Fallback in-memory storage (when KV is not available)
 let realTrafficData = {
@@ -25,15 +36,16 @@ let visitorHistory = [];
 class APIKeyManager {
     constructor() {
         this.kvPrefix = 'tc_api_';
-        this.initialized = false;
     }
     
     async ensureKVReady() {
-        if (!kv) {
-            const kvModule = await import('@vercel/kv');
-            kv = kvModule.kv;
+        if (!kvInitialized) {
+            await initializeKV();
         }
-        this.initialized = true;
+        if (!kv) {
+            throw new Error('KV module not available');
+        }
+        return true;
     }
     
     // Generate new API key
