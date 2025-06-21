@@ -334,7 +334,7 @@ class TrafficCopStorage {
         }
     }
     
-    // Update daily stats (KV only)
+    // Update daily stats (KV only) - FIXED JSON STORAGE
     async updateDailyStats(visitorData) {
         try {
             await this.ensureKVReady();
@@ -349,7 +349,14 @@ class TrafficCopStorage {
                 const currentStatsStr = await kv.get(statsKey);
                 
                 if (currentStatsStr && currentStatsStr !== 'null' && currentStatsStr !== 'undefined') {
-                    currentStats = JSON.parse(currentStatsStr);
+                    // Handle both JSON strings and PowerShell object strings
+                    if (typeof currentStatsStr === 'string' && currentStatsStr.startsWith('@{')) {
+                        // Convert PowerShell object format to JSON
+                        console.log('🔄 Converting PowerShell object to JSON format');
+                        currentStats = null; // Force recreation with proper JSON
+                    } else {
+                        currentStats = JSON.parse(currentStatsStr);
+                    }
                 } else {
                     currentStats = null;
                 }
@@ -391,17 +398,19 @@ class TrafficCopStorage {
                 currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
             }
             
-            // Store updated stats
-            await kv.setex(statsKey, 604800, JSON.stringify(currentStats));
-            console.log('✅ Daily stats updated successfully');
+            // CRITICAL: Store as proper JSON string
+            const statsToStore = JSON.stringify(currentStats);
+            await kv.setex(statsKey, 604800, statsToStore);
+            console.log('✅ Daily stats updated and stored as JSON:', currentStats);
             
         } catch (error) {
             console.error('❌ Daily stats error:', error);
             throw error;
         }
     }
+
     
-    // Get daily statistics (KV only)
+    // Get daily statistics (KV only) - FIXED JSON PARSING
     async getDailyStats(date = null) {
         try {
             await this.ensureKVReady();
@@ -415,10 +424,36 @@ class TrafficCopStorage {
             console.log('📊 getDailyStats: Raw KV result:', statsStr);
             
             if (statsStr && statsStr !== 'null') {
-                const stats = JSON.parse(statsStr);
-                console.log('📊 getDailyStats: Parsed stats:', stats);
-                return stats;
+                // Handle PowerShell object format conversion
+                if (typeof statsStr === 'string' && statsStr.startsWith('@{')) {
+                    console.log('🔄 Converting PowerShell object format to JSON');
+                    
+                    // Extract values from PowerShell object string
+                    const totalRequestsMatch = statsStr.match(/totalRequests=(\d+)/);
+                    const allowedUsersMatch = statsStr.match(/allowedUsers=(\d+)/);
+                    const blockedBotsMatch = statsStr.match(/blockedBots=(\d+)/);
+                    
+                    const convertedStats = {
+                        date: targetDate,
+                        totalRequests: totalRequestsMatch ? parseInt(totalRequestsMatch[1]) : 0,
+                        blockedBots: blockedBotsMatch ? parseInt(blockedBotsMatch[1]) : 0,
+                        allowedUsers: allowedUsersMatch ? parseInt(allowedUsersMatch[1]) : 0,
+                        challengedUsers: 0,
+                        threats: [],
+                        countries: {},
+                        cities: {}
+                    };
+                    
+                    console.log('📊 Converted PowerShell data:', convertedStats);
+                    return convertedStats;
+                } else {
+                    // Normal JSON parsing
+                    const stats = JSON.parse(statsStr);
+                    console.log('📊 getDailyStats: Parsed JSON stats:', stats);
+                    return stats;
+                }
             } else {
+                console.log('📊 getDailyStats: No data found, returning empty stats');
                 return {
                     date: targetDate,
                     totalRequests: 0,
@@ -445,6 +480,7 @@ class TrafficCopStorage {
             };
         }
     }
+
     
     // Get live visitors (KV only)
     async getLiveVisitors() {
