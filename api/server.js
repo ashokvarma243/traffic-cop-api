@@ -1893,6 +1893,41 @@ module.exports = async (req, res) => {
             return;
         }
 
+        // Debug endpoint to test KV storage directly
+        if (req.url === '/api/v1/debug/test-kv' && req.method === 'POST') {
+            try {
+                await storage.ensureKVReady();
+                
+                // Test storing a simple value
+                const testKey = 'tc_test_key';
+                const testData = {
+                    test: 'KV storage test',
+                    timestamp: new Date().toISOString()
+                };
+                
+                await kv.set(testKey, JSON.stringify(testData));
+                
+                // Try to retrieve it
+                const retrieved = await kv.get(testKey);
+                
+                res.status(200).json({
+                    success: true,
+                    message: 'KV storage is working',
+                    stored: testData,
+                    retrieved: retrieved ? JSON.parse(retrieved) : null
+                });
+                
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: 'KV storage failed',
+                    details: error.message
+                });
+            }
+            return;
+        }
+
+
 
         // 404 for unknown routes
         res.status(404).json({ error: 'Not found' });
