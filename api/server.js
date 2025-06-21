@@ -477,37 +477,43 @@ class TrafficCopStorage {
 
 
     
-    // Get live visitors (KV only)
+    // Enhanced getLiveVisitors method for better live user tracking
     async getLiveVisitors() {
         try {
             await this.ensureKVReady();
             
             console.log('👥 Getting live visitors from activity log...');
             
-            const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, 100);
+            const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, 200); // Get more entries
             console.log('📋 Activity log entries found:', activityLog.length);
             
             if (!activityLog || activityLog.length === 0) {
                 return [];
             }
             
-            const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+            // ENHANCED: Use 10-minute window for "live" users (instead of 5 minutes)
+            const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
             const recentVisitors = [];
+            const uniqueIPs = new Set();
             
             for (const logEntry of activityLog) {
                 try {
                     const visitor = JSON.parse(logEntry);
                     const visitorTime = new Date(visitor.timestamp).getTime();
                     
-                    if (visitorTime > fiveMinutesAgo) {
-                        recentVisitors.push(visitor);
+                    if (visitorTime > tenMinutesAgo) {
+                        // Only count unique IPs as "live users"
+                        if (!uniqueIPs.has(visitor.ipAddress)) {
+                            uniqueIPs.add(visitor.ipAddress);
+                            recentVisitors.push(visitor);
+                        }
                     }
                 } catch (parseError) {
                     console.warn('⚠️ Could not parse activity log entry');
                 }
             }
             
-            console.log('👥 Found recent visitors:', recentVisitors.length);
+            console.log('👥 Found recent unique visitors:', recentVisitors.length);
             return recentVisitors.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             
         } catch (error) {
@@ -515,13 +521,18 @@ class TrafficCopStorage {
             return [];
         }
     }
+
     
-    // Get activity logs (KV only)
+    // Updated getActivityLogs to handle all entries
     async getActivityLogs(filter = 'today', page = 1, limit = 50) {
         try {
             await this.ensureKVReady();
             
+            console.log('📋 Getting activity logs with filter:', filter);
+            
+            // Get all entries now that we know parsing works
             const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, -1);
+            console.log('📋 Raw entries found:', activityLog ? activityLog.length : 0);
             
             if (!activityLog || activityLog.length === 0) {
                 return {
@@ -533,34 +544,48 @@ class TrafficCopStorage {
                 };
             }
             
-            // Parse and filter activities
             const activities = [];
-            const now = new Date();
+            let successCount = 0;
+            let errorCount = 0;
             
-            for (const logEntry of activityLog) {
+            for (let i = 0; i < activityLog.length; i++) {
                 try {
-                    const activity = JSON.parse(logEntry);
-                    const activityDate = new Date(activity.timestamp);
+                    const entry = activityLog[i];
+                    let activity;
                     
-                    // Apply date filter
-                    let includeActivity = true;
-                    if (filter === 'today') {
-                        includeActivity = activityDate.toDateString() === now.toDateString();
-                    } else if (filter === 'week') {
-                        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-                        includeActivity = activityDate >= weekAgo;
-                    } else if (filter === 'month') {
-                        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-                        includeActivity = activityDate >= monthAgo;
+                    if (typeof entry === 'string') {
+                        activity = JSON.parse(entry);
+                    } else {
+                        activity = entry;
                     }
                     
-                    if (includeActivity) {
-                        activities.push(activity);
+                    // Validate required fields
+                    if (activity && activity.timestamp && activity.sessionId) {
+                        // Apply date filter
+                        let includeActivity = true;
+                        
+                        if (filter === 'today') {
+                            const activityDate = new Date(activity.timestamp);
+                            const today = new Date().toISOString().split('T')[0];
+                            const activityDay = activityDate.toISOString().split('T')[0];
+                            includeActivity = activityDay === today;
+                        }
+                        
+                        if (includeActivity) {
+                            activities.push(activity);
+                        }
+                        successCount++;
+                    } else {
+                        errorCount++;
                     }
-                } catch (parseError) {
-                    console.warn('⚠️ Could not parse activity log entry');
+                    
+                } catch (error) {
+                    errorCount++;
+                    console.log(`Parse error for entry ${i}:`, error.message);
                 }
             }
+            
+            console.log(`📋 Parsing: ${successCount} success, ${errorCount} errors, ${activities.length} after filter`);
             
             // Sort by timestamp (newest first)
             activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -575,20 +600,32 @@ class TrafficCopStorage {
                 total: activities.length,
                 page: page,
                 limit: limit,
-                hasMore: endIndex < activities.length
+                hasMore: endIndex < activities.length,
+                debug: {
+                    rawCount: activityLog.length,
+                    successCount: successCount,
+                    errorCount: errorCount,
+                    filteredCount: activities.length
+                }
             };
             
         } catch (error) {
-            console.error('❌ Get activity logs error:', error);
+            console.error('❌ Activity logs error:', error);
             return {
                 activities: [],
                 total: 0,
                 page: page,
                 limit: limit,
-                hasMore: false
+                hasMore: false,
+                error: error.message
             };
         }
     }
+
+
+
+
+
 }
 
 // Enhanced geolocation detection
@@ -1298,7 +1335,7 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Enhanced real-time dashboard with KV data
+        // Enhanced real-time dashboard with better live user calculation
         if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
             const auth = await authenticateAPIKey(req);
             
@@ -1311,14 +1348,29 @@ module.exports = async (req, res) => {
             
             try {
                 console.log('🔍 Dashboard: Getting live visitors...');
-                // Get live visitors from KV
                 const liveVisitors = await storage.getLiveVisitors();
                 console.log('👥 Dashboard: Live visitors count:', liveVisitors.length);
                 
                 console.log('📊 Dashboard: Getting daily stats...');
-                // Get daily stats from KV
                 const dailyStats = await storage.getDailyStats();
                 console.log('📊 Dashboard: Daily stats:', dailyStats);
+                
+                // ENHANCED: Better live user calculation
+                const currentTime = Date.now();
+                const fiveMinutesAgo = currentTime - (5 * 60 * 1000);
+                const tenMinutesAgo = currentTime - (10 * 60 * 1000);
+                
+                // Count users active in last 5 minutes as "live"
+                const veryRecentVisitors = liveVisitors.filter(visitor => {
+                    const visitorTime = new Date(visitor.timestamp).getTime();
+                    return visitorTime > fiveMinutesAgo && visitor.action !== 'block';
+                });
+                
+                // Count users active in last 10 minutes for total visitors
+                const recentVisitors = liveVisitors.filter(visitor => {
+                    const visitorTime = new Date(visitor.timestamp).getTime();
+                    return visitorTime > tenMinutesAgo;
+                });
                 
                 // Calculate bot statistics
                 const botStats = {
@@ -1329,6 +1381,10 @@ module.exports = async (req, res) => {
                     low: liveVisitors.filter(v => (v.riskScore || 0) >= 20 && (v.riskScore || 0) < 40).length,
                     minimal: liveVisitors.filter(v => (v.riskScore || 0) < 20).length
                 };
+                
+                // ENHANCED: Calculate fields with better logic
+                const totalBotsDetected = (dailyStats.blockedBots || 0) + (dailyStats.challengedUsers || 0);
+                const onlineUsers = veryRecentVisitors.length; // Users active in last 5 minutes
                 
                 // Format timestamps in user timezone
                 const formatTime = (timestamp) => {
@@ -1354,9 +1410,9 @@ module.exports = async (req, res) => {
                 const response = {
                     timestamp: new Date().toISOString(),
                     liveStats: {
-                        onlineUsers: liveVisitors.filter(v => v.action !== 'block').length,
-                        totalVisitors: liveVisitors.length,
-                        botsDetected: botStats.total,
+                        onlineUsers: onlineUsers, // ENHANCED: Better calculation
+                        totalVisitors: recentVisitors.length, // 10-minute window
+                        botsDetected: totalBotsDetected,
                         botSeverity: botStats
                     },
                     dailyStats: {
@@ -1374,12 +1430,23 @@ module.exports = async (req, res) => {
                         countries: countryStats,
                         cities: []
                     },
-                    storage: 'kv'
+                    storage: 'kv',
+                    debug: {
+                        liveVisitorsTotal: liveVisitors.length,
+                        veryRecentCount: veryRecentVisitors.length,
+                        recentCount: recentVisitors.length,
+                        timeWindows: {
+                            fiveMinutesAgo: new Date(fiveMinutesAgo).toISOString(),
+                            tenMinutesAgo: new Date(tenMinutesAgo).toISOString()
+                        }
+                    }
                 };
                 
-                console.log('📤 Dashboard response:', {
-                    dailyRequests: response.dailyStats.totalRequests,
-                    liveVisitors: response.liveStats.totalVisitors
+                console.log('📤 Enhanced dashboard response:', {
+                    onlineUsers: response.liveStats.onlineUsers,
+                    totalVisitors: response.liveStats.totalVisitors,
+                    botsDetected: response.liveStats.botsDetected,
+                    debug: response.debug
                 });
                 
                 res.status(200).json(response);
@@ -1390,6 +1457,8 @@ module.exports = async (req, res) => {
             }
             return;
         }
+
+
 
         // Enhanced analytics endpoint with timezone support
         if (req.url === '/api/v1/analytics' && req.method === 'GET') {
@@ -1757,26 +1826,31 @@ module.exports = async (req, res) => {
                 const today = new Date().toISOString().split('T')[0];
                 const dailyStatsKey = `tc_daily:${today}`;
                 
-                // Get raw data without parsing
                 const dailyStatsRaw = await kv.get(dailyStatsKey);
+                const activityLogRaw = await kv.lrange('tc_activity_log', 0, 10); // Get first 10 entries
+                
+                console.log('🔍 KV Contents - Activity log raw:', activityLogRaw);
                 
                 let dailyStatsContent = null;
-                let parseError = null;
-                
                 if (dailyStatsRaw) {
                     try {
-                        if (typeof dailyStatsRaw === 'string') {
-                            dailyStatsContent = JSON.parse(dailyStatsRaw);
-                        } else {
-                            dailyStatsContent = dailyStatsRaw;
-                        }
+                        dailyStatsContent = typeof dailyStatsRaw === 'string' ? JSON.parse(dailyStatsRaw) : dailyStatsRaw;
                     } catch (error) {
-                        parseError = error.message;
-                        dailyStatsContent = { error: 'Failed to parse', rawData: dailyStatsRaw };
+                        dailyStatsContent = { error: 'Parse failed', raw: dailyStatsRaw };
                     }
                 }
                 
-                const activityLog = await kv.lrange('tc_activity_log', 0, 10);
+                // FIXED: Parse activity log sample
+                let activityLogSample = [];
+                if (activityLogRaw && activityLogRaw.length > 0) {
+                    for (const entry of activityLogRaw.slice(0, 3)) {
+                        try {
+                            activityLogSample.push(JSON.parse(entry));
+                        } catch (error) {
+                            activityLogSample.push({ error: 'Parse failed', raw: entry });
+                        }
+                    }
+                }
                 
                 res.status(200).json({
                     success: true,
@@ -1784,14 +1858,13 @@ module.exports = async (req, res) => {
                     dailyStatsKey: dailyStatsKey,
                     dailyStatsExists: !!dailyStatsRaw,
                     dailyStatsContent: dailyStatsContent,
-                    dailyStatsType: typeof dailyStatsRaw,
-                    parseError: parseError,
-                    activityLogLength: activityLog ? activityLog.length : 0,
-                    activityLogSample: activityLog ? activityLog.slice(0, 2) : [],
+                    activityLogLength: activityLogRaw ? activityLogRaw.length : 0,
+                    activityLogSample: activityLogSample, // FIXED: Parsed sample
                     kvPrefix: storage.kvPrefix
                 });
                 
             } catch (error) {
+                console.error('❌ KV contents debug error:', error);
                 res.status(500).json({
                     success: false,
                     error: error.message
@@ -1799,6 +1872,7 @@ module.exports = async (req, res) => {
             }
             return;
         }
+
 
 
                 if (req.url === '/api/v1/test-kv-simple' && req.method === 'GET') {
