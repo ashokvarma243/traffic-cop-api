@@ -22,6 +22,20 @@ class DynamicBotDetector {
             behaviorScore: { normal: 0.8, suspicious: 0.4, malicious: 0.2 },
             sessionDuration: { normal: 300, suspicious: 30, malicious: 5 }
         };
+
+        // Default action thresholds (can be overridden by global config)
+        this.actionThresholds = {
+            challenge: 40,
+            block: 75
+        };
+
+        // Use global config if available, otherwise use defaults
+        this.actionThresholds = global.trafficCopConfig?.thresholds || {
+            challenge: 40,
+            block: 75
+        };
+
+        console.log('🤖 DynamicBotDetector initialized with thresholds:', this.actionThresholds);
     }
     
     // Calculate entropy of user agent string (randomness indicator)
@@ -185,7 +199,7 @@ class DynamicBotDetector {
         };
     }
     
-    // Main dynamic detection function
+    // Main dynamic detection function with configurable thresholds
     detectBot(requestData) {
         const sessionId = requestData.sessionId || 'unknown';
         const timestamp = Date.now();
@@ -231,17 +245,28 @@ class DynamicBotDetector {
             factors.push(`Behavioral signals: ${behaviorAnalysis.signals.join(', ')}`);
         }
         
-        // Determine action based on composite score
+        // 5. Determine action based on CONFIGURABLE thresholds
         let action = 'allow';
         let confidence = 0.6;
         
-        if (riskScore >= 75) {
+        // Use global config if available, otherwise use instance defaults
+        const currentThresholds = global.trafficCopConfig?.thresholds || this.actionThresholds;
+        
+        if (riskScore >= currentThresholds.block) {
             action = 'block';
             confidence = 0.9;
-        } else if (riskScore >= 40) {
+        } else if (riskScore >= currentThresholds.challenge) {
             action = 'challenge';
             confidence = 0.8;
+        } else {
+            action = 'allow';
+            if (factors.length === 0) {
+                factors.push("Low Risk");
+            }
         }
+        
+        // Enhanced logging for debugging
+        console.log(`🎯 Bot Detection: SessionId=${sessionId}, Risk=${Math.round(riskScore)}, Thresholds=[Challenge:${currentThresholds.challenge}, Block:${currentThresholds.block}], Action=${action}`);
         
         // Store learning data for model improvement
         this.updateLearningData(sessionId, {
@@ -249,7 +274,8 @@ class DynamicBotDetector {
             factors,
             userAgentEntropy: userAgentAnalysis.entropy,
             behaviorScore: behaviorAnalysis.score,
-            requestPattern: requestAnalysis
+            requestPattern: requestAnalysis,
+            appliedThresholds: currentThresholds
         });
         
         return {
@@ -257,6 +283,7 @@ class DynamicBotDetector {
             action: action,
             confidence: Math.round(confidence * 100),
             threats: factors,
+            appliedThresholds: currentThresholds, // Include current thresholds in response
             analysis: {
                 requestPattern: requestAnalysis,
                 userAgentAnalysis: userAgentAnalysis,
@@ -264,6 +291,7 @@ class DynamicBotDetector {
             }
         };
     }
+
     
     // Helper methods
     calculateVariance(numbers) {
@@ -555,6 +583,97 @@ module.exports = async (req, res) => {
             });
             return;
         }
+
+        // Add this after the health endpoint in your server.js
+
+        // Configuration management endpoint - GET current config
+        if (req.url === '/api/v1/config' && req.method === 'GET') {
+            const authHeader = req.headers.authorization;
+            
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                res.status(401).json({ error: 'Missing authorization header' });
+                return;
+            }
+            
+            const apiKey = authHeader.substring(7);
+            
+            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+                // Get current configuration from DynamicBotDetector
+                const detector = new DynamicBotDetector();
+                
+                res.status(200).json({
+                    success: true,
+                    config: {
+                        thresholds: {
+                            challenge: detector.actionThresholds?.challenge || 40,
+                            block: detector.actionThresholds?.block || 75
+                        },
+                        anomalyThresholds: detector.anomalyThresholds,
+                        version: '4.0.0',
+                        lastUpdated: new Date().toISOString()
+                    },
+                    message: 'Current bot detection configuration'
+                });
+                return;
+            }
+            
+            res.status(401).json({ error: 'Invalid API key' });
+            return;
+        }
+
+        // Configuration management endpoint - POST update config
+        if (req.url === '/api/v1/config' && req.method === 'POST') {
+            const authHeader = req.headers.authorization;
+            
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                res.status(401).json({ error: 'Missing authorization header' });
+                return;
+            }
+            
+            const apiKey = authHeader.substring(7);
+            
+            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+                let body = '';
+                req.on('data', chunk => body += chunk);
+                req.on('end', () => {
+                    try {
+                        const newConfig = JSON.parse(body);
+                        
+                        // Update global configuration
+                        if (newConfig.thresholds) {
+                            // Store in global variable for persistence
+                            global.trafficCopConfig = global.trafficCopConfig || {};
+                            global.trafficCopConfig.thresholds = {
+                                challenge: newConfig.thresholds.challenge || 40,
+                                block: newConfig.thresholds.block || 75
+                            };
+                            
+                            console.log('🔧 Configuration updated:', global.trafficCopConfig.thresholds);
+                        }
+                        
+                        res.status(200).json({
+                            success: true,
+                            message: 'Configuration updated successfully',
+                            updatedConfig: {
+                                thresholds: global.trafficCopConfig?.thresholds || { challenge: 40, block: 75 },
+                                timestamp: new Date().toISOString()
+                            }
+                        });
+                        
+                    } catch (error) {
+                        res.status(400).json({
+                            error: 'Invalid configuration data',
+                            details: error.message
+                        });
+                    }
+                });
+                return;
+            }
+            
+            res.status(401).json({ error: 'Invalid API key' });
+            return;
+        }
+
 
         // Enhanced traffic analysis endpoint
         if (req.url === '/api/v1/analyze' && req.method === 'POST') {
