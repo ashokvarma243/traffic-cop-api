@@ -335,7 +335,7 @@ class TrafficCopStorage {
         }
     }
     
-    // Get daily statistics
+    // Get daily statistics (Fixed)
     async getDailyStats(date = null) {
         try {
             await this.ensureKVReady();
@@ -343,9 +343,32 @@ class TrafficCopStorage {
             const targetDate = date || new Date().toISOString().split('T')[0];
             const statsKey = `${this.kvPrefix}daily:${targetDate}`;
             
+            console.log('📊 Getting daily stats for key:', statsKey);
+            
             const statsStr = await kv.get(statsKey);
-            return statsStr ? JSON.parse(statsStr) : {
-                date: targetDate,
+            
+            if (statsStr) {
+                const stats = JSON.parse(statsStr);
+                console.log('📊 Found stats:', stats);
+                return stats;
+            } else {
+                console.log('📊 No stats found, returning empty');
+                return {
+                    date: targetDate,
+                    totalRequests: 0,
+                    blockedBots: 0,
+                    allowedUsers: 0,
+                    challengedUsers: 0,
+                    threats: [],
+                    countries: {},
+                    cities: {}
+                };
+            }
+            
+        } catch (error) {
+            console.error('❌ Get daily stats error:', error);
+            return {
+                date: date || new Date().toISOString().split('T')[0],
                 totalRequests: 0,
                 blockedBots: 0,
                 allowedUsers: 0,
@@ -354,12 +377,9 @@ class TrafficCopStorage {
                 countries: {},
                 cities: {}
             };
-            
-        } catch (error) {
-            console.error('Get daily stats error:', error);
-            return this.getFallbackStats();
         }
     }
+
     
     // Fallback in-memory storage
     fallbackStorage(visitorData) {
@@ -2068,7 +2088,7 @@ module.exports = async (req, res) => {
             }
             return;
         }
-        
+
         // Debug endpoint to check KV contents
         if (req.url === '/api/v1/debug/kv-contents' && req.method === 'GET') {
             try {
