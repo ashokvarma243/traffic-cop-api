@@ -161,34 +161,45 @@ class TrafficCopStorage {
         }
     }
     
-    // Store visitor session
+    // Enhanced storeVisitorSession with detailed logging
     async storeVisitorSession(visitorData) {
         try {
+            console.log('🔄 Starting storeVisitorSession for:', visitorData.sessionId);
+            
             await this.ensureKVReady();
+            console.log('✅ KV ready check passed');
             
             const sessionKey = `${this.kvPrefix}session:${visitorData.sessionId}`;
             const sessionData = {
                 ...visitorData,
                 timestamp: new Date().toISOString(),
-                expiresAt: Date.now() + (30 * 60 * 1000) // 30 minutes
+                expiresAt: Date.now() + (30 * 60 * 1000)
             };
+            
+            console.log('🔄 Attempting to store in KV with key:', sessionKey);
             
             // Store session with 30-minute expiry
             await kv.setex(sessionKey, 1800, JSON.stringify(sessionData));
+            console.log('✅ Session stored in KV successfully');
             
             // Add to activity log
+            console.log('🔄 Adding to activity log...');
             await this.addToActivityLog(visitorData);
+            console.log('✅ Activity log updated');
             
             // Update daily stats
+            console.log('🔄 Updating daily stats...');
             await this.updateDailyStats(visitorData);
+            console.log('✅ Daily stats updated');
             
-            console.log(`💾 Stored visitor session: ${visitorData.sessionId}`);
+            console.log(`💾 COMPLETED storing visitor session: ${visitorData.sessionId}`);
             
         } catch (error) {
-            console.error('KV storage error:', error);
-            this.fallbackStorage(visitorData);
+            console.error('❌ KV storage error in storeVisitorSession:', error);
+            throw error; // Re-throw to see the error in debug
         }
     }
+
     
     // Add to activity log
     async addToActivityLog(visitorData) {
@@ -201,28 +212,48 @@ class TrafficCopStorage {
                 id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
             };
             
-            // Add to activity log list
+            console.log('🔄 Adding to activity log with key: tc_activity_log');
             await kv.lpush(`${this.kvPrefix}activity_log`, JSON.stringify(logEntry));
-            
-            // Keep only last 10000 entries
             await kv.ltrim(`${this.kvPrefix}activity_log`, 0, 9999);
+            console.log('✅ Activity log entry added');
             
         } catch (error) {
-            console.error('Activity log error:', error);
+            console.error('❌ Activity log error:', error);
+            throw error;
         }
     }
-    
-    // Update daily statistics
+
     async updateDailyStats(visitorData) {
+    try {
+        await this.ensureKVReady();
+        
+        const today = new Date().toISOString().split('T')[0];
+        const statsKey = `${this.kvPrefix}daily:${today}`;
+        
+        console.log('🔄 Updating daily stats for key:', statsKey);
+        
+        // Get current stats with better error handling
+        let currentStats;
         try {
-            await this.ensureKVReady();
-            
-            const today = new Date().toISOString().split('T')[0];
-            const statsKey = `${this.kvPrefix}daily:${today}`;
-            
-            // Get current stats
             const currentStatsStr = await kv.get(statsKey);
-            const currentStats = currentStatsStr ? JSON.parse(currentStatsStr) : {
+            console.log('📊 Raw KV data:', currentStatsStr);
+            
+            if (currentStatsStr && currentStatsStr !== 'null' && currentStatsStr !== 'undefined') {
+                // Only parse if we have valid data
+                currentStats = JSON.parse(currentStatsStr);
+                console.log('✅ Parsed existing stats:', currentStats);
+            } else {
+                console.log('📊 No existing stats, creating new');
+                currentStats = null;
+            }
+        } catch (parseError) {
+            console.error('❌ JSON parse error, creating fresh stats:', parseError);
+            currentStats = null;
+        }
+        
+        // Create fresh stats if parsing failed or no data exists
+        if (!currentStats) {
+            currentStats = {
                 date: today,
                 totalRequests: 0,
                 blockedBots: 0,
@@ -232,37 +263,47 @@ class TrafficCopStorage {
                 countries: {},
                 cities: {}
             };
-            
-            // Update counters
-            currentStats.totalRequests++;
-            
-            if (visitorData.action === 'block') {
-                currentStats.blockedBots++;
-                if (visitorData.threats) {
-                    currentStats.threats.push(...visitorData.threats);
-                }
-            } else if (visitorData.action === 'challenge') {
-                currentStats.challengedUsers++;
-            } else {
-                currentStats.allowedUsers++;
-            }
-            
-            // Update geographic data
-            if (visitorData.geolocation) {
-                const country = visitorData.geolocation.country || 'Unknown';
-                const city = visitorData.geolocation.city || 'Unknown';
-                
-                currentStats.countries[country] = (currentStats.countries[country] || 0) + 1;
-                currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
-            }
-            
-            // Store updated stats with 7-day expiry
-            await kv.setex(statsKey, 604800, JSON.stringify(currentStats));
-            
-        } catch (error) {
-            console.error('Daily stats error:', error);
+            console.log('📊 Created fresh stats object');
         }
+        
+        // Update counters
+        currentStats.totalRequests++;
+        console.log('📊 Total requests now:', currentStats.totalRequests);
+        
+        if (visitorData.action === 'block') {
+            currentStats.blockedBots++;
+        } else if (visitorData.action === 'challenge') {
+            currentStats.challengedUsers++;
+        } else {
+            currentStats.allowedUsers++;
+        }
+        
+        // Update geographic data safely
+        if (visitorData.geolocation) {
+            const country = visitorData.geolocation.country || 'Unknown';
+            const city = visitorData.geolocation.city || 'Unknown';
+            
+            currentStats.countries[country] = (currentStats.countries[country] || 0) + 1;
+            currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
+        }
+        
+        // Store updated stats with error handling
+        try {
+            const statsToStore = JSON.stringify(currentStats);
+            await kv.setex(statsKey, 604800, statsToStore);
+            console.log('✅ Daily stats updated and stored successfully');
+        } catch (storeError) {
+            console.error('❌ Failed to store stats:', storeError);
+            throw storeError;
+        }
+        
+    } catch (error) {
+        console.error('❌ Daily stats error:', error);
+        throw error;
     }
+}
+
+
     
     // Get live visitor sessions
     async getLiveVisitors() {
@@ -2027,6 +2068,55 @@ module.exports = async (req, res) => {
             }
             return;
         }
+        
+        // Debug endpoint to check KV contents
+        if (req.url === '/api/v1/debug/kv-contents' && req.method === 'GET') {
+            try {
+                await storage.ensureKVReady();
+                
+                // Check for session keys
+                const sessionKeys = [];
+                const dailyKeys = [];
+                const activityKeys = [];
+                
+                // Scan for our keys (this might be limited in some KV implementations)
+                try {
+                    // Try to get specific keys we expect
+                    const today = new Date().toISOString().split('T')[0];
+                    const dailyStatsKey = `tc_daily:${today}`;
+                    const dailyStats = await kv.get(dailyStatsKey);
+                    
+                    // Try to get activity log
+                    const activityLog = await kv.lrange('tc_activity_log', 0, 10);
+                    
+                    res.status(200).json({
+                        success: true,
+                        today: today,
+                        dailyStatsKey: dailyStatsKey,
+                        dailyStatsExists: !!dailyStats,
+                        dailyStatsContent: dailyStats,
+                        activityLogLength: activityLog ? activityLog.length : 0,
+                        activityLogSample: activityLog ? activityLog.slice(0, 2) : [],
+                        kvPrefix: storage.kvPrefix
+                    });
+                    
+                } catch (scanError) {
+                    res.status(200).json({
+                        success: false,
+                        error: 'Could not scan KV',
+                        details: scanError.message
+                    });
+                }
+                
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+            return;
+        }
+
 
         // Simplified KV test endpoint
         if (req.url === '/api/v1/test-kv-simple' && req.method === 'GET') {
