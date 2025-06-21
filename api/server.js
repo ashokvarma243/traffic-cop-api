@@ -691,7 +691,7 @@ async function getGeolocationFromIP(ipAddress) {
 const apiKeyManager = new APIKeyManager();
 const storage = new TrafficCopStorage();
 
-// Enhanced DynamicBotDetector with VPN/Proxy Detection
+// Enhanced DynamicBotDetector with proxycheck.io API Integration
 class DynamicBotDetector {
     constructor() {
         this.trafficPatterns = new Map();
@@ -708,34 +708,42 @@ class DynamicBotDetector {
             block: 75
         };
         
-        console.log('🤖 Enhanced DynamicBotDetector with VPN/Proxy detection initialized');
+        // proxycheck.io configuration with your API key
+        this.proxycheckConfig = {
+            apiKey: process.env.PROXYCHECK_API_KEY || '776969-1r4653-70557d-2317a9',
+            baseUrl: 'https://proxycheck.io/v2/',
+            timeout: 8000
+        };
+        
+        console.log('🤖 Enhanced DynamicBotDetector with proxycheck.io API initialized');
     }
     
-    // NEW: VPN/Proxy Detection
+    // Enhanced VPN/Proxy Detection with proxycheck.io API
     async detectVPNProxy(ipAddress, userAgent, headers) {
         let vpnProxyScore = 0;
         const vpnProxySignals = [];
         
         try {
-            // Method 1: Check against IP quality databases
-            const ipAnalysis = await this.analyzeIPAddress(ipAddress);
-            vpnProxyScore += ipAnalysis.score;
-            if (ipAnalysis.signals.length > 0) {
-                vpnProxySignals.push(...ipAnalysis.signals);
+            // Method 1: Use proxycheck.io API (most accurate)
+            const proxycheckResult = await this.checkProxyCheckIO(ipAddress);
+            if (proxycheckResult.success) {
+                vpnProxyScore += proxycheckResult.score;
+                vpnProxySignals.push(...proxycheckResult.signals);
+                console.log(`✅ proxycheck.io result: Score=${proxycheckResult.score}, Signals=[${proxycheckResult.signals.join(', ')}]`);
             }
             
-            // Method 2: HTTP Headers Analysis
+            // Method 2: HTTP Headers Analysis (fallback/additional)
             const headerAnalysis = this.analyzeProxyHeaders(headers);
             vpnProxyScore += headerAnalysis.score;
             if (headerAnalysis.signals.length > 0) {
                 vpnProxySignals.push(...headerAnalysis.signals);
             }
             
-            // Method 3: ISP and ASN Analysis
-            const ispAnalysis = await this.analyzeISP(ipAddress);
-            vpnProxyScore += ispAnalysis.score;
-            if (ispAnalysis.signals.length > 0) {
-                vpnProxySignals.push(...ispAnalysis.signals);
+            // Method 3: Basic IP Analysis (additional verification)
+            const ipAnalysis = await this.analyzeIPAddress(ipAddress);
+            vpnProxyScore += ipAnalysis.score;
+            if (ipAnalysis.signals.length > 0) {
+                vpnProxySignals.push(...ipAnalysis.signals);
             }
             
         } catch (error) {
@@ -743,113 +751,307 @@ class DynamicBotDetector {
         }
         
         return {
-            isVPNProxy: vpnProxyScore > 30,
+            isVPNProxy: vpnProxyScore > 65, // Increased threshold for better accuracy
             confidence: Math.min(vpnProxyScore, 100),
             signals: vpnProxySignals,
             score: vpnProxyScore
         };
     }
     
-    // Analyze IP address for VPN/Proxy indicators
+    // NEW: proxycheck.io API integration
+    async checkProxyCheckIO(ipAddress) {
+        try {
+            // Build comprehensive API URL with your key
+            const apiUrl = `${this.proxycheckConfig.baseUrl}${ipAddress}?key=${this.proxycheckConfig.apiKey}&vpn=3&asn=1&risk=2&port=1&seen=1&days=7&tag=traffic-cop-newsparrow`;
+            
+            console.log(`🔍 Checking IP ${ipAddress} with proxycheck.io API...`);
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), this.proxycheckConfig.timeout);
+            
+            const response = await fetch(apiUrl, {
+                method: 'GET',
+                signal: controller.signal,
+                headers: {
+                    'User-Agent': 'Traffic-Cop-API/2.3'
+                }
+            });
+            
+            clearTimeout(timeoutId);
+            
+            if (!response.ok) {
+                throw new Error(`proxycheck.io API HTTP ${response.status}: ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            console.log('📊 proxycheck.io API response:', data);
+            
+            if (data.status !== 'ok') {
+                throw new Error(`proxycheck.io API status: ${data.status} - ${data.message || 'Unknown error'}`);
+            }
+            
+            const ipData = data[ipAddress];
+            if (!ipData) {
+                throw new Error('No data returned for IP from proxycheck.io');
+            }
+            
+            return this.parseProxyCheckResponse(ipData, ipAddress);
+            
+        } catch (error) {
+            console.warn('⚠️ proxycheck.io API failed:', error.message);
+            return { success: false, score: 0, signals: ['proxycheck_api_failed'] };
+        }
+    }
+    
+    // Parse proxycheck.io API response
+    parseProxyCheckResponse(ipData, ipAddress) {
+        let score = 0;
+        const signals = [];
+        
+        console.log(`📊 Analyzing proxycheck.io data for ${ipAddress}:`, ipData);
+        
+        // Check proxy detection (primary indicator)
+        if (ipData.proxy === 'yes') {
+            score += 70; // High confidence for confirmed proxy
+            signals.push('proxycheck_proxy_confirmed');
+            
+            // Add proxy type information
+            if (ipData.type) {
+                const typeStr = ipData.type.toLowerCase();
+                signals.push(`proxy_type_${typeStr}`);
+                
+                // Different scores for different proxy types
+                switch (typeStr) {
+                    case 'vpn':
+                        score += 25;
+                        signals.push('proxycheck_vpn_confirmed');
+                        break;
+                    case 'socks':
+                    case 'socks4':
+                    case 'socks5':
+                        score += 20;
+                        signals.push('proxycheck_socks_proxy');
+                        break;
+                    case 'http':
+                    case 'https':
+                        score += 15;
+                        signals.push('proxycheck_http_proxy');
+                        break;
+                    default:
+                        score += 10;
+                        signals.push('proxycheck_unknown_proxy_type');
+                }
+            }
+            
+            // Add port information if available
+            if (ipData.port) {
+                signals.push(`proxy_port_${ipData.port}`);
+                
+                // Common VPN/proxy ports get extra attention
+                const suspiciousPorts = [1080, 1194, 3128, 8080, 8888, 9050];
+                if (suspiciousPorts.includes(parseInt(ipData.port))) {
+                    score += 10;
+                    signals.push('suspicious_proxy_port');
+                }
+            }
+            
+            // Last seen information
+            if (ipData.last_seen_human) {
+                signals.push(`last_seen_${ipData.last_seen_human.replace(/\s+/g, '_')}`);
+            }
+        }
+        
+        // Check separate VPN detection
+        if (ipData.vpn === 'yes') {
+            score += 60;
+            signals.push('proxycheck_vpn_detected');
+        }
+        
+        // Use risk score from proxycheck.io (0-100 scale)
+        if (ipData.risk !== undefined) {
+            const riskScore = parseInt(ipData.risk);
+            const riskContribution = Math.min(35, riskScore * 0.35); // Scale appropriately
+            score += riskContribution;
+            signals.push(`proxycheck_risk_${riskScore}`);
+            
+            console.log(`🎯 proxycheck.io risk score for ${ipAddress}: ${riskScore}% (contributing ${riskContribution} to total)`);
+        }
+        
+        // Provider/ASN analysis
+        if (ipData.provider) {
+            const providerLower = ipData.provider.toLowerCase();
+            
+            // Check for suspicious keywords in provider name
+            const suspiciousKeywords = ['vpn', 'proxy', 'hosting', 'datacenter', 'cloud', 'server', 'virtual'];
+            suspiciousKeywords.forEach(keyword => {
+                if (providerLower.includes(keyword)) {
+                    score += 8;
+                    signals.push(`suspicious_provider_${keyword}`);
+                }
+            });
+            
+            // Check for known VPN providers
+            const knownVPNProviders = [
+                'nordvpn', 'expressvpn', 'surfshark', 'cyberghost', 'purevpn',
+                'protonvpn', 'mullvad', 'windscribe', 'tunnelbear', 'hotspot shield',
+                'ipvanish', 'hidemyass', 'vyprvpn', 'torguard', 'perfectprivacy'
+            ];
+            
+            knownVPNProviders.forEach(vpnProvider => {
+                if (providerLower.includes(vpnProvider)) {
+                    score += 50; // Very high score for known VPN providers
+                    signals.push(`known_vpn_provider_${vpnProvider}`);
+                }
+            });
+        }
+        
+        // Country-based adjustments
+        if (ipData.country) {
+            if (ipData.country === 'IN') {
+                // Reduce score for Indian IPs to minimize false positives
+                score = Math.max(0, score - 15);
+                signals.push('indian_ip_adjustment');
+                
+                // Additional reduction for known Indian ISPs
+                if (ipData.provider) {
+                    const indianISPs = ['bharti', 'airtel', 'jio', 'bsnl', 'vodafone', 'idea'];
+                    const providerLower = ipData.provider.toLowerCase();
+                    
+                    if (indianISPs.some(isp => providerLower.includes(isp))) {
+                        score = Math.max(0, score - 10);
+                        signals.push('indian_residential_isp');
+                    }
+                }
+            } else {
+                // Slight increase for foreign IPs
+                score += 3;
+                signals.push(`foreign_country_${ipData.country}`);
+            }
+        }
+        
+        // ASN analysis
+        if (ipData.asn) {
+            signals.push(`asn_${ipData.asn}`);
+        }
+        
+        console.log(`✅ proxycheck.io analysis complete for ${ipAddress}: Score=${score}, Signals=[${signals.join(', ')}]`);
+        
+        return {
+            success: true,
+            score: score,
+            signals: signals,
+            rawData: ipData
+        };
+    }
+    
+    // Enhanced IP address analysis (fallback method)
     async analyzeIPAddress(ipAddress) {
         let score = 0;
         const signals = [];
         
         try {
-            // Use a free IP analysis service
+            // Use ipapi.co as fallback for basic geolocation
             const response = await fetch(`https://ipapi.co/${ipAddress}/json/`);
             const data = await response.json();
             
             // Check for datacenter/hosting providers
-            if (data.org && data.org.toLowerCase().includes('hosting')) {
-                score += 25;
-                signals.push('datacenter_hosting');
-            }
-            
-            // Check for cloud providers
-            const cloudProviders = ['amazon', 'google', 'microsoft', 'digitalocean', 'vultr', 'linode'];
             if (data.org) {
                 const orgLower = data.org.toLowerCase();
+                
+                if (orgLower.includes('hosting')) {
+                    score += 15; // Reduced since proxycheck.io is primary
+                    signals.push('datacenter_hosting');
+                }
+                
+                // Check for cloud providers
+                const cloudProviders = ['amazon', 'google', 'microsoft', 'digitalocean', 'vultr', 'linode', 'ovh'];
                 cloudProviders.forEach(provider => {
                     if (orgLower.includes(provider)) {
-                        score += 20;
+                        score += 12; // Reduced since proxycheck.io is primary
                         signals.push(`cloud_provider_${provider}`);
                     }
                 });
-            }
-            
-            // Check for VPN keywords in ISP name
-            const vpnKeywords = ['vpn', 'proxy', 'tunnel', 'private', 'secure'];
-            if (data.org) {
-                const orgLower = data.org.toLowerCase();
+                
+                // Check for VPN keywords in ISP name
+                const vpnKeywords = ['vpn', 'proxy', 'tunnel', 'private', 'secure', 'anonymous'];
                 vpnKeywords.forEach(keyword => {
                     if (orgLower.includes(keyword)) {
-                        score += 30;
-                        signals.push(`vpn_keyword_${keyword}`);
+                        score += 20; // Still significant as it's obvious
+                        signals.push(`isp_vpn_keyword_${keyword}`);
                     }
                 });
             }
             
         } catch (error) {
-            console.warn('IP analysis failed:', error);
+            console.warn('Fallback IP analysis failed:', error);
         }
         
         return { score, signals };
     }
     
-    // Analyze HTTP headers for proxy indicators
+    // Enhanced HTTP headers analysis
     analyzeProxyHeaders(headers) {
         let score = 0;
         const signals = [];
         
-        // Check for proxy headers
+        // Check for proxy headers (reduced weight since proxycheck.io is primary)
         const proxyHeaders = [
             'x-forwarded-for',
             'x-real-ip',
             'via',
             'x-proxy-id',
             'x-forwarded-proto',
-            'cf-connecting-ip'
+            'cf-connecting-ip',
+            'x-cluster-client-ip'
         ];
         
         for (const header of proxyHeaders) {
             if (headers[header]) {
-                score += 15;
-                signals.push(`proxy_header_${header}`);
+                score += 8; // Reduced from 15 since proxycheck.io is primary
+                signals.push(`header_${header}`);
                 
                 // Multiple IPs in X-Forwarded-For indicates proxy chain
                 if (header === 'x-forwarded-for' && headers[header].includes(',')) {
-                    score += 20;
+                    score += 12; // Reduced from 20
                     signals.push('proxy_chain_detected');
                 }
+            }
+        }
+        
+        // Check for VPN-specific headers
+        const vpnHeaders = ['x-vpn-client', 'x-tunnel-proto', 'x-anonymizer'];
+        for (const header of vpnHeaders) {
+            if (headers[header]) {
+                score += 15;
+                signals.push(`vpn_header_${header}`);
             }
         }
         
         return { score, signals };
     }
     
-    // Analyze ISP for VPN indicators
+    // ISP analysis (simplified since proxycheck.io provides better data)
     async analyzeISP(ipAddress) {
         let score = 0;
         const signals = [];
         
-        // This would typically use a more comprehensive VPN detection service
-        // For now, basic implementation
+        // This is now primarily handled by proxycheck.io
+        // Keep minimal implementation for edge cases
         
         return { score, signals };
     }
     
-    // Enhanced main detection with VPN/Proxy
+    // Enhanced main detection with improved VPN/Proxy integration
     async detectBot(requestData) {
         const sessionId = requestData.sessionId || 'unknown';
         const timestamp = Date.now();
         
-        // Original bot detection
+        // Original bot detection methods
         const requestAnalysis = this.analyzeRequestPatterns(sessionId, timestamp);
         const userAgentAnalysis = this.analyzeUserAgentAnomalies(requestData.userAgent);
         const behaviorAnalysis = this.analyzeBehaviorSignals(requestData.behaviorData || {});
         
-        // NEW: VPN/Proxy Detection
+        // Enhanced VPN/Proxy Detection with proxycheck.io
         const vpnProxyAnalysis = await this.detectVPNProxy(
             requestData.ipAddress || requestData.realTimeData?.ipAddress, 
             requestData.userAgent, 
@@ -860,10 +1062,15 @@ class DynamicBotDetector {
         let riskScore = 0;
         const factors = [];
         
-        // Original factors
+        // Original bot detection factors
         if (requestAnalysis.frequency > this.anomalyThresholds.requestFrequency.malicious) {
             riskScore += 40;
             factors.push(`High request frequency: ${requestAnalysis.frequency.toFixed(1)}/sec`);
+        }
+        
+        if (requestAnalysis.isRhythmic && requestAnalysis.totalRequests > 5) {
+            riskScore += 30;
+            factors.push(`Mechanical request timing pattern`);
         }
         
         riskScore += userAgentAnalysis.score * 35;
@@ -877,13 +1084,13 @@ class DynamicBotDetector {
             factors.push(`Behavioral signals: ${behaviorAnalysis.signals.join(', ')}`);
         }
         
-        // NEW: VPN/Proxy risk scoring
+        // Enhanced VPN/Proxy risk scoring
         riskScore += vpnProxyAnalysis.score;
         if (vpnProxyAnalysis.signals.length > 0) {
             factors.push(`VPN/Proxy signals: ${vpnProxyAnalysis.signals.join(', ')}`);
         }
         
-        // Determine action
+        // Determine action with enhanced logic
         let action = 'allow';
         let confidence = 0.6;
         let blockAds = false;
@@ -899,13 +1106,16 @@ class DynamicBotDetector {
             confidence = 0.8;
         }
         
-        // NEW: Block ads for VPN/Proxy users (even if allowed)
+        // Enhanced ad blocking logic for VPN/Proxy users
         if (vpnProxyAnalysis.isVPNProxy) {
             blockAds = true;
             factors.push('Ad blocking enabled for VPN/Proxy user');
+            
+            // Log detailed VPN/Proxy information
+            console.log(`🔍 VPN/Proxy user detected: IP=${requestData.ipAddress}, Confidence=${vpnProxyAnalysis.confidence}%, Signals=[${vpnProxyAnalysis.signals.join(', ')}]`);
         }
         
-        console.log(`🎯 Enhanced Detection: SessionId=${sessionId}, Risk=${Math.round(riskScore)}, VPN/Proxy=${vpnProxyAnalysis.isVPNProxy}, BlockAds=${blockAds}, Action=${action}`);
+        console.log(`🎯 Enhanced Detection Complete: SessionId=${sessionId}, Risk=${Math.round(riskScore)}, VPN/Proxy=${vpnProxyAnalysis.isVPNProxy}, BlockAds=${blockAds}, Action=${action}`);
         
         return {
             riskScore: Math.round(riskScore),
@@ -923,22 +1133,152 @@ class DynamicBotDetector {
         };
     }
     
-    // [Keep all your existing methods unchanged]
+    // Existing methods (keep unchanged)
     analyzeRequestPatterns(sessionId, timestamp) {
-        // Your existing implementation
-        return { frequency: 1, isRhythmic: false, totalRequests: 1 };
+        if (!this.trafficPatterns.has(sessionId)) {
+            this.trafficPatterns.set(sessionId, []);
+        }
+        
+        const patterns = this.trafficPatterns.get(sessionId);
+        patterns.push(timestamp);
+        
+        // Keep only last 10 requests
+        if (patterns.length > 10) {
+            patterns.shift();
+        }
+        
+        // Calculate request frequency
+        if (patterns.length < 2) {
+            return { frequency: 0, isRhythmic: false, totalRequests: patterns.length };
+        }
+        
+        const timeSpan = (patterns[patterns.length - 1] - patterns[0]) / 1000; // seconds
+        const frequency = patterns.length / timeSpan;
+        
+        // Check for rhythmic patterns (bot-like)
+        const intervals = [];
+        for (let i = 1; i < patterns.length; i++) {
+            intervals.push(patterns[i] - patterns[i - 1]);
+        }
+        
+        const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
+        const variance = intervals.reduce((acc, interval) => acc + Math.pow(interval - avgInterval, 2), 0) / intervals.length;
+        const isRhythmic = variance < 1000; // Very consistent timing
+        
+        return {
+            frequency: frequency,
+            isRhythmic: isRhythmic,
+            totalRequests: patterns.length,
+            avgInterval: avgInterval,
+            variance: variance
+        };
     }
     
     analyzeUserAgentAnomalies(userAgent) {
-        // Your existing implementation
-        return { score: 0.1, anomalies: [] };
+        const anomalies = [];
+        let score = 0;
+        
+        if (!userAgent) {
+            anomalies.push('Missing user agent');
+            score = 1.0;
+            return { score, anomalies };
+        }
+        
+        const ua = userAgent.toLowerCase();
+        
+        // Check for bot keywords
+        const botKeywords = ['bot', 'crawler', 'spider', 'scraper', 'headless', 'phantom', 'selenium', 'python', 'curl', 'wget'];
+        botKeywords.forEach(keyword => {
+            if (ua.includes(keyword)) {
+                anomalies.push(`Bot keyword: ${keyword}`);
+                score += 0.3;
+            }
+        });
+        
+        // Check for unusual patterns
+        if (ua.length < 20) {
+            anomalies.push('Unusually short user agent');
+            score += 0.2;
+        }
+        
+        if (ua.length > 500) {
+            anomalies.push('Unusually long user agent');
+            score += 0.2;
+        }
+        
+        // Check for missing common browser indicators
+        const browserIndicators = ['mozilla', 'webkit', 'chrome', 'safari', 'firefox', 'edge'];
+        const hasIndicators = browserIndicators.some(indicator => ua.includes(indicator));
+        
+        if (!hasIndicators) {
+            anomalies.push('Missing browser indicators');
+            score += 0.4;
+        }
+        
+        return {
+            score: Math.min(1.0, score),
+            anomalies: anomalies
+        };
     }
     
     analyzeBehaviorSignals(behaviorData) {
-        // Your existing implementation
-        return { score: 0.8, signals: [] };
+        const signals = [];
+        let score = 0.8; // Start with high human score
+        
+        // Check mouse movements
+        if (!behaviorData.mouseMovements || behaviorData.mouseMovements === 0) {
+            signals.push('no_mouse_movement');
+            score -= 0.3;
+        }
+        
+        // Check clicks
+        if (!behaviorData.clicks || behaviorData.clicks === 0) {
+            signals.push('no_clicks');
+            score -= 0.2;
+        }
+        
+        // Check keyboard events
+        if (!behaviorData.keystrokes || behaviorData.keystrokes === 0) {
+            signals.push('no_keyboard_interaction');
+            score -= 0.2;
+        }
+        
+        // Check scroll events
+        if (!behaviorData.scrollEvents || behaviorData.scrollEvents === 0) {
+            signals.push('no_scroll_activity');
+            score -= 0.1;
+        }
+        
+        // Check for unnatural timing
+        if (behaviorData.avgClickSpeed && behaviorData.avgClickSpeed < 100) {
+            signals.push('unnatural_click_timing');
+            score -= 0.3;
+        }
+        
+        // Check mouse movement variation
+        if (behaviorData.mouseVariation && behaviorData.mouseVariation < 10) {
+            signals.push('unnatural_mouse_timing');
+            score -= 0.2;
+        }
+        
+        return {
+            score: Math.max(0, Math.min(1, score)),
+            signals: signals
+        };
     }
 }
+
+// Global function to create and use the detector
+async function analyzeTrafficDynamic(userAgent, website, requestData) {
+    const detector = new DynamicBotDetector();
+    return await detector.detectBot(requestData);
+}
+
+// Export for use in other modules
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = { DynamicBotDetector, analyzeTrafficDynamic };
+}
+
 
 
 

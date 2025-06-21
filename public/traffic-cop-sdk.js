@@ -19,7 +19,7 @@
                 enableRealTimeTracking: config.enableRealTimeTracking !== false,
                 enableVPNDetection: config.enableVPNDetection !== false,
                 blockAdsForVPN: config.blockAdsForVPN !== false,
-                vpnBlockThreshold: config.vpnBlockThreshold || 30
+                vpnBlockThreshold: config.vpnBlockThreshold || 65 // Optimized threshold
             };
             
             this.sessionId = this.generateSessionId();
@@ -41,6 +41,9 @@
                 'https://tpc.googlesyndication.com/sodar/',
                 'https://googletagmanager.com/gtag/js'
             ];
+            
+            // proxycheck.io API key for enhanced detection
+            this.proxycheckApiKey = '776969-1r4653-70557d-2317a9';
             
             this.behaviorData = {
                 mouseMovements: [],
@@ -101,7 +104,7 @@
             }
         }
         
-        // NEW: Enhanced preemptive ad blocking setup
+        // Enhanced preemptive ad blocking setup
         setupPreemptiveAdBlocking() {
             // Override document.createElement immediately
             this.interceptScriptCreation();
@@ -118,7 +121,7 @@
             }
         }
         
-        // NEW: Enhanced script creation interception
+        // Enhanced script creation interception
         interceptScriptCreation() {
             const originalCreateElement = document.createElement;
             const self = this;
@@ -147,7 +150,7 @@
             };
         }
         
-        // NEW: Enhanced DOM manipulation interception
+        // Enhanced DOM manipulation interception
         interceptDOMManipulation() {
             const originalAppendChild = Element.prototype.appendChild;
             const originalInsertBefore = Element.prototype.insertBefore;
@@ -201,7 +204,7 @@
             };
         }
         
-        // NEW: Enhanced dynamic script monitoring
+        // Enhanced dynamic script monitoring
         setupDynamicScriptMonitoring() {
             const self = this;
             const observer = new MutationObserver((mutations) => {
@@ -251,7 +254,7 @@
             });
         }
         
-        // NEW: Check if script contains ad-related code
+        // Check if script contains ad-related code
         containsAdCode(scriptContent) {
             const adKeywords = [
                 'adsbygoogle',
@@ -268,7 +271,7 @@
             return adKeywords.some(keyword => contentLower.includes(keyword));
         }
         
-        // NEW: Scan and block existing scripts
+        // Scan and block existing scripts
         scanAndBlockExistingScripts() {
             const scripts = document.querySelectorAll('script[src]');
             scripts.forEach(script => {
@@ -368,7 +371,7 @@
             }
         }
         
-        // Enhanced VPN/Proxy Detection
+        // Enhanced VPN/Proxy Detection with proxycheck.io
         async detectVPNProxy() {
             if (!this.visitorSession.ipData) {
                 console.warn('⚠️ No IP data available for VPN/Proxy detection');
@@ -379,47 +382,117 @@
             const vpnSignals = [];
             
             try {
-                // Method 1: Check against VPN detection API
+                // Method 1: Use proxycheck.io API (primary - most accurate)
                 try {
-                    const vpnResponse = await fetch(`https://vpnapi.io/api/${this.visitorSession.ipData.ip}?key=free`);
+                    const proxycheckUrl = `https://proxycheck.io/v2/${this.visitorSession.ipData.ip}?key=${this.proxycheckApiKey}&vpn=3&asn=1&risk=2&port=1&seen=1&days=7&tag=traffic-cop-newsparrow`;
+                    
+                    console.log(`🔍 Checking IP ${this.visitorSession.ipData.ip} with proxycheck.io API...`);
+                    
+                    const vpnResponse = await fetch(proxycheckUrl);
                     const vpnData = await vpnResponse.json();
                     
-                    if (vpnData.security) {
-                        if (vpnData.security.vpn) {
-                            vpnScore += 40;
-                            vpnSignals.push('VPN detected by API');
+                    if (vpnData.status === 'ok' && vpnData[this.visitorSession.ipData.ip]) {
+                        const ipData = vpnData[this.visitorSession.ipData.ip];
+                        
+                        console.log('📊 proxycheck.io API response:', ipData);
+                        
+                        // Enhanced proxycheck.io analysis
+                        if (ipData.proxy === 'yes') {
+                            vpnScore += 70;
+                            vpnSignals.push('proxycheck_proxy_confirmed');
+                            
+                            if (ipData.type) {
+                                const typeStr = ipData.type.toLowerCase();
+                                vpnSignals.push(`proxy_type_${typeStr}`);
+                                if (typeStr === 'vpn') {
+                                    vpnScore += 25;
+                                    vpnSignals.push('proxycheck_vpn_confirmed');
+                                }
+                            }
+                            
+                            if (ipData.port) {
+                                vpnSignals.push(`proxy_port_${ipData.port}`);
+                            }
                         }
-                        if (vpnData.security.proxy) {
-                            vpnScore += 35;
-                            vpnSignals.push('Proxy detected by API');
+                        
+                        if (ipData.vpn === 'yes') {
+                            vpnScore += 60;
+                            vpnSignals.push('proxycheck_vpn_detected');
                         }
-                        if (vpnData.security.tor) {
-                            vpnScore += 50;
-                            vpnSignals.push('Tor network detected');
+                        
+                        if (ipData.risk !== undefined) {
+                            const riskScore = parseInt(ipData.risk);
+                            vpnScore += Math.min(30, riskScore * 0.3);
+                            vpnSignals.push(`proxycheck_risk_${riskScore}`);
+                            console.log(`🎯 proxycheck.io risk score: ${riskScore}%`);
                         }
-                        if (vpnData.security.relay) {
-                            vpnScore += 30;
-                            vpnSignals.push('Relay detected');
+                        
+                        // Provider analysis
+                        if (ipData.provider) {
+                            const providerLower = ipData.provider.toLowerCase();
+                            const vpnKeywords = ['vpn', 'proxy', 'hosting', 'datacenter'];
+                            
+                            vpnKeywords.forEach(keyword => {
+                                if (providerLower.includes(keyword)) {
+                                    vpnScore += 10;
+                                    vpnSignals.push(`provider_${keyword}`);
+                                }
+                            });
                         }
+                        
+                        // Country adjustment for Indian IPs
+                        if (ipData.country === 'IN') {
+                            vpnScore = Math.max(0, vpnScore - 15);
+                            vpnSignals.push('indian_ip_adjustment');
+                        }
+                        
+                        console.log(`✅ proxycheck.io analysis: Score=${vpnScore}, Signals=[${vpnSignals.join(', ')}]`);
                     }
-                } catch (apiError) {
-                    console.warn('VPN API failed, using fallback detection');
+                } catch (proxycheckError) {
+                    console.warn('proxycheck.io API failed, using fallback detection');
+                    
+                    // Fallback to vpnapi.io
+                    try {
+                        const vpnResponse = await fetch(`https://vpnapi.io/api/${this.visitorSession.ipData.ip}?key=free`);
+                        const vpnData = await vpnResponse.json();
+                        
+                        if (vpnData.security) {
+                            if (vpnData.security.vpn) {
+                                vpnScore += 40;
+                                vpnSignals.push('VPN detected by fallback API');
+                            }
+                            if (vpnData.security.proxy) {
+                                vpnScore += 35;
+                                vpnSignals.push('Proxy detected by fallback API');
+                            }
+                            if (vpnData.security.tor) {
+                                vpnScore += 50;
+                                vpnSignals.push('Tor network detected');
+                            }
+                            if (vpnData.security.relay) {
+                                vpnScore += 30;
+                                vpnSignals.push('Relay detected');
+                            }
+                        }
+                    } catch (fallbackError) {
+                        console.warn('Fallback VPN API also failed, using basic detection');
+                    }
                 }
                 
-                // Method 2: Analyze ISP and ASN
+                // Method 2: ISP analysis (reduced weight since proxycheck.io is primary)
                 if (this.visitorSession.ipData.isp) {
                     const vpnKeywords = ['vpn', 'proxy', 'hosting', 'datacenter', 'cloud', 'server', 'virtual', 'vps'];
                     const ispLower = this.visitorSession.ipData.isp.toLowerCase();
                     
                     vpnKeywords.forEach(keyword => {
                         if (ispLower.includes(keyword)) {
-                            vpnScore += 15;
+                            vpnScore += 8; // Reduced since proxycheck.io is primary
                             vpnSignals.push(`ISP contains VPN keyword: ${keyword}`);
                         }
                     });
                 }
                 
-                // Method 3: Check for common VPN providers
+                // Method 3: Common VPN providers check
                 const commonVPNs = [
                     'nordvpn', 'expressvpn', 'surfshark', 'cyberghost', 'purevpn',
                     'hotspot shield', 'tunnelbear', 'windscribe', 'protonvpn',
@@ -437,23 +510,23 @@
                     });
                 }
                 
-                // Method 4: Timezone vs Location analysis
+                // Method 4: Timezone analysis
                 const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
                 if (browserTimezone && this.visitorSession.ipData.timezone) {
                     if (browserTimezone !== this.visitorSession.ipData.timezone) {
-                        vpnScore += 20;
+                        vpnScore += 15; // Reduced weight
                         vpnSignals.push('Timezone mismatch detected');
                     }
                 }
                 
-                // Method 5: Check for datacenter/hosting ASN ranges
+                // Method 5: Datacenter/hosting ASN analysis
                 if (this.visitorSession.ipData.asn) {
                     const datacenterKeywords = ['hosting', 'datacenter', 'cloud', 'server', 'digital ocean', 'amazon', 'google cloud'];
                     const asnLower = this.visitorSession.ipData.asn.toLowerCase();
                     
                     datacenterKeywords.forEach(keyword => {
                         if (asnLower.includes(keyword)) {
-                            vpnScore += 20;
+                            vpnScore += 12; // Reduced since proxycheck.io is primary
                             vpnSignals.push(`Datacenter ASN detected: ${keyword}`);
                         }
                     });
@@ -470,7 +543,7 @@
                     this.vpnDetected = true;
                     
                     if (this.config.debug) {
-                        console.log('🔍 VPN/Proxy detected:', this.visitorSession.vpnProxyData);
+                        console.log('🔍 VPN/Proxy detected with proxycheck.io:', this.visitorSession.vpnProxyData);
                     }
                     
                     // Activate ad blocking for VPN users
@@ -488,7 +561,7 @@
             }
         }
         
-        // NEW: Enhanced VPN ad blocking activation
+        // Enhanced VPN ad blocking activation
         activateVPNAdBlocking() {
             this.vpnAdBlockingActive = true;
             this.adsBlocked = true;
@@ -522,7 +595,7 @@
             }
         }
         
-        // NEW: Enhanced AdSense blocking
+        // Enhanced AdSense blocking
         blockAdSenseInitialization() {
             // Block adsbygoogle array
             if (window.adsbygoogle) {
@@ -552,7 +625,7 @@
             });
         }
         
-        // NEW: Enhanced GPT blocking
+        // Enhanced GPT blocking
         blockGPTInitialization() {
             // Block googletag
             const blockedGPT = {
@@ -604,7 +677,7 @@
             });
         }
         
-        // NEW: Block network requests to ad domains
+        // Block network requests to ad domains
         blockAdNetworkRequests() {
             // Override fetch for ad domains
             const originalFetch = window.fetch;
@@ -686,7 +759,7 @@
             });
         }
         
-        // NEW: Show VPN ad blocking message
+        // Show VPN ad blocking message
         showVPNAdBlockingMessage() {
             const message = document.createElement('div');
             message.id = 'traffic-cop-vpn-ad-message';
@@ -1435,7 +1508,7 @@
             }
         }
         
-        calculateMouseVariation() {
+                calculateMouseVariation() {
             const movements = this.behaviorData.mouseMovements;
             if (movements.length < 2) return 0;
             
@@ -1518,302 +1591,302 @@
             }
         }
         
-                showChallenge(analysis) {
-                    const overlay = document.createElement('div');
-                    overlay.id = 'traffic-cop-challenge';
-                    overlay.innerHTML = `
-                        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-                                background: rgba(0,0,0,0.8); z-index: 999999; display: flex; 
-                                align-items: center; justify-content: center; font-family: Arial, sans-serif;">
-                            <div style="background: white; padding: 40px; border-radius: 15px; text-align: center; 
-                                    max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
-                                <h2 style="margin-top: 0; color: #333;">🛡️ Security Verification</h2>
-                                <p style="color: #666; line-height: 1.5;">
-                                    Our system detected unusual browsing patterns.<br>
-                                    Please verify you're human to continue.
-                                </p>
-                                <p style="font-size: 0.9em; color: #999;">
-                                    Risk Score: ${analysis.riskScore}%<br>
-                                    Detection: ${analysis.threats.join(', ')}
-                                    ${analysis.vpnProxy?.isVPN ? '<br>VPN/Proxy detected' : ''}
-                                </p>
-                                <button onclick="window.trafficCop.passChallenge()" 
-                                    style="background: #4CAF50; color: white; border: none; padding: 15px 30px; 
-                                            border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
-                                    ✓ I'm Human
-                                </button>
-                                <button onclick="window.trafficCop.closeChallenge()" 
-                                    style="background: #999; color: white; border: none; padding: 15px 30px; 
-                                            border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
-                                    ✗ Close
-                                </button>
-                                <br>
-                                <small style="color: #999;">Powered by Traffic Cop v2.3</small>
-                            </div>
-                        </div>
-                    `;
-                    document.body.appendChild(overlay);
-                }
-                
-                passChallenge() {
-                    this.closeChallenge();
-                    this.allowAds();
-                    this.logEvent('challenge_passed');
-                    this.triggerEvent('trafficCopChallengePass');
-                }
-                
-                closeChallenge() {
-                    const overlay = document.getElementById('traffic-cop-challenge');
-                    if (overlay) {
-                        overlay.remove();
-                    }
-                }
-                
-                allowAds() {
-                    this.isBlocked = false;
-                    
-                    // Restore blocked ads
-                    document.querySelectorAll('[data-traffic-cop="blocked"]').forEach(element => {
-                        element.style.display = '';
-                        element.removeAttribute('data-traffic-cop');
-                    });
-                    
-                    // Restore VPN blocked ads
-                    document.querySelectorAll('[data-traffic-cop-vpn-blocked="true"]').forEach(element => {
-                        element.style.display = '';
-                        element.style.visibility = '';
-                        element.removeAttribute('data-traffic-cop-vpn-blocked');
-                    });
-                }
-                
-                logEvent(eventType, data = {}) {
-                    if (this.config.debug) {
-                        console.log(`📊 Traffic Cop Event: ${eventType}`, data);
-                    }
-                    
-                    try {
-                        const events = JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
-                        events.push({
-                            type: eventType,
-                            data: data,
-                            timestamp: Date.now(),
-                            sessionId: this.sessionId
-                        });
-                        
-                        if (events.length > 100) {
-                            events.splice(0, events.length - 100);
-                        }
-                        
-                        localStorage.setItem('trafficCopEvents', JSON.stringify(events));
-                    } catch (e) {
-                        // Handle localStorage errors gracefully
-                        if (this.config.debug) {
-                            console.warn('Failed to store event:', e);
-                        }
-                    }
-                }
-                
-                triggerEvent(eventName, data) {
-                    const event = new CustomEvent(eventName, { detail: data });
-                    window.dispatchEvent(event);
-                }
-                
-                storeAnalysis(analysis) {
-                    try {
-                        const stored = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
-                        stored.push({
-                            ...analysis,
-                            timestamp: Date.now(),
-                            url: window.location.href
-                        });
-                        
-                        if (stored.length > 50) {
-                            stored.splice(0, stored.length - 50);
-                        }
-                        
-                        localStorage.setItem('trafficCopAnalytics', JSON.stringify(stored));
-                    } catch (e) {
-                        // Handle localStorage errors gracefully
-                        if (this.config.debug) {
-                            console.warn('Failed to store analysis:', e);
-                        }
-                    }
-                }
-                
-                generateSessionId() {
-                    return 'tc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                }
-                
-                // Manual analysis method
-                analyze() {
-                    return this.analyzeCurrentVisitor();
-                }
-                
-                // Get current visitor data
-                getVisitorData() {
-                    return this.collectVisitorData();
-                }
-                
-                // Get real-time visitor data
-                getRealTimeData() {
-                    return this.visitorSession;
-                }
-                
-                // Get events log
-                getEvents() {
-                    try {
-                        return JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
-                    } catch (e) {
-                        return [];
-                    }
-                }
-                
-                // Clear all stored data
-                clearData() {
-                    try {
-                        localStorage.removeItem('trafficCopEvents');
-                        localStorage.removeItem('trafficCopAnalytics');
-                        this.behaviorData = {
-                            mouseMovements: [],
-                            clicks: [],
-                            scrollEvents: [],
-                            keystrokes: [],
-                            pageInteractions: 0,
-                            timeOnPage: 0,
-                            deviceFingerprint: null
-                        };
-                    } catch (e) {
-                        if (this.config.debug) {
-                            console.warn('Failed to clear data:', e);
-                        }
-                    }
-                }
-                
-                // Force VPN detection
-                async forceVPNDetection() {
-                    if (this.config.enableVPNDetection) {
-                        await this.detectVPNProxy();
-                        return this.getVPNData();
-                    }
-                    return { detected: false, message: 'VPN detection disabled' };
-                }
-                
-                // Update configuration
-                updateConfig(newConfig) {
-                    this.config = { ...this.config, ...newConfig };
-                    if (this.config.debug) {
-                        console.log('🔧 Traffic Cop configuration updated:', this.config);
-                    }
-                }
-                
-                // Get current configuration
-                getConfig() {
-                    return { ...this.config };
-                }
-                
-                // Enable/disable VPN ad blocking
-                setVPNAdBlocking(enabled) {
-                    this.config.blockAdsForVPN = enabled;
-                    if (enabled && this.vpnDetected && !this.vpnAdBlockingActive) {
-                        this.activateVPNAdBlocking();
-                    } else if (!enabled && this.vpnAdBlockingActive) {
-                        this.vpnAdBlockingActive = false;
-                        this.allowAds();
-                    }
-                }
-                
-                // Get blocked scripts list
-                getBlockedScripts() {
-                    return this.blockedScripts;
-                }
-                
-                // Manual script blocking
-                blockScript(scriptUrl) {
-                    if (!this.blockedAdScripts.includes(scriptUrl)) {
-                        this.blockedAdScripts.push(scriptUrl);
-                    }
-                    
-                    // Remove existing scripts with this URL
-                    document.querySelectorAll(`script[src*="${scriptUrl}"]`).forEach(script => {
-                        script.remove();
-                        this.logVPNAdBlock(scriptUrl, 'manual_block');
-                    });
-                }
-                
-                // Check if user is currently detected as VPN
-                isVPNUser() {
-                    return this.vpnDetected;
-                }
-                
-                // Check if ads are currently blocked
-                areAdsBlocked() {
-                    return this.adsBlocked || this.vpnAdBlockingActive;
-                }
-                
-                // Get detection confidence
-                getDetectionConfidence() {
-                    return {
-                        vpn: this.visitorSession.vpnProxyData?.confidence || 0,
-                        bot: this.behaviorData.deviceFingerprint ? 75 : 0,
-                        overall: Math.max(
-                            this.visitorSession.vpnProxyData?.confidence || 0,
-                            this.behaviorData.deviceFingerprint ? 75 : 0
-                        )
-                    };
-                }
-                
-                // Destroy SDK instance
-                destroy() {
-                    this.isBlocked = false;
-                    this.adsBlocked = false;
-                    this.vpnAdBlockingActive = false;
-                    this.allowAds();
-                    
-                    // Clear the instance
-                    if (window.trafficCop === this) {
-                        window.trafficCop = null;
-                    }
-                    
-                    if (this.config.debug) {
-                        console.log('🛡️ Traffic Cop SDK destroyed');
-                    }
-                }
+        showChallenge(analysis) {
+            const overlay = document.createElement('div');
+            overlay.id = 'traffic-cop-challenge';
+            overlay.innerHTML = `
+                <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                           background: rgba(0,0,0,0.8); z-index: 999999; display: flex; 
+                           align-items: center; justify-content: center; font-family: Arial, sans-serif;">
+                    <div style="background: white; padding: 40px; border-radius: 15px; text-align: center; 
+                               max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+                        <h2 style="margin-top: 0; color: #333;">🛡️ Security Verification</h2>
+                        <p style="color: #666; line-height: 1.5;">
+                            Our system detected unusual browsing patterns.<br>
+                            Please verify you're human to continue.
+                        </p>
+                        <p style="font-size: 0.9em; color: #999;">
+                            Risk Score: ${analysis.riskScore}%<br>
+                            Detection: ${analysis.threats.join(', ')}
+                            ${analysis.vpnProxy?.isVPN ? '<br>VPN/Proxy detected' : ''}
+                        </p>
+                        <button onclick="window.trafficCop.passChallenge()" 
+                               style="background: #4CAF50; color: white; border: none; padding: 15px 30px; 
+                                      border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
+                            ✓ I'm Human
+                        </button>
+                        <button onclick="window.trafficCop.closeChallenge()" 
+                               style="background: #999; color: white; border: none; padding: 15px 30px; 
+                                      border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
+                            ✗ Close
+                        </button>
+                        <br>
+                        <small style="color: #999;">Powered by Traffic Cop v2.3</small>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+        
+        passChallenge() {
+            this.closeChallenge();
+            this.allowAds();
+            this.logEvent('challenge_passed');
+            this.triggerEvent('trafficCopChallengePass');
+        }
+        
+        closeChallenge() {
+            const overlay = document.getElementById('traffic-cop-challenge');
+            if (overlay) {
+                overlay.remove();
             }
+        }
+        
+        allowAds() {
+            this.isBlocked = false;
             
-            // Global API
-            window.TrafficCop = {
-                init: function(apiKey, config) {
-                    window.trafficCop = new TrafficCopSDK(apiKey, config);
-                    return window.trafficCop;
-                },
-                version: '2.3.0',
-                SDK: TrafficCopSDK
-            };
-            
-            // Auto-detect if API key is provided via data attribute
-            document.addEventListener('DOMContentLoaded', function() {
-                const scripts = document.getElementsByTagName('script');
-                for (let script of scripts) {
-                    const apiKey = script.getAttribute('data-traffic-cop-key');
-                    if (apiKey) {
-                        const config = {
-                            debug: script.getAttribute('data-debug') === 'true',
-                            enableVPNDetection: script.getAttribute('data-vpn-detection') !== 'false',
-                            blockAdsForVPN: script.getAttribute('data-block-ads-vpn') !== 'false',
-                            vpnBlockThreshold: parseInt(script.getAttribute('data-vpn-threshold')) || 30,
-                            mode: script.getAttribute('data-mode') || 'block'
-                        };
-                        
-                        new TrafficCopSDK(apiKey, config);
-                        break;
-                    }
-                }
+            // Restore blocked ads
+            document.querySelectorAll('[data-traffic-cop="blocked"]').forEach(element => {
+                element.style.display = '';
+                element.removeAttribute('data-traffic-cop');
             });
             
-            // Auto-initialize if global config is available
-            if (window.TrafficCopConfig && window.TrafficCopConfig.apiKey) {
-                window.trafficCop = new TrafficCopSDK(window.TrafficCopConfig.apiKey, window.TrafficCopConfig);
+            // Restore VPN blocked ads
+            document.querySelectorAll('[data-traffic-cop-vpn-blocked="true"]').forEach(element => {
+                element.style.display = '';
+                element.style.visibility = '';
+                element.removeAttribute('data-traffic-cop-vpn-blocked');
+            });
+        }
+        
+        logEvent(eventType, data = {}) {
+            if (this.config.debug) {
+                console.log(`📊 Traffic Cop Event: ${eventType}`, data);
             }
             
-        })(window);
+            try {
+                const events = JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
+                events.push({
+                    type: eventType,
+                    data: data,
+                    timestamp: Date.now(),
+                    sessionId: this.sessionId
+                });
+                
+                if (events.length > 100) {
+                    events.splice(0, events.length - 100);
+                }
+                
+                localStorage.setItem('trafficCopEvents', JSON.stringify(events));
+            } catch (e) {
+                // Handle localStorage errors gracefully
+                if (this.config.debug) {
+                    console.warn('Failed to store event:', e);
+                }
+            }
+        }
+        
+        triggerEvent(eventName, data) {
+            const event = new CustomEvent(eventName, { detail: data });
+            window.dispatchEvent(event);
+        }
+        
+        storeAnalysis(analysis) {
+            try {
+                const stored = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
+                stored.push({
+                    ...analysis,
+                    timestamp: Date.now(),
+                    url: window.location.href
+                });
+                
+                if (stored.length > 50) {
+                    stored.splice(0, stored.length - 50);
+                }
+                
+                localStorage.setItem('trafficCopAnalytics', JSON.stringify(stored));
+            } catch (e) {
+                // Handle localStorage errors gracefully
+                if (this.config.debug) {
+                    console.warn('Failed to store analysis:', e);
+                }
+            }
+        }
+        
+        generateSessionId() {
+            return 'tc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        // Manual analysis method
+        analyze() {
+            return this.analyzeCurrentVisitor();
+        }
+        
+        // Get current visitor data
+        getVisitorData() {
+            return this.collectVisitorData();
+        }
+        
+        // Get real-time visitor data
+        getRealTimeData() {
+            return this.visitorSession;
+        }
+        
+        // Get events log
+        getEvents() {
+            try {
+                return JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
+            } catch (e) {
+                return [];
+            }
+        }
+        
+        // Clear all stored data
+        clearData() {
+            try {
+                localStorage.removeItem('trafficCopEvents');
+                localStorage.removeItem('trafficCopAnalytics');
+                this.behaviorData = {
+                    mouseMovements: [],
+                    clicks: [],
+                    scrollEvents: [],
+                    keystrokes: [],
+                    pageInteractions: 0,
+                    timeOnPage: 0,
+                    deviceFingerprint: null
+                };
+            } catch (e) {
+                if (this.config.debug) {
+                    console.warn('Failed to clear data:', e);
+                }
+            }
+        }
+        
+        // Force VPN detection
+        async forceVPNDetection() {
+            if (this.config.enableVPNDetection) {
+                await this.detectVPNProxy();
+                return this.getVPNData();
+            }
+            return { detected: false, message: 'VPN detection disabled' };
+        }
+        
+        // Update configuration
+        updateConfig(newConfig) {
+            this.config = { ...this.config, ...newConfig };
+            if (this.config.debug) {
+                console.log('🔧 Traffic Cop configuration updated:', this.config);
+            }
+        }
+        
+        // Get current configuration
+        getConfig() {
+            return { ...this.config };
+        }
+        
+        // Enable/disable VPN ad blocking
+        setVPNAdBlocking(enabled) {
+            this.config.blockAdsForVPN = enabled;
+            if (enabled && this.vpnDetected && !this.vpnAdBlockingActive) {
+                this.activateVPNAdBlocking();
+            } else if (!enabled && this.vpnAdBlockingActive) {
+                this.vpnAdBlockingActive = false;
+                this.allowAds();
+            }
+        }
+        
+        // Get blocked scripts list
+        getBlockedScripts() {
+            return this.blockedScripts;
+        }
+        
+        // Manual script blocking
+        blockScript(scriptUrl) {
+            if (!this.blockedAdScripts.includes(scriptUrl)) {
+                this.blockedAdScripts.push(scriptUrl);
+            }
+            
+            // Remove existing scripts with this URL
+            document.querySelectorAll(`script[src*="${scriptUrl}"]`).forEach(script => {
+                script.remove();
+                this.logVPNAdBlock(scriptUrl, 'manual_block');
+            });
+        }
+        
+        // Check if user is currently detected as VPN
+        isVPNUser() {
+            return this.vpnDetected;
+        }
+        
+        // Check if ads are currently blocked
+        areAdsBlocked() {
+            return this.adsBlocked || this.vpnAdBlockingActive;
+        }
+        
+        // Get detection confidence
+        getDetectionConfidence() {
+            return {
+                vpn: this.visitorSession.vpnProxyData?.confidence || 0,
+                bot: this.behaviorData.deviceFingerprint ? 75 : 0,
+                overall: Math.max(
+                    this.visitorSession.vpnProxyData?.confidence || 0,
+                    this.behaviorData.deviceFingerprint ? 75 : 0
+                )
+            };
+        }
+        
+        // Destroy SDK instance
+        destroy() {
+            this.isBlocked = false;
+            this.adsBlocked = false;
+            this.vpnAdBlockingActive = false;
+            this.allowAds();
+            
+            // Clear the instance
+            if (window.trafficCop === this) {
+                window.trafficCop = null;
+            }
+            
+            if (this.config.debug) {
+                console.log('🛡️ Traffic Cop SDK destroyed');
+            }
+        }
+    }
+    
+    // Global API
+    window.TrafficCop = {
+        init: function(apiKey, config) {
+            window.trafficCop = new TrafficCopSDK(apiKey, config);
+            return window.trafficCop;
+        },
+        version: '2.3.0',
+        SDK: TrafficCopSDK
+    };
+    
+    // Auto-detect if API key is provided via data attribute
+    document.addEventListener('DOMContentLoaded', function() {
+        const scripts = document.getElementsByTagName('script');
+        for (let script of scripts) {
+            const apiKey = script.getAttribute('data-traffic-cop-key');
+            if (apiKey) {
+                const config = {
+                    debug: script.getAttribute('data-debug') === 'true',
+                    enableVPNDetection: script.getAttribute('data-vpn-detection') !== 'false',
+                    blockAdsForVPN: script.getAttribute('data-block-ads-vpn') !== 'false',
+                    vpnBlockThreshold: parseInt(script.getAttribute('data-vpn-threshold')) || 65,
+                    mode: script.getAttribute('data-mode') || 'block'
+                };
+                
+                new TrafficCopSDK(apiKey, config);
+                break;
+            }
+        }
+    });
+    
+    // Auto-initialize if global config is available
+    if (window.TrafficCopConfig && window.TrafficCopConfig.apiKey) {
+        window.trafficCop = new TrafficCopSDK(window.TrafficCopConfig.apiKey, window.TrafficCopConfig);
+    }
+    
+})(window);
 
