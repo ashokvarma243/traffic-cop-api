@@ -1,4 +1,4 @@
-// Enhanced Traffic Cop SDK with VPN/Proxy Detection and Ad Blocking v2.2
+// Enhanced Traffic Cop SDK with VPN/Proxy Detection and Advanced Ad Blocking v2.3
 (function(window) {
     'use strict';
     
@@ -27,8 +27,20 @@
             this.isBlocked = false;
             this.adsBlocked = false;
             this.vpnDetected = false;
+            this.vpnAdBlockingActive = false;
             this.retryCount = 0;
             this.blockedScripts = [];
+            
+            // Enhanced blocked ad scripts list
+            this.blockedAdScripts = [
+                'https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js',
+                'https://securepubads.g.doubleclick.net/tag/js/gpt.js',
+                'https://www.googletagservices.com/tag/js/gpt.js',
+                'https://googleads.g.doubleclick.net/pagead/js/adsbygoogle.js',
+                'https://partner.googleadservices.com/gampad/google_ads.js',
+                'https://tpc.googlesyndication.com/sodar/',
+                'https://googletagmanager.com/gtag/js'
+            ];
             
             this.behaviorData = {
                 mouseMovements: [],
@@ -57,8 +69,11 @@
         
         init() {
             if (this.config.debug) {
-                console.log('🛡️ Traffic Cop SDK v2.2 initialized with VPN/Proxy detection', this.config);
+                console.log('🛡️ Traffic Cop SDK v2.3 initialized with enhanced VPN/Proxy ad blocking', this.config);
             }
+            
+            // Setup preemptive ad blocking monitoring
+            this.setupPreemptiveAdBlocking();
             
             // Initialize real-time visitor tracking first
             if (this.config.enableRealTimeTracking) {
@@ -70,9 +85,6 @@
             
             // Generate device fingerprint
             this.generateDeviceFingerprint();
-            
-            // Setup ad blocking monitoring
-            this.setupAdBlockingMonitoring();
             
             // Initial analysis after page loads
             if (document.readyState === 'loading') {
@@ -87,6 +99,195 @@
             if (this.config.realTimeDetection) {
                 this.setupRealTimeMonitoring();
             }
+        }
+        
+        // NEW: Enhanced preemptive ad blocking setup
+        setupPreemptiveAdBlocking() {
+            // Override document.createElement immediately
+            this.interceptScriptCreation();
+            
+            // Override DOM manipulation methods
+            this.interceptDOMManipulation();
+            
+            // Setup MutationObserver for dynamic content
+            this.setupDynamicScriptMonitoring();
+            
+            // Block existing scripts if VPN is already detected
+            if (this.vpnAdBlockingActive) {
+                this.scanAndBlockExistingScripts();
+            }
+        }
+        
+        // NEW: Enhanced script creation interception
+        interceptScriptCreation() {
+            const originalCreateElement = document.createElement;
+            const self = this;
+            
+            document.createElement = function(tagName) {
+                const element = originalCreateElement.call(document, tagName);
+                
+                if (tagName.toLowerCase() === 'script') {
+                    // Create a proxy for the script element
+                    return new Proxy(element, {
+                        set(target, property, value) {
+                            if (property === 'src' && self.vpnAdBlockingActive) {
+                                if (self.shouldBlockAdScript(value)) {
+                                    console.log('🚫 VPN User: Blocked script creation via createElement:', value);
+                                    self.logVPNAdBlock(value, 'createElement_src');
+                                    return true; // Prevent setting the src
+                                }
+                            }
+                            target[property] = value;
+                            return true;
+                        }
+                    });
+                }
+                
+                return element;
+            };
+        }
+        
+        // NEW: Enhanced DOM manipulation interception
+        interceptDOMManipulation() {
+            const originalAppendChild = Element.prototype.appendChild;
+            const originalInsertBefore = Element.prototype.insertBefore;
+            const originalReplaceChild = Element.prototype.replaceChild;
+            const self = this;
+            
+            // Override appendChild
+            Element.prototype.appendChild = function(child) {
+                if (self.vpnAdBlockingActive && child.tagName === 'SCRIPT') {
+                    if (child.src && self.shouldBlockAdScript(child.src)) {
+                        console.log('🚫 VPN User: Blocked appendChild:', child.src);
+                        self.logVPNAdBlock(child.src, 'appendChild');
+                        return child; // Return without appending
+                    }
+                    if (child.innerHTML && self.containsAdCode(child.innerHTML)) {
+                        console.log('🚫 VPN User: Blocked inline ad script via appendChild');
+                        self.logVPNAdBlock('inline_ad_script', 'appendChild_inline');
+                        return child;
+                    }
+                }
+                return originalAppendChild.call(this, child);
+            };
+            
+            // Override insertBefore
+            Element.prototype.insertBefore = function(newNode, referenceNode) {
+                if (self.vpnAdBlockingActive && newNode.tagName === 'SCRIPT') {
+                    if (newNode.src && self.shouldBlockAdScript(newNode.src)) {
+                        console.log('🚫 VPN User: Blocked insertBefore:', newNode.src);
+                        self.logVPNAdBlock(newNode.src, 'insertBefore');
+                        return newNode;
+                    }
+                    if (newNode.innerHTML && self.containsAdCode(newNode.innerHTML)) {
+                        console.log('🚫 VPN User: Blocked inline ad script via insertBefore');
+                        self.logVPNAdBlock('inline_ad_script', 'insertBefore_inline');
+                        return newNode;
+                    }
+                }
+                return originalInsertBefore.call(this, newNode, referenceNode);
+            };
+            
+            // Override replaceChild
+            Element.prototype.replaceChild = function(newChild, oldChild) {
+                if (self.vpnAdBlockingActive && newChild.tagName === 'SCRIPT') {
+                    if (newChild.src && self.shouldBlockAdScript(newChild.src)) {
+                        console.log('🚫 VPN User: Blocked replaceChild:', newChild.src);
+                        self.logVPNAdBlock(newChild.src, 'replaceChild');
+                        return oldChild;
+                    }
+                }
+                return originalReplaceChild.call(this, newChild, oldChild);
+            };
+        }
+        
+        // NEW: Enhanced dynamic script monitoring
+        setupDynamicScriptMonitoring() {
+            const self = this;
+            const observer = new MutationObserver((mutations) => {
+                if (!self.vpnAdBlockingActive) return;
+                
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            // Check if the node itself is a script
+                            if (node.tagName === 'SCRIPT') {
+                                if (node.src && self.shouldBlockAdScript(node.src)) {
+                                    console.log('🚫 VPN User: Blocked dynamic script via MutationObserver:', node.src);
+                                    node.remove();
+                                    self.logVPNAdBlock(node.src, 'mutation_observer');
+                                } else if (node.innerHTML && self.containsAdCode(node.innerHTML)) {
+                                    console.log('🚫 VPN User: Blocked inline ad script via MutationObserver');
+                                    node.remove();
+                                    self.logVPNAdBlock('inline_ad_script', 'mutation_observer_inline');
+                                }
+                            }
+                            
+                            // Check for scripts within the added node
+                            if (node.querySelectorAll) {
+                                const scripts = node.querySelectorAll('script');
+                                scripts.forEach(script => {
+                                    if (script.src && self.shouldBlockAdScript(script.src)) {
+                                        console.log('🚫 VPN User: Blocked nested script:', script.src);
+                                        script.remove();
+                                        self.logVPNAdBlock(script.src, 'nested_script');
+                                    } else if (script.innerHTML && self.containsAdCode(script.innerHTML)) {
+                                        console.log('🚫 VPN User: Blocked nested inline ad script');
+                                        script.remove();
+                                        self.logVPNAdBlock('inline_ad_script', 'nested_inline');
+                                    }
+                                });
+                            }
+                        }
+                    });
+                });
+            });
+            
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['src']
+            });
+        }
+        
+        // NEW: Check if script contains ad-related code
+        containsAdCode(scriptContent) {
+            const adKeywords = [
+                'adsbygoogle',
+                'googletag',
+                'doubleclick',
+                'googlesyndication',
+                'googleadservices',
+                'google_ads',
+                'gpt.js',
+                'pubads'
+            ];
+            
+            const contentLower = scriptContent.toLowerCase();
+            return adKeywords.some(keyword => contentLower.includes(keyword));
+        }
+        
+        // NEW: Scan and block existing scripts
+        scanAndBlockExistingScripts() {
+            const scripts = document.querySelectorAll('script[src]');
+            scripts.forEach(script => {
+                if (this.shouldBlockAdScript(script.src)) {
+                    console.log('🚫 VPN User: Removing existing ad script:', script.src);
+                    script.remove();
+                    this.logVPNAdBlock(script.src, 'existing_script_removal');
+                }
+            });
+            
+            // Also check inline scripts
+            const inlineScripts = document.querySelectorAll('script:not([src])');
+            inlineScripts.forEach(script => {
+                if (this.containsAdCode(script.innerHTML)) {
+                    console.log('🚫 VPN User: Removing existing inline ad script');
+                    script.remove();
+                    this.logVPNAdBlock('inline_ad_script', 'existing_inline_removal');
+                }
+            });
         }
         
         // Enhanced real-time tracking with VPN/Proxy detection
@@ -167,7 +368,7 @@
             }
         }
         
-        // NEW: VPN/Proxy Detection
+        // Enhanced VPN/Proxy Detection
         async detectVPNProxy() {
             if (!this.visitorSession.ipData) {
                 console.warn('⚠️ No IP data available for VPN/Proxy detection');
@@ -179,31 +380,35 @@
             
             try {
                 // Method 1: Check against VPN detection API
-                const vpnResponse = await fetch(`https://vpnapi.io/api/${this.visitorSession.ipData.ip}?key=free`);
-                const vpnData = await vpnResponse.json();
-                
-                if (vpnData.security) {
-                    if (vpnData.security.vpn) {
-                        vpnScore += 40;
-                        vpnSignals.push('VPN detected by API');
+                try {
+                    const vpnResponse = await fetch(`https://vpnapi.io/api/${this.visitorSession.ipData.ip}?key=free`);
+                    const vpnData = await vpnResponse.json();
+                    
+                    if (vpnData.security) {
+                        if (vpnData.security.vpn) {
+                            vpnScore += 40;
+                            vpnSignals.push('VPN detected by API');
+                        }
+                        if (vpnData.security.proxy) {
+                            vpnScore += 35;
+                            vpnSignals.push('Proxy detected by API');
+                        }
+                        if (vpnData.security.tor) {
+                            vpnScore += 50;
+                            vpnSignals.push('Tor network detected');
+                        }
+                        if (vpnData.security.relay) {
+                            vpnScore += 30;
+                            vpnSignals.push('Relay detected');
+                        }
                     }
-                    if (vpnData.security.proxy) {
-                        vpnScore += 35;
-                        vpnSignals.push('Proxy detected by API');
-                    }
-                    if (vpnData.security.tor) {
-                        vpnScore += 50;
-                        vpnSignals.push('Tor network detected');
-                    }
-                    if (vpnData.security.relay) {
-                        vpnScore += 30;
-                        vpnSignals.push('Relay detected');
-                    }
+                } catch (apiError) {
+                    console.warn('VPN API failed, using fallback detection');
                 }
                 
                 // Method 2: Analyze ISP and ASN
                 if (this.visitorSession.ipData.isp) {
-                    const vpnKeywords = ['vpn', 'proxy', 'hosting', 'datacenter', 'cloud', 'server', 'virtual'];
+                    const vpnKeywords = ['vpn', 'proxy', 'hosting', 'datacenter', 'cloud', 'server', 'virtual', 'vps'];
                     const ispLower = this.visitorSession.ipData.isp.toLowerCase();
                     
                     vpnKeywords.forEach(keyword => {
@@ -218,7 +423,8 @@
                 const commonVPNs = [
                     'nordvpn', 'expressvpn', 'surfshark', 'cyberghost', 'purevpn',
                     'hotspot shield', 'tunnelbear', 'windscribe', 'protonvpn',
-                    'mullvad', 'private internet access', 'pia'
+                    'mullvad', 'private internet access', 'pia', 'ipvanish',
+                    'hidemyass', 'vyprvpn', 'torguard', 'perfectprivacy'
                 ];
                 
                 if (this.visitorSession.ipData.isp) {
@@ -240,6 +446,19 @@
                     }
                 }
                 
+                // Method 5: Check for datacenter/hosting ASN ranges
+                if (this.visitorSession.ipData.asn) {
+                    const datacenterKeywords = ['hosting', 'datacenter', 'cloud', 'server', 'digital ocean', 'amazon', 'google cloud'];
+                    const asnLower = this.visitorSession.ipData.asn.toLowerCase();
+                    
+                    datacenterKeywords.forEach(keyword => {
+                        if (asnLower.includes(keyword)) {
+                            vpnScore += 20;
+                            vpnSignals.push(`Datacenter ASN detected: ${keyword}`);
+                        }
+                    });
+                }
+                
                 this.visitorSession.vpnProxyData = {
                     isVPN: vpnScore >= this.config.vpnBlockThreshold,
                     score: vpnScore,
@@ -254,9 +473,9 @@
                         console.log('🔍 VPN/Proxy detected:', this.visitorSession.vpnProxyData);
                     }
                     
-                    // Block ads if configured
+                    // Activate ad blocking for VPN users
                     if (this.config.blockAdsForVPN) {
-                        this.blockAdsForVPNUser();
+                        this.activateVPNAdBlocking();
                     }
                     
                     this.logEvent('vpn_proxy_detected', this.visitorSession.vpnProxyData);
@@ -269,138 +488,247 @@
             }
         }
         
-        // NEW: Block ads specifically for VPN/Proxy users
-        blockAdsForVPNUser() {
+        // NEW: Enhanced VPN ad blocking activation
+        activateVPNAdBlocking() {
+            this.vpnAdBlockingActive = true;
             this.adsBlocked = true;
             
             if (this.config.debug) {
-                console.log('🚫 Blocking ads for VPN/Proxy user');
+                console.log('🚫 VPN/Proxy detected: Activating comprehensive ad blocking');
             }
             
-            // Block Google AdSense scripts
-            this.blockScript('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js');
-            this.blockScript('https://securepubads.g.doubleclick.net/tag/js/gpt.js');
-            this.blockScript('https://www.googletagservices.com/tag/js/gpt.js');
-            this.blockScript('https://googleads.g.doubleclick.net/pagead/js/adsbygoogle.js');
+            // Scan and block existing scripts
+            this.scanAndBlockExistingScripts();
             
-            // Hide existing ads
-            this.hideExistingAds();
+            // Block AdSense and GPT initialization
+            this.blockAdSenseInitialization();
+            this.blockGPTInitialization();
             
-            // Monitor for new ad injections
-            this.monitorAdInjections();
+            // Hide existing ad containers
+            this.hideAdContainers();
             
-            this.logEvent('ads_blocked_vpn', {
-                reason: 'VPN/Proxy detected',
-                signals: this.visitorSession.vpnProxyData?.signals || []
+            // Block network requests to ad domains
+            this.blockAdNetworkRequests();
+            
+            this.logEvent('vpn_ad_blocking_activated', {
+                blockedScripts: this.blockedAdScripts,
+                timestamp: Date.now(),
+                vpnSignals: this.visitorSession.vpnProxyData?.signals || []
+            });
+            
+            // Show notification if configured
+            if (this.config.showBlockMessage) {
+                this.showVPNAdBlockingMessage();
+            }
+        }
+        
+        // NEW: Enhanced AdSense blocking
+        blockAdSenseInitialization() {
+            // Block adsbygoogle array
+            if (window.adsbygoogle) {
+                window.adsbygoogle.length = 0;
+                window.adsbygoogle.push = function() {
+                    console.log('🚫 VPN User: Blocked AdSense push');
+                    return 0;
+                };
+            }
+            
+            // Override adsbygoogle creation
+            Object.defineProperty(window, 'adsbygoogle', {
+                get: function() {
+                    return {
+                        push: function() {
+                            console.log('🚫 VPN User: Blocked AdSense initialization');
+                            return 0;
+                        },
+                        length: 0
+                    };
+                },
+                set: function() {
+                    console.log('🚫 VPN User: Blocked AdSense assignment');
+                    return true;
+                },
+                configurable: false
             });
         }
         
-        // NEW: Block specific scripts
-        blockScript(scriptUrl) {
-            // Prevent script from loading by URL
-            const observer = new MutationObserver((mutations) => {
-                mutations.forEach((mutation) => {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.tagName === 'SCRIPT' && node.src) {
-                            if (this.shouldBlockScript(node.src)) {
-                                if (this.config.debug) {
-                                    console.log('🚫 Blocking script:', node.src);
-                                }
-                                node.type = 'javascript/blocked';
-                                node.remove();
-                                this.blockedScripts.push(node.src);
-                            }
-                        }
-                    });
-                });
-            });
+        // NEW: Enhanced GPT blocking
+        blockGPTInitialization() {
+            // Block googletag
+            const blockedGPT = {
+                cmd: {
+                    push: function() {
+                        console.log('🚫 VPN User: Blocked GPT cmd.push');
+                        return 0;
+                    },
+                    length: 0
+                },
+                defineSlot: function() {
+                    console.log('🚫 VPN User: Blocked GPT defineSlot');
+                    return {
+                        addService: function() { return this; },
+                        setTargeting: function() { return this; },
+                        setCollapseEmptyDiv: function() { return this; }
+                    };
+                },
+                display: function() {
+                    console.log('🚫 VPN User: Blocked GPT display');
+                    return;
+                },
+                enableServices: function() {
+                    console.log('🚫 VPN User: Blocked GPT enableServices');
+                    return;
+                },
+                pubads: function() {
+                    return {
+                        enableSingleRequest: function() { return this; },
+                        setTargeting: function() { return this; },
+                        enableAsyncRendering: function() { return this; }
+                    };
+                }
+            };
             
-            observer.observe(document.documentElement, {
-                childList: true,
-                subtree: true
+            if (window.googletag) {
+                Object.assign(window.googletag, blockedGPT);
+            }
+            
+            Object.defineProperty(window, 'googletag', {
+                get: function() {
+                    return blockedGPT;
+                },
+                set: function() {
+                    console.log('🚫 VPN User: Blocked googletag assignment');
+                    return true;
+                },
+                configurable: false
             });
         }
         
-        // NEW: Check if script should be blocked
-        shouldBlockScript(src) {
-            if (!this.adsBlocked) return false;
+        // NEW: Block network requests to ad domains
+        blockAdNetworkRequests() {
+            // Override fetch for ad domains
+            const originalFetch = window.fetch;
+            window.fetch = function(url, options) {
+                if (typeof url === 'string' && this.shouldBlockAdScript && this.shouldBlockAdScript(url)) {
+                    console.log('🚫 VPN User: Blocked fetch request to ad domain:', url);
+                    return Promise.reject(new Error('Ad request blocked for VPN user'));
+                }
+                return originalFetch.call(this, url, options);
+            }.bind(this);
             
-            const blockedDomains = [
+            // Override XMLHttpRequest for ad domains
+            const originalXHROpen = XMLHttpRequest.prototype.open;
+            XMLHttpRequest.prototype.open = function(method, url) {
+                if (typeof url === 'string' && this.shouldBlockAdScript && this.shouldBlockAdScript(url)) {
+                    console.log('🚫 VPN User: Blocked XHR request to ad domain:', url);
+                    return;
+                }
+                return originalXHROpen.apply(this, arguments);
+            }.bind(this);
+        }
+        
+        // Enhanced script blocking check
+        shouldBlockAdScript(src) {
+            if (!this.vpnAdBlockingActive || !src) return false;
+            
+            // Check against specific blocked scripts
+            if (this.blockedAdScripts.some(blockedScript => src.includes(blockedScript))) {
+                return true;
+            }
+            
+            // Check against ad domains
+            const adDomains = [
                 'googlesyndication.com',
                 'doubleclick.net',
                 'googletagservices.com',
                 'googleadservices.com',
-                'google-analytics.com'
+                'google-analytics.com',
+                'googletagmanager.com',
+                'adsystem.com',
+                'adsense.com'
             ];
             
-            return blockedDomains.some(domain => src.includes(domain));
+            return adDomains.some(domain => src.includes(domain));
         }
         
-        // NEW: Hide existing ads
-        hideExistingAds() {
-            // Hide Google AdSense ads
+        // Enhanced ad container hiding
+        hideAdContainers() {
+            // Hide Google AdSense containers
             document.querySelectorAll('.adsbygoogle').forEach(ad => {
-                ad.style.display = 'none';
-                ad.setAttribute('data-traffic-cop-vpn', 'blocked');
+                ad.style.display = 'none !important';
+                ad.style.visibility = 'hidden';
+                ad.setAttribute('data-traffic-cop-vpn-blocked', 'true');
             });
             
-            // Hide other common ad containers
+            // Hide GPT ad slots
+            document.querySelectorAll('[id*="google_ads"], [class*="google-ad"], [id*="gpt-"], [class*="gpt-"]').forEach(ad => {
+                ad.style.display = 'none !important';
+                ad.style.visibility = 'hidden';
+                ad.setAttribute('data-traffic-cop-vpn-blocked', 'true');
+            });
+            
+            // Hide common ad containers
             const adSelectors = [
-                '[class*="ad-"]', '[id*="ad-"]', '[class*="advertisement"]',
-                '[class*="adsense"]', '[class*="google-ad"]', '.ad', '#ad',
-                '[class*="banner"]', '[id*="banner"]', '[class*="ads"]'
+                '[class*="ad-container"]', '[id*="ad-container"]',
+                '[class*="advertisement"]', '[id*="advertisement"]',
+                '[class*="adsense"]', '[id*="adsense"]',
+                '[class*="banner"]', '[id*="banner"]',
+                '[class*="sponsor"]', '[id*="sponsor"]',
+                '.ad', '#ad', '.ads', '#ads'
             ];
             
             adSelectors.forEach(selector => {
                 document.querySelectorAll(selector).forEach(ad => {
-                    ad.style.display = 'none';
-                    ad.setAttribute('data-traffic-cop-vpn', 'blocked');
+                    ad.style.display = 'none !important';
+                    ad.style.visibility = 'hidden';
+                    ad.setAttribute('data-traffic-cop-vpn-blocked', 'true');
                 });
             });
         }
         
-        // NEW: Monitor for new ad injections
-        monitorAdInjections() {
-            // Override createElement to block ad scripts
-            const originalCreateElement = document.createElement;
-            const self = this;
+        // NEW: Show VPN ad blocking message
+        showVPNAdBlockingMessage() {
+            const message = document.createElement('div');
+            message.id = 'traffic-cop-vpn-ad-message';
+            message.innerHTML = `
+                <div style="position: fixed; top: 20px; right: 20px; background: #ff9800; color: white; 
+                           padding: 15px; border-radius: 8px; z-index: 999999; font-family: Arial, sans-serif;
+                           box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-width: 350px;">
+                    <strong>🛡️ VPN/Proxy Detected</strong><br>
+                    <small>Google ad scripts have been blocked to prevent fraud.</small><br>
+                    <small>Blocked: ${this.blockedScripts.length} ad scripts</small><br>
+                    <small>Confidence: ${this.visitorSession.vpnProxyData?.confidence || 0}%</small>
+                    <button onclick="this.parentElement.parentElement.remove()" 
+                           style="float: right; background: none; border: none; color: white; cursor: pointer; font-size: 18px;">×</button>
+                </div>
+            `;
+            document.body.appendChild(message);
             
-            document.createElement = function(tagName) {
-                const element = originalCreateElement.call(document, tagName);
-                
-                if (tagName.toLowerCase() === 'script') {
-                    const originalSetAttribute = element.setAttribute;
-                    element.setAttribute = function(name, value) {
-                        if (name === 'src' && self.shouldBlockScript(value)) {
-                            if (self.config.debug) {
-                                console.log('🚫 Blocked script injection:', value);
-                            }
-                            return;
-                        }
-                        originalSetAttribute.call(this, name, value);
-                    };
+            setTimeout(() => {
+                if (message.parentNode) {
+                    message.parentNode.removeChild(message);
                 }
-                
-                return element;
-            };
+            }, 10000);
         }
         
-        // NEW: Setup ad blocking monitoring
-        setupAdBlockingMonitoring() {
-            // Monitor for ad script loads
-            const originalAppendChild = Element.prototype.appendChild;
-            const self = this;
+        // Enhanced VPN ad blocking logging
+        logVPNAdBlock(scriptUrl, method) {
+            this.blockedScripts.push({
+                url: scriptUrl,
+                method: method,
+                timestamp: Date.now()
+            });
             
-            Element.prototype.appendChild = function(child) {
-                if (child.tagName === 'SCRIPT' && child.src && self.shouldBlockScript(child.src)) {
-                    if (self.config.debug) {
-                        console.log('🚫 Prevented ad script appendChild:', child.src);
-                    }
-                    return child;
-                }
-                return originalAppendChild.call(this, child);
-            };
+            this.logEvent('vpn_ad_script_blocked', {
+                scriptUrl: scriptUrl,
+                method: method,
+                totalBlocked: this.blockedScripts.length,
+                vpnConfidence: this.visitorSession.vpnProxyData?.confidence || 0
+            });
         }
+        
+        // [Keep all your existing methods unchanged - setupRealTimeVisitorTracking, sendRealTimeVisitorData, 
+        // setupBehaviorTracking, collectVisitorData, handleAnalysisResult, etc.]
         
         // Enhanced visitor data collection with VPN/Proxy data
         setupRealTimeVisitorTracking() {
@@ -459,6 +787,8 @@
                 vpnProxy: this.visitorSession.vpnProxyData || null,
                 adsBlocked: this.adsBlocked,
                 vpnDetected: this.vpnDetected,
+                vpnAdBlockingActive: this.vpnAdBlockingActive,
+                blockedScriptsCount: this.blockedScripts.length,
                 
                 // Browser and device data
                 userAgent: navigator.userAgent,
@@ -494,7 +824,7 @@
             }
         }
         
-        // Enhanced behavior tracking (keeping your existing methods)
+        // Enhanced behavior tracking
         setupBehaviorTracking() {
             // Track mouse movements for bot detection
             let lastMouseTime = 0;
@@ -624,10 +954,12 @@
                 // Device fingerprint
                 deviceFingerprint: this.behaviorData.deviceFingerprint,
                 
-                // VPN/Proxy detection data
+                // Enhanced VPN/Proxy detection data
                 vpnProxy: this.visitorSession.vpnProxyData || null,
                 vpnDetected: this.vpnDetected,
-                adsBlocked: this.adsBlocked
+                adsBlocked: this.adsBlocked,
+                vpnAdBlockingActive: this.vpnAdBlockingActive,
+                blockedScriptsCount: this.blockedScripts.length
             };
             
             // Add real-time visitor data if available
@@ -662,7 +994,9 @@
             
             // Handle VPN/Proxy specific actions
             if (analysis.blockAds || analysis.vpnProxy?.isVPN) {
-                this.blockAdsForVPNUser();
+                if (!this.vpnAdBlockingActive) {
+                    this.activateVPNAdBlocking();
+                }
             }
             
             // Execute protection based on risk level and mode
@@ -702,8 +1036,11 @@
                            padding: 15px; border-radius: 8px; z-index: 999999; font-family: Arial, sans-serif;
                            box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-width: 300px;">
                     <strong>🛡️ ${isVPN ? 'VPN/Proxy Detected' : 'Bot Traffic Detected'}</strong><br>
-                    <small>${isVPN ? 'Ads blocked for VPN/Proxy users to prevent fraud.' : 'Automated traffic blocked to protect this site.'}</small>
+                    <small>${isVPN ? 'Google ad scripts blocked to prevent fraud.' : 'Automated traffic blocked to protect this site.'}</small>
                     ${analysis.vpnProxy?.signals ? `<br><small>Signals: ${analysis.vpnProxy.signals.slice(0, 2).join(', ')}</small>` : ''}
+                    ${isVPN ? `<br><small>Blocked scripts: ${this.blockedScripts.length}</small>` : ''}
+                    <button onclick="this.parentElement.parentElement.remove()" 
+                           style="float: right; background: none; border: none; color: white; cursor: pointer; font-size: 18px;">×</button>
                 </div>
             `;
             document.body.appendChild(message);
@@ -715,7 +1052,7 @@
             }, 8000);
         }
         
-        // Get enhanced stats including VPN/Proxy data
+        // Enhanced stats including VPN/Proxy data
         getStats() {
             try {
                 const analytics = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
@@ -732,7 +1069,9 @@
                     isCurrentlyBlocked: this.isBlocked,
                     adsBlocked: this.adsBlocked,
                     vpnDetected: this.vpnDetected,
-                    blockedScripts: this.blockedScripts.length
+                    vpnAdBlockingActive: this.vpnAdBlockingActive,
+                    blockedScriptsCount: this.blockedScripts.length,
+                    blockedScripts: this.blockedScripts
                 };
             } catch (e) {
                 return {
@@ -744,18 +1083,22 @@
                     isCurrentlyBlocked: this.isBlocked,
                     adsBlocked: this.adsBlocked,
                     vpnDetected: this.vpnDetected,
-                    blockedScripts: this.blockedScripts.length
+                    vpnAdBlockingActive: this.vpnAdBlockingActive,
+                    blockedScriptsCount: this.blockedScripts.length,
+                    blockedScripts: this.blockedScripts
                 };
             }
         }
         
-        // Get VPN/Proxy specific data
+        // Enhanced VPN data retrieval
         getVPNData() {
             return {
                 detected: this.vpnDetected,
                 data: this.visitorSession.vpnProxyData,
                 adsBlocked: this.adsBlocked,
-                blockedScripts: this.blockedScripts
+                adBlockingActive: this.vpnAdBlockingActive,
+                blockedScripts: this.blockedScripts,
+                blockedScriptsCount: this.blockedScripts.length
             };
         }
         
@@ -1175,182 +1518,302 @@
             }
         }
         
-        showChallenge(analysis) {
-            const overlay = document.createElement('div');
-            overlay.id = 'traffic-cop-challenge';
-            overlay.innerHTML = `
-                <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
-                           background: rgba(0,0,0,0.8); z-index: 999999; display: flex; 
-                           align-items: center; justify-content: center; font-family: Arial, sans-serif;">
-                    <div style="background: white; padding: 40px; border-radius: 15px; text-align: center; 
-                               max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
-                        <h2 style="margin-top: 0; color: #333;">🛡️ Security Verification</h2>
-                        <p style="color: #666; line-height: 1.5;">
-                            Our system detected unusual browsing patterns.<br>
-                            Please verify you're human to continue.
-                        </p>
-                        <p style="font-size: 0.9em; color: #999;">
-                            Risk Score: ${analysis.riskScore}%<br>
-                            Detection: ${analysis.threats.join(', ')}
-                            ${analysis.vpnProxy?.isVPN ? '<br>VPN/Proxy detected' : ''}
-                        </p>
-                        <button onclick="window.trafficCop.passChallenge()" 
-                               style="background: #4CAF50; color: white; border: none; padding: 15px 30px; 
-                                      border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
-                            ✓ I'm Human
-                        </button>
-                        <button onclick="window.trafficCop.closeChallenge()" 
-                               style="background: #999; color: white; border: none; padding: 15px 30px; 
-                                      border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
-                            ✗ Close
-                        </button>
-                        <br>
-                        <small style="color: #999;">Powered by Traffic Cop v2.2</small>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(overlay);
-        }
-        
-        passChallenge() {
-            this.closeChallenge();
-            this.allowAds();
-            this.logEvent('challenge_passed');
-            this.triggerEvent('trafficCopChallengePass');
-        }
-        
-        closeChallenge() {
-            const overlay = document.getElementById('traffic-cop-challenge');
-            if (overlay) {
-                overlay.remove();
+                showChallenge(analysis) {
+                    const overlay = document.createElement('div');
+                    overlay.id = 'traffic-cop-challenge';
+                    overlay.innerHTML = `
+                        <div style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; 
+                                background: rgba(0,0,0,0.8); z-index: 999999; display: flex; 
+                                align-items: center; justify-content: center; font-family: Arial, sans-serif;">
+                            <div style="background: white; padding: 40px; border-radius: 15px; text-align: center; 
+                                    max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.3);">
+                                <h2 style="margin-top: 0; color: #333;">🛡️ Security Verification</h2>
+                                <p style="color: #666; line-height: 1.5;">
+                                    Our system detected unusual browsing patterns.<br>
+                                    Please verify you're human to continue.
+                                </p>
+                                <p style="font-size: 0.9em; color: #999;">
+                                    Risk Score: ${analysis.riskScore}%<br>
+                                    Detection: ${analysis.threats.join(', ')}
+                                    ${analysis.vpnProxy?.isVPN ? '<br>VPN/Proxy detected' : ''}
+                                </p>
+                                <button onclick="window.trafficCop.passChallenge()" 
+                                    style="background: #4CAF50; color: white; border: none; padding: 15px 30px; 
+                                            border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
+                                    ✓ I'm Human
+                                </button>
+                                <button onclick="window.trafficCop.closeChallenge()" 
+                                    style="background: #999; color: white; border: none; padding: 15px 30px; 
+                                            border-radius: 8px; font-size: 16px; cursor: pointer; margin: 10px;">
+                                    ✗ Close
+                                </button>
+                                <br>
+                                <small style="color: #999;">Powered by Traffic Cop v2.3</small>
+                            </div>
+                        </div>
+                    `;
+                    document.body.appendChild(overlay);
+                }
+                
+                passChallenge() {
+                    this.closeChallenge();
+                    this.allowAds();
+                    this.logEvent('challenge_passed');
+                    this.triggerEvent('trafficCopChallengePass');
+                }
+                
+                closeChallenge() {
+                    const overlay = document.getElementById('traffic-cop-challenge');
+                    if (overlay) {
+                        overlay.remove();
+                    }
+                }
+                
+                allowAds() {
+                    this.isBlocked = false;
+                    
+                    // Restore blocked ads
+                    document.querySelectorAll('[data-traffic-cop="blocked"]').forEach(element => {
+                        element.style.display = '';
+                        element.removeAttribute('data-traffic-cop');
+                    });
+                    
+                    // Restore VPN blocked ads
+                    document.querySelectorAll('[data-traffic-cop-vpn-blocked="true"]').forEach(element => {
+                        element.style.display = '';
+                        element.style.visibility = '';
+                        element.removeAttribute('data-traffic-cop-vpn-blocked');
+                    });
+                }
+                
+                logEvent(eventType, data = {}) {
+                    if (this.config.debug) {
+                        console.log(`📊 Traffic Cop Event: ${eventType}`, data);
+                    }
+                    
+                    try {
+                        const events = JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
+                        events.push({
+                            type: eventType,
+                            data: data,
+                            timestamp: Date.now(),
+                            sessionId: this.sessionId
+                        });
+                        
+                        if (events.length > 100) {
+                            events.splice(0, events.length - 100);
+                        }
+                        
+                        localStorage.setItem('trafficCopEvents', JSON.stringify(events));
+                    } catch (e) {
+                        // Handle localStorage errors gracefully
+                        if (this.config.debug) {
+                            console.warn('Failed to store event:', e);
+                        }
+                    }
+                }
+                
+                triggerEvent(eventName, data) {
+                    const event = new CustomEvent(eventName, { detail: data });
+                    window.dispatchEvent(event);
+                }
+                
+                storeAnalysis(analysis) {
+                    try {
+                        const stored = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
+                        stored.push({
+                            ...analysis,
+                            timestamp: Date.now(),
+                            url: window.location.href
+                        });
+                        
+                        if (stored.length > 50) {
+                            stored.splice(0, stored.length - 50);
+                        }
+                        
+                        localStorage.setItem('trafficCopAnalytics', JSON.stringify(stored));
+                    } catch (e) {
+                        // Handle localStorage errors gracefully
+                        if (this.config.debug) {
+                            console.warn('Failed to store analysis:', e);
+                        }
+                    }
+                }
+                
+                generateSessionId() {
+                    return 'tc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+                }
+                
+                // Manual analysis method
+                analyze() {
+                    return this.analyzeCurrentVisitor();
+                }
+                
+                // Get current visitor data
+                getVisitorData() {
+                    return this.collectVisitorData();
+                }
+                
+                // Get real-time visitor data
+                getRealTimeData() {
+                    return this.visitorSession;
+                }
+                
+                // Get events log
+                getEvents() {
+                    try {
+                        return JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
+                    } catch (e) {
+                        return [];
+                    }
+                }
+                
+                // Clear all stored data
+                clearData() {
+                    try {
+                        localStorage.removeItem('trafficCopEvents');
+                        localStorage.removeItem('trafficCopAnalytics');
+                        this.behaviorData = {
+                            mouseMovements: [],
+                            clicks: [],
+                            scrollEvents: [],
+                            keystrokes: [],
+                            pageInteractions: 0,
+                            timeOnPage: 0,
+                            deviceFingerprint: null
+                        };
+                    } catch (e) {
+                        if (this.config.debug) {
+                            console.warn('Failed to clear data:', e);
+                        }
+                    }
+                }
+                
+                // Force VPN detection
+                async forceVPNDetection() {
+                    if (this.config.enableVPNDetection) {
+                        await this.detectVPNProxy();
+                        return this.getVPNData();
+                    }
+                    return { detected: false, message: 'VPN detection disabled' };
+                }
+                
+                // Update configuration
+                updateConfig(newConfig) {
+                    this.config = { ...this.config, ...newConfig };
+                    if (this.config.debug) {
+                        console.log('🔧 Traffic Cop configuration updated:', this.config);
+                    }
+                }
+                
+                // Get current configuration
+                getConfig() {
+                    return { ...this.config };
+                }
+                
+                // Enable/disable VPN ad blocking
+                setVPNAdBlocking(enabled) {
+                    this.config.blockAdsForVPN = enabled;
+                    if (enabled && this.vpnDetected && !this.vpnAdBlockingActive) {
+                        this.activateVPNAdBlocking();
+                    } else if (!enabled && this.vpnAdBlockingActive) {
+                        this.vpnAdBlockingActive = false;
+                        this.allowAds();
+                    }
+                }
+                
+                // Get blocked scripts list
+                getBlockedScripts() {
+                    return this.blockedScripts;
+                }
+                
+                // Manual script blocking
+                blockScript(scriptUrl) {
+                    if (!this.blockedAdScripts.includes(scriptUrl)) {
+                        this.blockedAdScripts.push(scriptUrl);
+                    }
+                    
+                    // Remove existing scripts with this URL
+                    document.querySelectorAll(`script[src*="${scriptUrl}"]`).forEach(script => {
+                        script.remove();
+                        this.logVPNAdBlock(scriptUrl, 'manual_block');
+                    });
+                }
+                
+                // Check if user is currently detected as VPN
+                isVPNUser() {
+                    return this.vpnDetected;
+                }
+                
+                // Check if ads are currently blocked
+                areAdsBlocked() {
+                    return this.adsBlocked || this.vpnAdBlockingActive;
+                }
+                
+                // Get detection confidence
+                getDetectionConfidence() {
+                    return {
+                        vpn: this.visitorSession.vpnProxyData?.confidence || 0,
+                        bot: this.behaviorData.deviceFingerprint ? 75 : 0,
+                        overall: Math.max(
+                            this.visitorSession.vpnProxyData?.confidence || 0,
+                            this.behaviorData.deviceFingerprint ? 75 : 0
+                        )
+                    };
+                }
+                
+                // Destroy SDK instance
+                destroy() {
+                    this.isBlocked = false;
+                    this.adsBlocked = false;
+                    this.vpnAdBlockingActive = false;
+                    this.allowAds();
+                    
+                    // Clear the instance
+                    if (window.trafficCop === this) {
+                        window.trafficCop = null;
+                    }
+                    
+                    if (this.config.debug) {
+                        console.log('🛡️ Traffic Cop SDK destroyed');
+                    }
+                }
             }
-        }
-        
-        allowAds() {
-            this.isBlocked = false;
             
-            document.querySelectorAll('[data-traffic-cop="blocked"]').forEach(element => {
-                element.style.display = '';
-                element.removeAttribute('data-traffic-cop');
+            // Global API
+            window.TrafficCop = {
+                init: function(apiKey, config) {
+                    window.trafficCop = new TrafficCopSDK(apiKey, config);
+                    return window.trafficCop;
+                },
+                version: '2.3.0',
+                SDK: TrafficCopSDK
+            };
+            
+            // Auto-detect if API key is provided via data attribute
+            document.addEventListener('DOMContentLoaded', function() {
+                const scripts = document.getElementsByTagName('script');
+                for (let script of scripts) {
+                    const apiKey = script.getAttribute('data-traffic-cop-key');
+                    if (apiKey) {
+                        const config = {
+                            debug: script.getAttribute('data-debug') === 'true',
+                            enableVPNDetection: script.getAttribute('data-vpn-detection') !== 'false',
+                            blockAdsForVPN: script.getAttribute('data-block-ads-vpn') !== 'false',
+                            vpnBlockThreshold: parseInt(script.getAttribute('data-vpn-threshold')) || 30,
+                            mode: script.getAttribute('data-mode') || 'block'
+                        };
+                        
+                        new TrafficCopSDK(apiKey, config);
+                        break;
+                    }
+                }
             });
-        }
-        
-        logEvent(eventType, data = {}) {
-            if (this.config.debug) {
-                console.log(`📊 Traffic Cop Event: ${eventType}`, data);
+            
+            // Auto-initialize if global config is available
+            if (window.TrafficCopConfig && window.TrafficCopConfig.apiKey) {
+                window.trafficCop = new TrafficCopSDK(window.TrafficCopConfig.apiKey, window.TrafficCopConfig);
             }
             
-            try {
-                const events = JSON.parse(localStorage.getItem('trafficCopEvents') || '[]');
-                events.push({
-                    type: eventType,
-                    data: data,
-                    timestamp: Date.now(),
-                    sessionId: this.sessionId
-                });
-                
-                if (events.length > 100) {
-                    events.splice(0, events.length - 100);
-                }
-                
-                localStorage.setItem('trafficCopEvents', JSON.stringify(events));
-            } catch (e) {
-                // Handle localStorage errors gracefully
-                if (this.config.debug) {
-                    console.warn('Failed to store event:', e);
-                }
-            }
-        }
-        
-        triggerEvent(eventName, data) {
-            const event = new CustomEvent(eventName, { detail: data });
-            window.dispatchEvent(event);
-        }
-        
-        storeAnalysis(analysis) {
-            try {
-                const stored = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
-                stored.push({
-                    ...analysis,
-                    timestamp: Date.now(),
-                    url: window.location.href
-                });
-                
-                if (stored.length > 50) {
-                    stored.splice(0, stored.length - 50);
-                }
-                
-                localStorage.setItem('trafficCopAnalytics', JSON.stringify(stored));
-            } catch (e) {
-                // Handle localStorage errors gracefully
-                if (this.config.debug) {
-                    console.warn('Failed to store analysis:', e);
-                }
-            }
-        }
-        
-        generateSessionId() {
-            return 'tc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        }
-        
-        // Manual analysis method
-        analyze() {
-            return this.analyzeCurrentVisitor();
-        }
-        
-        // Get current visitor data
-        getVisitorData() {
-            return this.collectVisitorData();
-        }
-        
-        // Get real-time visitor data
-        getRealTimeData() {
-            return this.visitorSession;
-        }
-        
-        // Destroy SDK instance
-        destroy() {
-            this.isBlocked = false;
-            this.adsBlocked = false;
-            this.allowAds();
-            
-            // Remove blocked ad attributes
-            document.querySelectorAll('[data-traffic-cop-vpn="blocked"]').forEach(element => {
-                element.style.display = '';
-                element.removeAttribute('data-traffic-cop-vpn');
-            });
-            
-            // Clear the instance
-            if (window.trafficCop === this) {
-                window.trafficCop = null;
-            }
-        }
-    }
-    
-    // Global API
-    window.TrafficCop = {
-        init: function(apiKey, config) {
-            window.trafficCop = new TrafficCopSDK(apiKey, config);
-            return window.trafficCop;
-        },
-        version: '2.2.0',
-        SDK: TrafficCopSDK
-    };
-    
-    // Auto-detect if API key is provided via data attribute
-    document.addEventListener('DOMContentLoaded', function() {
-        const scripts = document.getElementsByTagName('script');
-        for (let script of scripts) {
-            const apiKey = script.getAttribute('data-traffic-cop-key');
-            if (apiKey) {
-                new TrafficCopSDK(apiKey, {
-                    debug: script.getAttribute('data-debug') === 'true',
-                    enableVPNDetection: script.getAttribute('data-vpn-detection') !== 'false',
-                    blockAdsForVPN: script.getAttribute('data-block-ads-vpn') !== 'false'
-                });
-                break;
-            }
-        }
-    });
-    
-})(window);
+        })(window);
+
