@@ -1837,6 +1837,59 @@ module.exports = async (req, res) => {
             return;
         }
 
+        // Migration endpoint to store existing API key in KV
+        if (req.url === '/api/v1/migrate-existing-key' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', async () => {
+                try {
+                    const { migrationSecret } = JSON.parse(body);
+                    
+                    // Security check
+                    if (migrationSecret !== 'migrate_newsparrow_key_2025') {
+                        res.status(401).json({ error: 'Invalid migration secret' });
+                        return;
+                    }
+                    
+                    // Your existing API key data
+                    const existingApiKey = 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583';
+                    const publisherId = 'pub_newsparrow_migrated';
+                    
+                    const apiKeyData = {
+                        apiKey: existingApiKey,
+                        publisherId: publisherId,
+                        publisherName: 'Newsparrow',
+                        email: 'ashokvarma416@gmail.com',
+                        website: 'newsparrow.in',
+                        plan: 'professional',
+                        maxRequests: 1000000,
+                        features: ['basic_protection', 'advanced_analytics', 'custom_rules', 'geolocation_tracking']
+                    };
+                    
+                    // Store in KV using the API key manager
+                    await apiKeyManager.storeAPIKey(apiKeyData);
+                    
+                    res.status(200).json({
+                        success: true,
+                        message: 'Existing API key successfully migrated to KV',
+                        apiKey: existingApiKey.substring(0, 20) + '...',
+                        publisherId: publisherId,
+                        plan: 'professional'
+                    });
+                    
+                } catch (error) {
+                    console.error('Migration error:', error);
+                    res.status(500).json({
+                        success: false,
+                        error: 'Failed to migrate API key',
+                        details: error.message
+                    });
+                }
+            });
+            return;
+        }
+
+
         // 404 for unknown routes
         res.status(404).json({ error: 'Not found' });
         
