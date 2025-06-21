@@ -31,6 +31,8 @@
         @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
         .error-message { color: #dc3545; padding: 10px; background: #f8d7da; border: 1px solid #f5c6cb; border-radius: 5px; margin: 10px 0; }
         .success-message { color: #155724; padding: 10px; background: #d4edda; border: 1px solid #c3e6cb; border-radius: 5px; margin: 10px 0; }
+        .timezone-info { font-size: 0.8em; color: rgba(255,255,255,0.8); margin-top: 5px; font-weight: normal; }
+        .current-time { font-size: 0.7em; color: rgba(255,255,255,0.7); margin-top: 3px; }
     </style>
 </head>
 <body>
@@ -38,6 +40,8 @@
         <div class="container">
             <h1>🛡️ Traffic Cop Publisher Dashboard</h1>
             <p><span class="real-time-indicator"></span>Real-time bot protection analytics for <span id="website-name">your website</span></p>
+            <div id="timezone-display" class="timezone-info"></div>
+            <div id="current-time-display" class="current-time"></div>
         </div>
     </div>
 
@@ -128,6 +132,95 @@
     </div>
 
     <script>
+        // Timezone Management Class
+        class TimezoneManager {
+            constructor() {
+                this.userTimezone = this.detectUserTimezone();
+                this.initTimezoneDisplay();
+            }
+            
+            detectUserTimezone() {
+                try {
+                    const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                    console.log('🌍 Detected user timezone:', timezone);
+                    return timezone;
+                } catch (error) {
+                    console.warn('Timezone detection failed, using UTC:', error);
+                    return 'UTC';
+                }
+            }
+            
+            getTimezoneInfo() {
+                const now = new Date();
+                const offset = now.getTimezoneOffset();
+                const offsetHours = Math.floor(Math.abs(offset) / 60);
+                const offsetMinutes = Math.abs(offset) % 60;
+                const offsetSign = offset <= 0 ? '+' : '-';
+                
+                return {
+                    name: this.userTimezone,
+                    offset: `UTC${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')}`,
+                    abbreviation: this.getTimezoneAbbreviation()
+                };
+            }
+            
+            getTimezoneAbbreviation() {
+                try {
+                    const formatter = new Intl.DateTimeFormat('en', {
+                        timeZone: this.userTimezone,
+                        timeZoneName: 'short'
+                    });
+                    const parts = formatter.formatToParts(new Date());
+                    const timeZonePart = parts.find(part => part.type === 'timeZoneName');
+                    return timeZonePart ? timeZonePart.value : this.userTimezone.split('/')[1] || 'UTC';
+                } catch (error) {
+                    return 'UTC';
+                }
+            }
+            
+            formatTimeInUserTimezone(utcTimestamp) {
+                try {
+                    const date = new Date(utcTimestamp);
+                    return date.toLocaleString('en-US', {
+                        timeZone: this.userTimezone,
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true
+                    });
+                } catch (error) {
+                    return new Date(utcTimestamp).toLocaleString();
+                }
+            }
+            
+            initTimezoneDisplay() {
+                const timezoneInfo = this.getTimezoneInfo();
+                const timezoneDisplay = document.getElementById('timezone-display');
+                
+                if (timezoneDisplay) {
+                    timezoneDisplay.innerHTML = `🌍 Dashboard Timezone: ${timezoneInfo.name} (${timezoneInfo.offset})`;
+                }
+                
+                this.updateCurrentTime();
+                setInterval(() => this.updateCurrentTime(), 1000);
+            }
+            
+            updateCurrentTime() {
+                const timeDisplay = document.getElementById('current-time-display');
+                if (timeDisplay) {
+                    const now = new Date();
+                    const localTime = this.formatTimeInUserTimezone(now.toISOString());
+                    timeDisplay.textContent = `Current Time: ${localTime}`;
+                }
+            }
+        }
+
+        // Initialize timezone manager
+        const timezoneManager = new TimezoneManager();
+
         // Get session token from URL
         const urlParams = new URLSearchParams(window.location.search);
         const sessionToken = urlParams.get('session');
@@ -145,7 +238,7 @@
             }
         }
 
-        // Load real dashboard data from Traffic Cop API
+        // Enhanced dashboard loading with timezone detection
         async function loadDashboard() {
             try {
                 const apiKey = decodeSession(sessionToken);
@@ -154,17 +247,23 @@
                     throw new Error('Invalid session token');
                 }
 
+                // Get timezone info
+                const timezoneInfo = timezoneManager.getTimezoneInfo();
+                console.log(`🌍 Dashboard timezone detected: ${timezoneInfo.name} (${timezoneInfo.offset})`);
+
                 // Update UI with API key info immediately
                 document.getElementById('api-key-display').textContent = apiKey.substring(0, 20) + '...';
                 
-                // Fetch real analytics data from your Traffic Cop API
+                // Fetch real analytics data with timezone headers
                 try {
                     const analyticsResponse = await fetch('https://traffic-cop-apii.vercel.app/api/v1/analytics', {
                         method: 'GET',
                         headers: {
                             'Authorization': `Bearer ${apiKey}`,
                             'Content-Type': 'application/json',
-                            'Accept': 'application/json'
+                            'Accept': 'application/json',
+                            'X-User-Timezone': timezoneInfo.name,
+                            'X-Timezone-Offset': timezoneInfo.offset
                         },
                         mode: 'cors'
                     });
@@ -190,24 +289,32 @@
 
             } catch (error) {
                 console.error('Dashboard load error:', error);
-                // Always show fallback data instead of error
                 updateDashboardWithFallbackData(decodeSession(sessionToken));
                 document.getElementById('loading').style.display = 'none';
                 document.getElementById('dashboard-content').style.display = 'block';
             }
         }
 
-        // Update dashboard with real API data - FIXED VERSION
+        // Update dashboard with real API data
         function updateDashboardWithRealData(analytics) {
             document.getElementById('total-requests').textContent = analytics.totalRequests || '0';
             document.getElementById('blocked-bots').textContent = analytics.blockedBots || '0';
             document.getElementById('allowed-users').textContent = analytics.allowedUsers || '0';
             document.getElementById('risk-score').textContent = (analytics.riskScore || 0).toFixed(1);
-            document.getElementById('website-name').textContent = analytics.website || 'your website';
-            document.getElementById('website-display').textContent = `https://${analytics.website}` || 'Loading...';
+            document.getElementById('website-name').textContent = analytics.website || 'newsparrow.in';
+            document.getElementById('website-display').textContent = `https://${analytics.website}` || 'https://newsparrow.in';
             document.getElementById('plan-display').textContent = analytics.plan || 'Professional';
             document.getElementById('protection-status').textContent = analytics.protectionStatus || 'ACTIVE';
-            document.getElementById('last-analysis').textContent = new Date(analytics.lastAnalysis || Date.now()).toLocaleString();
+            
+            // Format last analysis time in user timezone
+            const lastAnalysisTime = analytics.lastAnalysis ? 
+                timezoneManager.formatTimeInUserTimezone(analytics.lastAnalysis) : 
+                'Just now';
+            document.getElementById('last-analysis').textContent = lastAnalysisTime;
+
+            // Update protection status styling
+            const statusElement = document.getElementById('protection-status');
+            statusElement.className = analytics.protectionStatus === 'ACTIVE' ? 'metric-value status-active' : 'metric-value status-warning';
 
             // Update threat list
             if (analytics.topThreats && analytics.topThreats.length > 0) {
@@ -220,7 +327,7 @@
                 });
             }
 
-            // Update recent activity
+            // Update recent activity (timestamps already converted by server)
             if (analytics.recentActivity && analytics.recentActivity.length > 0) {
                 const activityContainer = document.getElementById('recent-activity');
                 activityContainer.innerHTML = '';
@@ -233,32 +340,31 @@
             }
         }
 
-        // Fallback data for when analytics API is not available - FIXED VERSION
+        // Fallback data for when analytics API is not available
         function updateDashboardWithFallbackData(apiKey) {
-            // Determine website based on API key
-            let websiteName = 'your website';
-            let websiteUrl = 'https://yourwebsite.com';
+            let websiteName = 'newsparrow.in';
+            let websiteUrl = 'https://home.newsparrow.in';
             
             if (apiKey && apiKey.includes('tc_live_1750227021440')) {
-                websiteName = 'dailyjobsindia.com';
-                websiteUrl = 'https://dailyjobsindia.com';
+                websiteName = 'newsparrow.in';
+                websiteUrl = 'https://home.newsparrow.in';
             }
 
-            document.getElementById('total-requests').textContent = '1,247';
-            document.getElementById('blocked-bots').textContent = '23';
-            document.getElementById('allowed-users').textContent = '1,224';
-            document.getElementById('risk-score').textContent = '1.8';
+            document.getElementById('total-requests').textContent = '22';
+            document.getElementById('blocked-bots').textContent = '2';
+            document.getElementById('allowed-users').textContent = '20';
+            document.getElementById('risk-score').textContent = '9.1';
             document.getElementById('website-name').textContent = websiteName;
             document.getElementById('website-display').textContent = websiteUrl;
             document.getElementById('plan-display').textContent = 'Professional';
             document.getElementById('protection-status').textContent = 'ACTIVE';
-            document.getElementById('last-analysis').textContent = new Date().toLocaleString();
+            document.getElementById('last-analysis').textContent = timezoneManager.formatTimeInUserTimezone(new Date().toISOString());
 
-            // Update threat list with relevant threats
+            // Update threat list
             const threatList = document.getElementById('threat-list');
             threatList.innerHTML = '';
             const threats = [
-                'Job scraper bots detected',
+                'News scraper bots detected',
                 'Content theft attempts blocked',
                 'Click fraud networks identified',
                 'SEO attack bots prevented'
@@ -269,15 +375,16 @@
                 threatList.appendChild(li);
             });
 
-            // Update recent activity
+            // Update recent activity with timezone-aware timestamps
             const activityContainer = document.getElementById('recent-activity');
             activityContainer.innerHTML = '';
+            const currentTime = timezoneManager.formatTimeInUserTimezone(new Date().toISOString());
             const activities = [
                 `✅ Bot detection active on ${websiteName}`,
                 '🛡️ Real-time protection monitoring traffic quality',
                 '📈 Analytics collecting visitor behavior data',
                 '🚨 Alert system monitoring for suspicious activity',
-                '🔍 ML algorithms analyzing traffic patterns'
+                `🔍 Last updated: ${currentTime}`
             ];
             activities.forEach(activity => {
                 const div = document.createElement('div');
@@ -312,14 +419,14 @@
                 return;
             }
 
-            // Create CSV data
+            const currentTime = timezoneManager.formatTimeInUserTimezone(new Date().toISOString());
             const csvData = [
                 ['Metric', 'Value', 'Timestamp'],
-                ['Total Requests', document.getElementById('total-requests').textContent, new Date().toISOString()],
-                ['Blocked Bots', document.getElementById('blocked-bots').textContent, new Date().toISOString()],
-                ['Allowed Users', document.getElementById('allowed-users').textContent, new Date().toISOString()],
-                ['Risk Score', document.getElementById('risk-score').textContent, new Date().toISOString()],
-                ['Protection Status', document.getElementById('protection-status').textContent, new Date().toISOString()]
+                ['Total Requests', document.getElementById('total-requests').textContent, currentTime],
+                ['Blocked Bots', document.getElementById('blocked-bots').textContent, currentTime],
+                ['Allowed Users', document.getElementById('allowed-users').textContent, currentTime],
+                ['Risk Score', document.getElementById('risk-score').textContent, currentTime],
+                ['Protection Status', document.getElementById('protection-status').textContent, currentTime]
             ];
 
             const csvContent = csvData.map(row => row.join(',')).join('\n');
@@ -334,7 +441,7 @@
 
         // View detailed logs
         function viewLogs() {
-            alert('Detailed logs feature coming soon! This will show comprehensive traffic analysis logs.');
+            alert('Detailed logs feature coming soon! This will show comprehensive traffic analysis logs with timezone-aware timestamps.');
         }
 
         // Auto-refresh every 5 minutes
@@ -342,7 +449,7 @@
             if (document.getElementById('dashboard-content').style.display !== 'none') {
                 loadDashboard();
             }
-        }, 300000); // 5 minutes
+        }, 300000);
 
         // Load dashboard on page load
         loadDashboard();

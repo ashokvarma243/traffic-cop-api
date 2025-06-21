@@ -934,6 +934,12 @@ module.exports = async (req, res) => {
                 const today = getTodayKey();
                 const todayStats = realTrafficData.dailyStats.get(today);
 
+                // Get user timezone from headers (sent by dashboard)
+                const userTimezone = req.headers['x-user-timezone'] || 'UTC';
+                const timezoneOffset = req.headers['x-timezone-offset'] || 'UTC+0:00';
+                
+                console.log(`📊 Analytics request from timezone: ${userTimezone} (${timezoneOffset})`);
+
                 // If NO real traffic today, return zeros
                 if (!todayStats) {
                     res.status(200).json({
@@ -964,24 +970,42 @@ module.exports = async (req, res) => {
                 const challengedUsers = todayStats.challengedUsers || 0;
                 const riskScore = totalRequests > 0 ? ((blockedBots / totalRequests) * 100).toFixed(1) : 0;
 
-                // Get ONLY real recent activity
+                // Get ONLY real recent activity with DYNAMIC timezone conversion
                 const recentActivity = realTrafficData.detectionHistory
                     .slice(-5)
                     .reverse()
                     .map(event => {
-                        const time = new Date(event.timestamp).toLocaleTimeString();
+                        // Convert UTC timestamp to user's timezone
+                        const utcTime = new Date(event.timestamp);
+                        let localTime;
+                        
+                        try {
+                            // Format time in user's timezone
+                            localTime = utcTime.toLocaleString('en-US', {
+                                timeZone: userTimezone,
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                second: '2-digit',
+                                hour12: true
+                            });
+                        } catch (error) {
+                            // Fallback to UTC if timezone conversion fails
+                            console.warn(`Timezone conversion failed for ${userTimezone}:`, error);
+                            localTime = utcTime.toLocaleTimeString('en-US', { hour12: true });
+                        }
+                        
                         const userAgentShort = event.userAgent ? event.userAgent.substring(0, 30) + '...' : 'Unknown';
                         
                         if (event.action === 'block') {
-                            return `🚨 BLOCKED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
+                            return `🚨 BLOCKED: ${userAgentShort} (risk: ${event.riskScore}) at ${localTime}`;
                         } else if (event.action === 'challenge') {
-                            return `⚠️ CHALLENGED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
+                            return `⚠️ CHALLENGED: ${userAgentShort} (risk: ${event.riskScore}) at ${localTime}`;
                         } else {
-                            return `✅ ALLOWED: ${userAgentShort} (risk: ${event.riskScore}) at ${time}`;
+                            return `✅ ALLOWED: ${userAgentShort} (risk: ${event.riskScore}) at ${localTime}`;
                         }
                     });
 
-                // Return ONLY real analytics
+                // Return ONLY real analytics with timezone info
                 res.status(200).json({
                     website: 'newsparrow.in',
                     totalRequests: totalRequests,
@@ -992,12 +1016,14 @@ module.exports = async (req, res) => {
                     plan: 'Professional',
                     protectionStatus: 'ACTIVE',
                     lastAnalysis: new Date().toISOString(),
+                    userTimezone: userTimezone,
+                    timezoneOffset: timezoneOffset,
                     topThreats: Array.from(todayStats.threats),
                     recentActivity: recentActivity.length > 0 ? recentActivity : [
                         '📊 No traffic analyzed yet today',
-                        '🔍 All statistics will show real detection results',
-                        '✅ Dynamic Traffic Cop is ready to analyze incoming requests',
-                        '🧠 AI behavioral analysis algorithms active'
+                        '🌍 Dashboard configured for your timezone',
+                        '✅ Dynamic Traffic Cop ready for incoming requests',
+                        '🛡️ AI behavioral analysis algorithms active'
                     ]
                 });
                 return;
