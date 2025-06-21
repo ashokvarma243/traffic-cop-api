@@ -477,39 +477,57 @@ class TrafficCopStorage {
 
 
     
-    // Enhanced getLiveVisitors method for better live user tracking
+    // Fixed getLiveVisitors method
     async getLiveVisitors() {
         try {
             await this.ensureKVReady();
             
             console.log('👥 Getting live visitors from activity log...');
             
-            const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, 200); // Get more entries
-            console.log('📋 Activity log entries found:', activityLog.length);
+            // Use the same logic as the working getActivityLogs
+            const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, -1);
+            console.log('📋 Activity log entries found:', activityLog ? activityLog.length : 0);
             
             if (!activityLog || activityLog.length === 0) {
+                console.log('📋 No activity log entries found');
                 return [];
             }
             
-            // ENHANCED: Use 10-minute window for "live" users (instead of 5 minutes)
-            const tenMinutesAgo = Date.now() - (10 * 60 * 1000);
+            // Use 30-minute window for live visitors (more realistic)
+            const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
             const recentVisitors = [];
-            const uniqueIPs = new Set();
+            const uniqueSessions = new Set();
             
-            for (const logEntry of activityLog) {
+            for (let i = 0; i < activityLog.length; i++) {
                 try {
-                    const visitor = JSON.parse(logEntry);
+                    const entry = activityLog[i];
+                    let visitor;
+                    
+                    if (typeof entry === 'string') {
+                        visitor = JSON.parse(entry);
+                    } else {
+                        visitor = entry;
+                    }
+                    
+                    // Validate required fields
+                    if (!visitor || !visitor.timestamp || !visitor.sessionId) {
+                        continue;
+                    }
+                    
                     const visitorTime = new Date(visitor.timestamp).getTime();
                     
-                    if (visitorTime > tenMinutesAgo) {
-                        // Only count unique IPs as "live users"
-                        if (!uniqueIPs.has(visitor.ipAddress)) {
-                            uniqueIPs.add(visitor.ipAddress);
+                    console.log(`🕒 Checking visitor: ${visitor.sessionId}, Time: ${new Date(visitorTime).toISOString()}, Cutoff: ${new Date(thirtyMinutesAgo).toISOString()}`);
+                    
+                    if (visitorTime > thirtyMinutesAgo) {
+                        // Only count unique sessions as "live users"
+                        if (!uniqueSessions.has(visitor.sessionId)) {
+                            uniqueSessions.add(visitor.sessionId);
                             recentVisitors.push(visitor);
+                            console.log(`✅ Added recent visitor: ${visitor.sessionId}`);
                         }
                     }
                 } catch (parseError) {
-                    console.warn('⚠️ Could not parse activity log entry');
+                    console.warn('⚠️ Could not parse activity log entry:', parseError);
                 }
             }
             
@@ -521,6 +539,7 @@ class TrafficCopStorage {
             return [];
         }
     }
+
 
     
     // Updated getActivityLogs to handle all entries
@@ -672,7 +691,7 @@ async function getGeolocationFromIP(ipAddress) {
 const apiKeyManager = new APIKeyManager();
 const storage = new TrafficCopStorage();
 
-// Dynamic Bot Detection Engine
+// Enhanced DynamicBotDetector with VPN/Proxy Detection
 class DynamicBotDetector {
     constructor() {
         this.trafficPatterns = new Map();
@@ -684,346 +703,262 @@ class DynamicBotDetector {
             sessionDuration: { normal: 300, suspicious: 30, malicious: 5 }
         };
         
-        // Use global config if available, otherwise use defaults
         this.actionThresholds = global.trafficCopConfig?.thresholds || {
             challenge: 40,
             block: 75
         };
         
-        console.log('🤖 DynamicBotDetector initialized with thresholds:', this.actionThresholds);
+        console.log('🤖 Enhanced DynamicBotDetector with VPN/Proxy detection initialized');
     }
     
-    // Calculate entropy of user agent string (randomness indicator)
-    calculateUserAgentEntropy(userAgent) {
-        if (!userAgent || userAgent.length === 0) return 0;
+    // NEW: VPN/Proxy Detection Methods
+    async detectVPNProxy(ipAddress, userAgent, headers) {
+        let vpnProxyScore = 0;
+        const vpnProxySignals = [];
         
-        const charFreq = {};
-        for (let char of userAgent) {
-            charFreq[char] = (charFreq[char] || 0) + 1;
+        // 1. HTTP Headers Analysis
+        const headerAnalysis = this.analyzeProxyHeaders(headers);
+        vpnProxyScore += headerAnalysis.score;
+        if (headerAnalysis.signals.length > 0) {
+            vpnProxySignals.push(...headerAnalysis.signals);
         }
         
-        let entropy = 0;
-        const length = userAgent.length;
-        
-        for (let freq of Object.values(charFreq)) {
-            const probability = freq / length;
-            entropy -= probability * Math.log2(probability);
+        // 2. IP-based Detection
+        const ipAnalysis = await this.analyzeIPAddress(ipAddress);
+        vpnProxyScore += ipAnalysis.score;
+        if (ipAnalysis.signals.length > 0) {
+            vpnProxySignals.push(...ipAnalysis.signals);
         }
         
-        return entropy / Math.log2(length); // Normalized entropy
-    }
-    
-    // Analyze request timing patterns
-    analyzeRequestPatterns(sessionId, timestamp) {
-        if (!this.trafficPatterns.has(sessionId)) {
-            this.trafficPatterns.set(sessionId, {
-                requests: [],
-                firstRequest: timestamp,
-                intervals: []
-            });
+        // 3. Timezone vs Geolocation Analysis
+        const timezoneAnalysis = this.analyzeTimezoneDiscrepancy(headers, ipAddress);
+        vpnProxyScore += timezoneAnalysis.score;
+        if (timezoneAnalysis.signals.length > 0) {
+            vpnProxySignals.push(...timezoneAnalysis.signals);
         }
-        
-        const pattern = this.trafficPatterns.get(sessionId);
-        pattern.requests.push(timestamp);
-        
-        // Calculate intervals between requests
-        if (pattern.requests.length > 1) {
-            const lastTwo = pattern.requests.slice(-2);
-            const interval = lastTwo[1] - lastTwo[0];
-            pattern.intervals.push(interval);
-        }
-        
-        // Analyze patterns
-        const requestFrequency = pattern.requests.length / ((timestamp - pattern.firstRequest) / 1000 || 1);
-        const intervalVariance = this.calculateVariance(pattern.intervals);
-        const isRhythmic = intervalVariance < 100; // Very consistent timing = bot-like
         
         return {
-            frequency: requestFrequency,
-            isRhythmic: isRhythmic,
-            totalRequests: pattern.requests.length,
-            avgInterval: pattern.intervals.reduce((a, b) => a + b, 0) / pattern.intervals.length || 0
+            isVPNProxy: vpnProxyScore > 30,
+            confidence: Math.min(vpnProxyScore, 100),
+            signals: vpnProxySignals,
+            score: vpnProxyScore
         };
     }
     
-    // Analyze behavioral signals
-    analyzeBehaviorSignals(behaviorData) {
-        let behaviorScore = 1.0; // Start with human assumption
+    // Analyze HTTP Headers for Proxy Indicators
+    analyzeProxyHeaders(headers) {
+        let score = 0;
         const signals = [];
         
-        // Mouse movement analysis
-        if (!behaviorData.mouseMovements || behaviorData.mouseMovements.length === 0) {
-            behaviorScore -= 0.3;
-            signals.push('no_mouse_movement');
-        } else {
-            // Analyze movement patterns
-            const movements = behaviorData.mouseMovements;
-            const isLinear = this.isMovementLinear(movements);
-            const hasNaturalPauses = this.hasNaturalPauses(movements);
-            
-            if (isLinear) {
-                behaviorScore -= 0.2;
-                signals.push('linear_mouse_movement');
-            }
-            
-            if (!hasNaturalPauses) {
-                behaviorScore -= 0.2;
-                signals.push('unnatural_mouse_timing');
-            }
-        }
-        
-        // Keyboard interaction analysis
-        if (!behaviorData.keyboardEvents || behaviorData.keyboardEvents.length === 0) {
-            behaviorScore -= 0.2;
-            signals.push('no_keyboard_interaction');
-        }
-        
-        // Scroll behavior analysis
-        if (behaviorData.scrollEvents) {
-            const scrollPattern = this.analyzeScrollPattern(behaviorData.scrollEvents);
-            if (scrollPattern.isMechanical) {
-                behaviorScore -= 0.2;
-                signals.push('mechanical_scrolling');
-            }
-        }
-        
-        // Click pattern analysis
-        if (behaviorData.clickEvents) {
-            const clickPattern = this.analyzeClickPattern(behaviorData.clickEvents);
-            if (clickPattern.isRapid) {
-                behaviorScore -= 0.3;
-                signals.push('rapid_clicking');
-            }
-        }
-        
-        return {
-            score: Math.max(0, behaviorScore),
-            signals: signals,
-            confidence: signals.length > 0 ? 0.8 : 0.6
-        };
-    }
-    
-    // Detect user agent anomalies without hard-coded names
-    analyzeUserAgentAnomalies(userAgent) {
-        const anomalies = [];
-        let anomalyScore = 0;
-        
-        // Length analysis
-        if (userAgent.length < 20) {
-            anomalies.push('unusually_short_ua');
-            anomalyScore += 0.3;
-        } else if (userAgent.length > 500) {
-            anomalies.push('unusually_long_ua');
-            anomalyScore += 0.2;
-        }
-        
-        // Entropy analysis (randomness)
-        const entropy = this.calculateUserAgentEntropy(userAgent);
-        if (entropy < 0.3) {
-            anomalies.push('low_entropy_ua');
-            anomalyScore += 0.4;
-        }
-        
-        // Common patterns that indicate automation
-        const automationPatterns = [
-            /^[A-Za-z]+\/[\d\.]+$/, // Simple tool/version pattern
-            /python|curl|wget|http/i, // Common automation tools
-            /^\w+$/, // Single word user agents
-            /test|bot|crawler|spider/i // Generic automation terms
+        // Check for proxy headers
+        const proxyHeaders = [
+            'x-forwarded-for',
+            'x-real-ip',
+            'via',
+            'x-proxy-id',
+            'x-forwarded-proto',
+            'cf-connecting-ip',
+            'x-cluster-client-ip'
         ];
         
-        for (let pattern of automationPatterns) {
-            if (pattern.test(userAgent)) {
-                anomalies.push('automation_pattern');
-                anomalyScore += 0.3;
-                break;
+        for (const header of proxyHeaders) {
+            if (headers[header]) {
+                score += 15;
+                signals.push(`proxy_header_${header}`);
+                
+                // Multiple IPs in X-Forwarded-For indicates proxy chain
+                if (header === 'x-forwarded-for' && headers[header].includes(',')) {
+                    score += 20;
+                    signals.push('proxy_chain_detected');
+                }
             }
         }
         
-        // Browser consistency check
-        const browserInconsistencies = this.checkBrowserConsistency(userAgent);
-        if (browserInconsistencies.length > 0) {
-            anomalies.push('browser_inconsistency');
-            anomalyScore += 0.2;
+        // Check for VPN-specific headers
+        const vpnHeaders = ['x-vpn-client', 'x-tunnel-proto'];
+        for (const header of vpnHeaders) {
+            if (headers[header]) {
+                score += 25;
+                signals.push(`vpn_header_${header}`);
+            }
         }
         
-        return {
-            anomalies: anomalies,
-            score: Math.min(1.0, anomalyScore),
-            entropy: entropy
-        };
+        return { score, signals };
     }
     
-    // Main dynamic detection function with configurable thresholds
-    detectBot(requestData) {
+    // IP Address Analysis
+    async analyzeIPAddress(ipAddress) {
+        let score = 0;
+        const signals = [];
+        
+        try {
+            // Check against known VPN/Proxy IP ranges
+            const ipAnalysis = await this.checkIPDatabase(ipAddress);
+            if (ipAnalysis.isVPN) {
+                score += 40;
+                signals.push('known_vpn_ip');
+            }
+            if (ipAnalysis.isProxy) {
+                score += 35;
+                signals.push('known_proxy_ip');
+            }
+            if (ipAnalysis.isDataCenter) {
+                score += 25;
+                signals.push('datacenter_ip');
+            }
+            
+            // Reverse DNS lookup
+            const reverseDNS = await this.performReverseDNS(ipAddress);
+            if (reverseDNS.isVPNProvider) {
+                score += 30;
+                signals.push('vpn_provider_dns');
+            }
+            
+        } catch (error) {
+            console.warn('IP analysis failed:', error);
+        }
+        
+        return { score, signals };
+    }
+    
+    // Check IP against databases
+    async checkIPDatabase(ipAddress) {
+        // You can integrate with services like:
+        // - IP2Location.io
+        // - IPQualityScore
+        // - Greip
+        // For now, we'll use a basic check
+        
+        try {
+            // Example using ip-api.com (free tier)
+            const response = await fetch(`http://ip-api.com/json/${ipAddress}?fields=proxy,hosting,mobile,query`);
+            const data = await response.json();
+            
+            return {
+                isVPN: data.proxy || data.hosting,
+                isProxy: data.proxy,
+                isDataCenter: data.hosting,
+                isMobile: data.mobile
+            };
+        } catch (error) {
+            return { isVPN: false, isProxy: false, isDataCenter: false };
+        }
+    }
+    
+    // Reverse DNS lookup
+    async performReverseDNS(ipAddress) {
+        // This would typically require a DNS library
+        // For now, return basic analysis
+        return { isVPNProvider: false };
+    }
+    
+    // Timezone vs Geolocation Analysis
+    analyzeTimezoneDiscrepancy(headers, ipAddress) {
+        let score = 0;
+        const signals = [];
+        
+        // Get timezone from headers (if available)
+        const browserTimezone = headers['x-user-timezone'] || headers['timezone'];
+        
+        if (browserTimezone) {
+            // This would require geolocation lookup to compare
+            // For now, basic implementation
+            console.log('Timezone analysis:', browserTimezone);
+        }
+        
+        return { score, signals };
+    }
+    
+    // Enhanced main detection with VPN/Proxy
+    async detectBot(requestData) {
         const sessionId = requestData.sessionId || 'unknown';
         const timestamp = Date.now();
         
-        // 1. Analyze request patterns
+        // Original bot detection
         const requestAnalysis = this.analyzeRequestPatterns(sessionId, timestamp);
-        
-        // 2. Analyze user agent anomalies
         const userAgentAnalysis = this.analyzeUserAgentAnomalies(requestData.userAgent);
-        
-        // 3. Analyze behavioral signals
         const behaviorAnalysis = this.analyzeBehaviorSignals(requestData.behaviorData || {});
         
-        // 4. Calculate composite risk score
+        // NEW: VPN/Proxy Detection
+        const vpnProxyAnalysis = await this.detectVPNProxy(
+            requestData.ipAddress, 
+            requestData.userAgent, 
+            requestData.headers || {}
+        );
+        
+        // Calculate composite risk score
         let riskScore = 0;
         const factors = [];
         
-        // Request frequency factor
+        // Original factors
         if (requestAnalysis.frequency > this.anomalyThresholds.requestFrequency.malicious) {
             riskScore += 40;
             factors.push(`High request frequency: ${requestAnalysis.frequency.toFixed(1)}/sec`);
-        } else if (requestAnalysis.frequency > this.anomalyThresholds.requestFrequency.suspicious) {
-            riskScore += 25;
-            factors.push(`Elevated request frequency: ${requestAnalysis.frequency.toFixed(1)}/sec`);
         }
         
-        // Rhythmic requests (bot-like timing)
         if (requestAnalysis.isRhythmic && requestAnalysis.totalRequests > 5) {
             riskScore += 30;
             factors.push(`Mechanical request timing pattern`);
         }
         
-        // User agent anomalies
         riskScore += userAgentAnalysis.score * 35;
         if (userAgentAnalysis.anomalies.length > 0) {
             factors.push(`User agent anomalies: ${userAgentAnalysis.anomalies.join(', ')}`);
         }
         
-        // Behavioral analysis
         const behaviorRisk = (1 - behaviorAnalysis.score) * 40;
         riskScore += behaviorRisk;
         if (behaviorAnalysis.signals.length > 0) {
             factors.push(`Behavioral signals: ${behaviorAnalysis.signals.join(', ')}`);
         }
         
-        // 5. Determine action based on CONFIGURABLE thresholds
+        // NEW: VPN/Proxy risk scoring
+        riskScore += vpnProxyAnalysis.score;
+        if (vpnProxyAnalysis.signals.length > 0) {
+            factors.push(`VPN/Proxy signals: ${vpnProxyAnalysis.signals.join(', ')}`);
+        }
+        
+        // Determine action
         let action = 'allow';
         let confidence = 0.6;
+        let blockAds = false;
         
-        // Use global config if available, otherwise use instance defaults
         const currentThresholds = global.trafficCopConfig?.thresholds || this.actionThresholds;
         
         if (riskScore >= currentThresholds.block) {
             action = 'block';
             confidence = 0.9;
+            blockAds = true;
         } else if (riskScore >= currentThresholds.challenge) {
             action = 'challenge';
             confidence = 0.8;
-        } else {
-            action = 'allow';
-            if (factors.length === 0) {
-                factors.push("Low Risk");
-            }
         }
         
-        // Enhanced logging for debugging
-        console.log(`🎯 Bot Detection: SessionId=${sessionId}, Risk=${Math.round(riskScore)}, Thresholds=[Challenge:${currentThresholds.challenge}, Block:${currentThresholds.block}], Action=${action}`);
+        // NEW: Block ads for VPN/Proxy users (even if allowed)
+        if (vpnProxyAnalysis.isVPNProxy) {
+            blockAds = true;
+            factors.push('Ad blocking enabled for VPN/Proxy user');
+        }
+        
+        console.log(`🎯 Enhanced Detection: SessionId=${sessionId}, Risk=${Math.round(riskScore)}, VPN/Proxy=${vpnProxyAnalysis.isVPNProxy}, BlockAds=${blockAds}, Action=${action}`);
         
         return {
             riskScore: Math.round(riskScore),
             action: action,
             confidence: Math.round(confidence * 100),
             threats: factors,
-            appliedThresholds: currentThresholds,
+            blockAds: blockAds,
+            vpnProxy: vpnProxyAnalysis,
             analysis: {
                 requestPattern: requestAnalysis,
                 userAgentAnalysis: userAgentAnalysis,
-                behaviorAnalysis: behaviorAnalysis
+                behaviorAnalysis: behaviorAnalysis,
+                vpnProxyAnalysis: vpnProxyAnalysis
             }
         };
-    }
-    
-    // Helper methods
-    calculateVariance(numbers) {
-        if (numbers.length === 0) return 0;
-        const mean = numbers.reduce((a, b) => a + b) / numbers.length;
-        const variance = numbers.reduce((sum, num) => sum + Math.pow(num - mean, 2), 0) / numbers.length;
-        return variance;
-    }
-    
-    isMovementLinear(movements) {
-        if (movements.length < 3) return false;
-        // Check if mouse movements are too linear (bot-like)
-        let linearCount = 0;
-        for (let i = 2; i < movements.length; i++) {
-            const dx1 = movements[i-1].x - movements[i-2].x;
-            const dy1 = movements[i-1].y - movements[i-2].y;
-            const dx2 = movements[i].x - movements[i-1].x;
-            const dy2 = movements[i].y - movements[i-1].y;
-            
-            // Check if direction is too consistent
-            if (Math.abs(dx1 - dx2) < 2 && Math.abs(dy1 - dy2) < 2) {
-                linearCount++;
-            }
-        }
-        return linearCount > movements.length * 0.8; // 80% linear = suspicious
-    }
-    
-    hasNaturalPauses(movements) {
-        if (movements.length < 2) return true;
-        let pauseCount = 0;
-        for (let i = 1; i < movements.length; i++) {
-            const timeDiff = movements[i].timestamp - movements[i-1].timestamp;
-            if (timeDiff > 100) { // Pause longer than 100ms
-                pauseCount++;
-            }
-        }
-        return pauseCount > movements.length * 0.1; // At least 10% pauses
-    }
-    
-    analyzeScrollPattern(scrollEvents) {
-        if (scrollEvents.length < 3) return { isMechanical: false };
-        
-        let mechanicalCount = 0;
-        for (let i = 1; i < scrollEvents.length; i++) {
-            const scrollDiff = Math.abs(scrollEvents[i].scrollY - scrollEvents[i-1].scrollY);
-            const timeDiff = scrollEvents[i].timestamp - scrollEvents[i-1].timestamp;
-            
-            // Very consistent scroll amounts = mechanical
-            if (scrollDiff > 0 && scrollDiff % 100 === 0 && timeDiff < 50) {
-                mechanicalCount++;
-            }
-        }
-        
-        return { isMechanical: mechanicalCount > scrollEvents.length * 0.5 };
-    }
-    
-    analyzeClickPattern(clickEvents) {
-        if (clickEvents.length < 2) return { isRapid: false };
-        
-        const intervals = [];
-        for (let i = 1; i < clickEvents.length; i++) {
-            intervals.push(clickEvents[i].timestamp - clickEvents[i-1].timestamp);
-        }
-        
-        const avgInterval = intervals.reduce((a, b) => a + b) / intervals.length;
-        const variance = this.calculateVariance(intervals);
-        
-        // Rapid clicking with low variance = bot-like
-        return { 
-            isRapid: avgInterval < 100 && variance < 50 
-        };
-    }
-    
-    checkBrowserConsistency(userAgent) {
-        const inconsistencies = [];
-        
-        // Check for version mismatches, impossible combinations, etc.
-        if (userAgent.includes('Chrome') && userAgent.includes('Firefox')) {
-            inconsistencies.push('multiple_browsers');
-        }
-        
-        if (userAgent.includes('Windows') && userAgent.includes('iPhone')) {
-            inconsistencies.push('os_device_mismatch');
-        }
-        
-        return inconsistencies;
     }
 }
+
 
 // Dynamic traffic analysis function
 function analyzeTrafficDynamic(userAgent, website, requestData = {}) {
@@ -1194,7 +1129,7 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Enhanced traffic analysis endpoint with KV storage
+        // Enhanced analyze endpoint with VPN/Proxy detection
         if (req.url === '/api/v1/analyze' && req.method === 'POST') {
             const auth = await authenticateAPIKey(req);
             
@@ -1219,11 +1154,22 @@ module.exports = async (req, res) => {
                                 req.connection.remoteAddress || 
                                 'unknown';
                     
+                    // Get all headers for VPN/proxy analysis
+                    const allHeaders = req.headers;
+                    
                     // Get geolocation data
                     const geolocation = await getGeolocationFromIP(realIP);
                     
-                    // Dynamic bot detection analysis
-                    const analysis = analyzeTrafficDynamic(userAgent, website, requestData);
+                    // Enhanced request data with headers
+                    const enhancedRequestData = {
+                        ...requestData,
+                        ipAddress: realIP,
+                        headers: allHeaders,
+                        geolocation: geolocation
+                    };
+                    
+                    // Enhanced bot detection with VPN/proxy analysis
+                    const analysis = await analyzeTrafficDynamic(userAgent, website, enhancedRequestData);
                     
                     // Store visitor data in KV
                     const visitorData = {
@@ -1235,15 +1181,13 @@ module.exports = async (req, res) => {
                         riskScore: analysis.riskScore,
                         action: analysis.action,
                         threats: analysis.threats,
+                        blockAds: analysis.blockAds,
+                        vpnProxy: analysis.vpnProxy,
                         publisherId: auth.publisherId,
                         timestamp: new Date().toISOString()
                     };
                     
-                    // Store in KV
                     await storage.storeVisitorSession(visitorData);
-                    console.log('✅ Visitor session stored successfully');
-                    
-                    console.log(`💾 STORED IN KV: ${visitorData.sessionId}, Risk: ${analysis.riskScore}, Action: ${analysis.action}`);
                     
                     const response = {
                         sessionId: visitorData.sessionId,
@@ -1253,6 +1197,8 @@ module.exports = async (req, res) => {
                         action: analysis.action,
                         confidence: analysis.confidence,
                         threats: analysis.threats,
+                        blockAds: analysis.blockAds,
+                        vpnProxy: analysis.vpnProxy,
                         geolocation: geolocation,
                         timestamp: new Date().toISOString()
                     };
@@ -1274,6 +1220,7 @@ module.exports = async (req, res) => {
             });
             return;
         }
+
 
         // Real-time visitor tracking endpoint
         if (req.url === '/api/v1/real-time-visitor' && req.method === 'POST') {

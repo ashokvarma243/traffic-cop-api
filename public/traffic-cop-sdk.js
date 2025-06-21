@@ -1,4 +1,4 @@
-// Enhanced Traffic Cop SDK with Real-Time Visitor Tracking v2.1
+// Enhanced Traffic Cop SDK with VPN/Proxy Detection and Ad Blocking v2.2
 (function(window) {
     'use strict';
     
@@ -16,13 +16,20 @@
                 showBlockMessage: config.showBlockMessage !== false,
                 retryAttempts: config.retryAttempts || 3,
                 timeout: config.timeout || 10000,
-                enableRealTimeTracking: config.enableRealTimeTracking !== false
+                enableRealTimeTracking: config.enableRealTimeTracking !== false,
+                enableVPNDetection: config.enableVPNDetection !== false,
+                blockAdsForVPN: config.blockAdsForVPN !== false,
+                vpnBlockThreshold: config.vpnBlockThreshold || 30
             };
             
             this.sessionId = this.generateSessionId();
             this.startTime = Date.now();
             this.isBlocked = false;
+            this.adsBlocked = false;
+            this.vpnDetected = false;
             this.retryCount = 0;
+            this.blockedScripts = [];
+            
             this.behaviorData = {
                 mouseMovements: [],
                 clicks: [],
@@ -39,7 +46,8 @@
                 pageViews: [],
                 interactions: 0,
                 ipData: null,
-                geoData: null
+                geoData: null,
+                vpnProxyData: null
             };
             
             if (this.config.autoProtect) {
@@ -49,7 +57,7 @@
         
         init() {
             if (this.config.debug) {
-                console.log('🛡️ Traffic Cop SDK initialized with automatic bot detection', this.config);
+                console.log('🛡️ Traffic Cop SDK v2.2 initialized with VPN/Proxy detection', this.config);
             }
             
             // Initialize real-time visitor tracking first
@@ -62,6 +70,9 @@
             
             // Generate device fingerprint
             this.generateDeviceFingerprint();
+            
+            // Setup ad blocking monitoring
+            this.setupAdBlockingMonitoring();
             
             // Initial analysis after page loads
             if (document.readyState === 'loading') {
@@ -78,11 +89,16 @@
             }
         }
         
-        // Real-time visitor tracking initialization
+        // Enhanced real-time tracking with VPN/Proxy detection
         async initRealTimeTracking() {
             try {
-                console.log('🌍 Initializing real-time visitor tracking...');
+                console.log('🌍 Initializing real-time visitor tracking with VPN/Proxy detection...');
                 await this.getVisitorIPAndLocation();
+                
+                if (this.config.enableVPNDetection) {
+                    await this.detectVPNProxy();
+                }
+                
                 this.setupRealTimeVisitorTracking();
                 console.log('✅ Real-time visitor tracking active');
             } catch (error) {
@@ -90,10 +106,10 @@
             }
         }
         
-        // Get visitor's real IP address and geographic data
+        // Enhanced IP and location detection
         async getVisitorIPAndLocation() {
             try {
-                // Method 1: Use ipapi.co for IP and location
+                // Method 1: Use ipapi.co for comprehensive data
                 const ipResponse = await fetch('https://ipapi.co/json/');
                 const ipData = await ipResponse.json();
                 
@@ -107,7 +123,9 @@
                     longitude: ipData.longitude,
                     timezone: ipData.timezone,
                     isp: ipData.org,
-                    postal: ipData.postal
+                    postal: ipData.postal,
+                    asn: ipData.asn,
+                    threat_types: ipData.threat_types || null
                 };
                 
                 if (this.config.debug) {
@@ -136,7 +154,9 @@
                         longitude: 0,
                         timezone: 'Unknown',
                         isp: 'Unknown',
-                        postal: 'Unknown'
+                        postal: 'Unknown',
+                        asn: 'Unknown',
+                        threat_types: null
                     };
                     
                     return this.visitorSession.ipData;
@@ -147,12 +167,247 @@
             }
         }
         
-        // Setup real-time visitor tracking
+        // NEW: VPN/Proxy Detection
+        async detectVPNProxy() {
+            if (!this.visitorSession.ipData) {
+                console.warn('⚠️ No IP data available for VPN/Proxy detection');
+                return;
+            }
+            
+            let vpnScore = 0;
+            const vpnSignals = [];
+            
+            try {
+                // Method 1: Check against VPN detection API
+                const vpnResponse = await fetch(`https://vpnapi.io/api/${this.visitorSession.ipData.ip}?key=free`);
+                const vpnData = await vpnResponse.json();
+                
+                if (vpnData.security) {
+                    if (vpnData.security.vpn) {
+                        vpnScore += 40;
+                        vpnSignals.push('VPN detected by API');
+                    }
+                    if (vpnData.security.proxy) {
+                        vpnScore += 35;
+                        vpnSignals.push('Proxy detected by API');
+                    }
+                    if (vpnData.security.tor) {
+                        vpnScore += 50;
+                        vpnSignals.push('Tor network detected');
+                    }
+                    if (vpnData.security.relay) {
+                        vpnScore += 30;
+                        vpnSignals.push('Relay detected');
+                    }
+                }
+                
+                // Method 2: Analyze ISP and ASN
+                if (this.visitorSession.ipData.isp) {
+                    const vpnKeywords = ['vpn', 'proxy', 'hosting', 'datacenter', 'cloud', 'server', 'virtual'];
+                    const ispLower = this.visitorSession.ipData.isp.toLowerCase();
+                    
+                    vpnKeywords.forEach(keyword => {
+                        if (ispLower.includes(keyword)) {
+                            vpnScore += 15;
+                            vpnSignals.push(`ISP contains VPN keyword: ${keyword}`);
+                        }
+                    });
+                }
+                
+                // Method 3: Check for common VPN providers
+                const commonVPNs = [
+                    'nordvpn', 'expressvpn', 'surfshark', 'cyberghost', 'purevpn',
+                    'hotspot shield', 'tunnelbear', 'windscribe', 'protonvpn',
+                    'mullvad', 'private internet access', 'pia'
+                ];
+                
+                if (this.visitorSession.ipData.isp) {
+                    const ispLower = this.visitorSession.ipData.isp.toLowerCase();
+                    commonVPNs.forEach(vpn => {
+                        if (ispLower.includes(vpn)) {
+                            vpnScore += 45;
+                            vpnSignals.push(`Known VPN provider: ${vpn}`);
+                        }
+                    });
+                }
+                
+                // Method 4: Timezone vs Location analysis
+                const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+                if (browserTimezone && this.visitorSession.ipData.timezone) {
+                    if (browserTimezone !== this.visitorSession.ipData.timezone) {
+                        vpnScore += 20;
+                        vpnSignals.push('Timezone mismatch detected');
+                    }
+                }
+                
+                this.visitorSession.vpnProxyData = {
+                    isVPN: vpnScore >= this.config.vpnBlockThreshold,
+                    score: vpnScore,
+                    signals: vpnSignals,
+                    confidence: Math.min(95, vpnScore)
+                };
+                
+                if (this.visitorSession.vpnProxyData.isVPN) {
+                    this.vpnDetected = true;
+                    
+                    if (this.config.debug) {
+                        console.log('🔍 VPN/Proxy detected:', this.visitorSession.vpnProxyData);
+                    }
+                    
+                    // Block ads if configured
+                    if (this.config.blockAdsForVPN) {
+                        this.blockAdsForVPNUser();
+                    }
+                    
+                    this.logEvent('vpn_proxy_detected', this.visitorSession.vpnProxyData);
+                }
+                
+            } catch (error) {
+                if (this.config.debug) {
+                    console.warn('⚠️ VPN detection failed:', error);
+                }
+            }
+        }
+        
+        // NEW: Block ads specifically for VPN/Proxy users
+        blockAdsForVPNUser() {
+            this.adsBlocked = true;
+            
+            if (this.config.debug) {
+                console.log('🚫 Blocking ads for VPN/Proxy user');
+            }
+            
+            // Block Google AdSense scripts
+            this.blockScript('https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js');
+            this.blockScript('https://securepubads.g.doubleclick.net/tag/js/gpt.js');
+            this.blockScript('https://www.googletagservices.com/tag/js/gpt.js');
+            this.blockScript('https://googleads.g.doubleclick.net/pagead/js/adsbygoogle.js');
+            
+            // Hide existing ads
+            this.hideExistingAds();
+            
+            // Monitor for new ad injections
+            this.monitorAdInjections();
+            
+            this.logEvent('ads_blocked_vpn', {
+                reason: 'VPN/Proxy detected',
+                signals: this.visitorSession.vpnProxyData?.signals || []
+            });
+        }
+        
+        // NEW: Block specific scripts
+        blockScript(scriptUrl) {
+            // Prevent script from loading by URL
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.tagName === 'SCRIPT' && node.src) {
+                            if (this.shouldBlockScript(node.src)) {
+                                if (this.config.debug) {
+                                    console.log('🚫 Blocking script:', node.src);
+                                }
+                                node.type = 'javascript/blocked';
+                                node.remove();
+                                this.blockedScripts.push(node.src);
+                            }
+                        }
+                    });
+                });
+            });
+            
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true
+            });
+        }
+        
+        // NEW: Check if script should be blocked
+        shouldBlockScript(src) {
+            if (!this.adsBlocked) return false;
+            
+            const blockedDomains = [
+                'googlesyndication.com',
+                'doubleclick.net',
+                'googletagservices.com',
+                'googleadservices.com',
+                'google-analytics.com'
+            ];
+            
+            return blockedDomains.some(domain => src.includes(domain));
+        }
+        
+        // NEW: Hide existing ads
+        hideExistingAds() {
+            // Hide Google AdSense ads
+            document.querySelectorAll('.adsbygoogle').forEach(ad => {
+                ad.style.display = 'none';
+                ad.setAttribute('data-traffic-cop-vpn', 'blocked');
+            });
+            
+            // Hide other common ad containers
+            const adSelectors = [
+                '[class*="ad-"]', '[id*="ad-"]', '[class*="advertisement"]',
+                '[class*="adsense"]', '[class*="google-ad"]', '.ad', '#ad',
+                '[class*="banner"]', '[id*="banner"]', '[class*="ads"]'
+            ];
+            
+            adSelectors.forEach(selector => {
+                document.querySelectorAll(selector).forEach(ad => {
+                    ad.style.display = 'none';
+                    ad.setAttribute('data-traffic-cop-vpn', 'blocked');
+                });
+            });
+        }
+        
+        // NEW: Monitor for new ad injections
+        monitorAdInjections() {
+            // Override createElement to block ad scripts
+            const originalCreateElement = document.createElement;
+            const self = this;
+            
+            document.createElement = function(tagName) {
+                const element = originalCreateElement.call(document, tagName);
+                
+                if (tagName.toLowerCase() === 'script') {
+                    const originalSetAttribute = element.setAttribute;
+                    element.setAttribute = function(name, value) {
+                        if (name === 'src' && self.shouldBlockScript(value)) {
+                            if (self.config.debug) {
+                                console.log('🚫 Blocked script injection:', value);
+                            }
+                            return;
+                        }
+                        originalSetAttribute.call(this, name, value);
+                    };
+                }
+                
+                return element;
+            };
+        }
+        
+        // NEW: Setup ad blocking monitoring
+        setupAdBlockingMonitoring() {
+            // Monitor for ad script loads
+            const originalAppendChild = Element.prototype.appendChild;
+            const self = this;
+            
+            Element.prototype.appendChild = function(child) {
+                if (child.tagName === 'SCRIPT' && child.src && self.shouldBlockScript(child.src)) {
+                    if (self.config.debug) {
+                        console.log('🚫 Prevented ad script appendChild:', child.src);
+                    }
+                    return child;
+                }
+                return originalAppendChild.call(this, child);
+            };
+        }
+        
+        // Enhanced visitor data collection with VPN/Proxy data
         setupRealTimeVisitorTracking() {
             // Track page views
             this.trackPageView();
             
-            // Send initial visitor data
+            // Send initial visitor data with VPN/Proxy information
             this.sendRealTimeVisitorData('page_load');
             
             // Track page visibility changes
@@ -168,18 +423,7 @@
             }, 30000); // Every 30 seconds
         }
         
-        // Track page views
-        trackPageView() {
-            this.visitorSession.pageViews.push({
-                url: window.location.href,
-                title: document.title,
-                timestamp: Date.now()
-            });
-            
-            this.sendRealTimeVisitorData('page_view');
-        }
-        
-        // Send real-time visitor data to dashboard
+        // Enhanced real-time visitor data with VPN/Proxy info
         async sendRealTimeVisitorData(trigger) {
             if (!this.visitorSession.ipData) {
                 if (this.config.debug) {
@@ -207,8 +451,14 @@
                     longitude: this.visitorSession.ipData.longitude,
                     timezone: this.visitorSession.ipData.timezone,
                     isp: this.visitorSession.ipData.isp,
-                    postal: this.visitorSession.ipData.postal
+                    postal: this.visitorSession.ipData.postal,
+                    asn: this.visitorSession.ipData.asn
                 },
+                
+                // VPN/Proxy data
+                vpnProxy: this.visitorSession.vpnProxyData || null,
+                adsBlocked: this.adsBlocked,
+                vpnDetected: this.vpnDetected,
                 
                 // Browser and device data
                 userAgent: navigator.userAgent,
@@ -244,6 +494,7 @@
             }
         }
         
+        // Enhanced behavior tracking (keeping your existing methods)
         setupBehaviorTracking() {
             // Track mouse movements for bot detection
             let lastMouseTime = 0;
@@ -335,6 +586,187 @@
                 }
             });
         }
+        
+        // Enhanced visitor data collection with VPN/Proxy information
+        collectVisitorData() {
+            const baseData = {
+                sessionId: this.sessionId,
+                url: window.location.href,
+                website: window.location.hostname,
+                referrer: document.referrer,
+                userAgent: navigator.userAgent,
+                screenResolution: `${screen.width}x${screen.height}`,
+                viewportSize: `${window.innerWidth}x${window.innerHeight}`,
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                language: navigator.language,
+                platform: navigator.platform,
+                cookieEnabled: navigator.cookieEnabled,
+                timestamp: this.startTime,
+                loadTime: Date.now() - this.startTime,
+                plugins: navigator.plugins.length,
+                jsEnabled: true,
+                
+                // Enhanced behavior data
+                behaviorData: {
+                    mouseMovements: this.behaviorData.mouseMovements.length,
+                    clicks: this.behaviorData.clicks.length,
+                    scrollEvents: this.behaviorData.scrollEvents.length,
+                    keystrokes: this.behaviorData.keystrokes.length,
+                    pageInteractions: this.behaviorData.pageInteractions,
+                    timeOnPage: this.behaviorData.timeOnPage,
+                    
+                    // Mouse movement analysis
+                    mouseVariation: this.calculateMouseVariation(),
+                    avgClickSpeed: this.calculateAvgClickSpeed(),
+                    scrollPattern: this.analyzeScrollPattern()
+                },
+                
+                // Device fingerprint
+                deviceFingerprint: this.behaviorData.deviceFingerprint,
+                
+                // VPN/Proxy detection data
+                vpnProxy: this.visitorSession.vpnProxyData || null,
+                vpnDetected: this.vpnDetected,
+                adsBlocked: this.adsBlocked
+            };
+            
+            // Add real-time visitor data if available
+            if (this.visitorSession.ipData) {
+                baseData.realTimeData = {
+                    ipAddress: this.visitorSession.ipData.ip,
+                    location: {
+                        city: this.visitorSession.ipData.city,
+                        region: this.visitorSession.ipData.region,
+                        country: this.visitorSession.ipData.country,
+                        countryCode: this.visitorSession.ipData.countryCode,
+                        latitude: this.visitorSession.ipData.latitude,
+                        longitude: this.visitorSession.ipData.longitude,
+                        timezone: this.visitorSession.ipData.timezone,
+                        isp: this.visitorSession.ipData.isp,
+                        postal: this.visitorSession.ipData.postal,
+                        asn: this.visitorSession.ipData.asn
+                    },
+                    pageViews: this.visitorSession.pageViews.length,
+                    sessionInteractions: this.visitorSession.interactions
+                };
+            }
+            
+            return baseData;
+        }
+        
+        // Enhanced analysis result handling with VPN/Proxy actions
+        handleAnalysisResult(analysis, forcedAnalysis = false) {
+            if (this.config.debug) {
+                console.log('🔍 Analysis result:', analysis);
+            }
+            
+            // Handle VPN/Proxy specific actions
+            if (analysis.blockAds || analysis.vpnProxy?.isVPN) {
+                this.blockAdsForVPNUser();
+            }
+            
+            // Execute protection based on risk level and mode
+            switch (analysis.action) {
+                case 'block':
+                    if (this.config.mode === 'block') {
+                        this.blockAds();
+                        if (this.config.showBlockMessage) {
+                            this.showBlockMessage(analysis);
+                        }
+                        this.logEvent('traffic_blocked', analysis);
+                    }
+                    break;
+                    
+                case 'challenge':
+                    if (this.config.mode === 'challenge' || this.config.mode === 'block') {
+                        this.showChallenge(analysis);
+                        this.logEvent('challenge_shown', analysis);
+                    }
+                    break;
+                    
+                default:
+                    if (!forcedAnalysis && !this.adsBlocked) {
+                        this.allowAds();
+                        this.logEvent('traffic_allowed', analysis);
+                    }
+            }
+        }
+        
+        // Enhanced block message with VPN/Proxy information
+        showBlockMessage(analysis) {
+            const isVPN = analysis.vpnProxy?.isVPN || this.vpnDetected;
+            const message = document.createElement('div');
+            message.id = 'traffic-cop-block-message';
+            message.innerHTML = `
+                <div style="position: fixed; top: 20px; right: 20px; background: ${isVPN ? '#ff9800' : '#f44336'}; color: white; 
+                           padding: 15px; border-radius: 8px; z-index: 999999; font-family: Arial, sans-serif;
+                           box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-width: 300px;">
+                    <strong>🛡️ ${isVPN ? 'VPN/Proxy Detected' : 'Bot Traffic Detected'}</strong><br>
+                    <small>${isVPN ? 'Ads blocked for VPN/Proxy users to prevent fraud.' : 'Automated traffic blocked to protect this site.'}</small>
+                    ${analysis.vpnProxy?.signals ? `<br><small>Signals: ${analysis.vpnProxy.signals.slice(0, 2).join(', ')}</small>` : ''}
+                </div>
+            `;
+            document.body.appendChild(message);
+            
+            setTimeout(() => {
+                if (message.parentNode) {
+                    message.parentNode.removeChild(message);
+                }
+            }, 8000);
+        }
+        
+        // Get enhanced stats including VPN/Proxy data
+        getStats() {
+            try {
+                const analytics = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
+                const total = analytics.length;
+                const blocked = analytics.filter(a => a.action === 'block').length;
+                const vpnDetected = analytics.filter(a => a.vpnProxy?.isVPN).length;
+                
+                return {
+                    totalSessions: total,
+                    blockedSessions: blocked,
+                    vpnSessions: vpnDetected,
+                    blockRate: total > 0 ? Math.round((blocked / total) * 100) : 0,
+                    vpnRate: total > 0 ? Math.round((vpnDetected / total) * 100) : 0,
+                    isCurrentlyBlocked: this.isBlocked,
+                    adsBlocked: this.adsBlocked,
+                    vpnDetected: this.vpnDetected,
+                    blockedScripts: this.blockedScripts.length
+                };
+            } catch (e) {
+                return {
+                    totalSessions: 0,
+                    blockedSessions: 0,
+                    vpnSessions: 0,
+                    blockRate: 0,
+                    vpnRate: 0,
+                    isCurrentlyBlocked: this.isBlocked,
+                    adsBlocked: this.adsBlocked,
+                    vpnDetected: this.vpnDetected,
+                    blockedScripts: this.blockedScripts.length
+                };
+            }
+        }
+        
+        // Get VPN/Proxy specific data
+        getVPNData() {
+            return {
+                detected: this.vpnDetected,
+                data: this.visitorSession.vpnProxyData,
+                adsBlocked: this.adsBlocked,
+                blockedScripts: this.blockedScripts
+            };
+        }
+        
+        // Manual VPN detection method
+        async detectVPNManual() {
+            await this.detectVPNProxy();
+            return this.getVPNData();
+        }
+        
+        // [Keep all your existing methods: checkMouseBotPatterns, checkRapidClicking, 
+        // generateDeviceFingerprint, etc. - they remain unchanged]
         
         checkMouseBotPatterns() {
             const movements = this.behaviorData.mouseMovements;
@@ -573,6 +1005,16 @@
             this.analyzeCurrentVisitor(true);
         }
         
+        trackPageView() {
+            this.visitorSession.pageViews.push({
+                url: window.location.href,
+                title: document.title,
+                timestamp: Date.now()
+            });
+            
+            this.sendRealTimeVisitorData('page_view');
+        }
+        
         async analyzeCurrentVisitor(forcedAnalysis = false) {
             try {
                 const visitorData = this.collectVisitorData();
@@ -650,66 +1092,6 @@
             }
         }
         
-        collectVisitorData() {
-            const baseData = {
-                sessionId: this.sessionId,
-                url: window.location.href,
-                website: window.location.hostname,
-                referrer: document.referrer,
-                userAgent: navigator.userAgent,
-                screenResolution: `${screen.width}x${screen.height}`,
-                viewportSize: `${window.innerWidth}x${window.innerHeight}`,
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                language: navigator.language,
-                platform: navigator.platform,
-                cookieEnabled: navigator.cookieEnabled,
-                timestamp: this.startTime,
-                loadTime: Date.now() - this.startTime,
-                plugins: navigator.plugins.length,
-                jsEnabled: true,
-                
-                // Enhanced behavior data
-                behaviorData: {
-                    mouseMovements: this.behaviorData.mouseMovements.length,
-                    clicks: this.behaviorData.clicks.length,
-                    scrollEvents: this.behaviorData.scrollEvents.length,
-                    keystrokes: this.behaviorData.keystrokes.length,
-                    pageInteractions: this.behaviorData.pageInteractions,
-                    timeOnPage: this.behaviorData.timeOnPage,
-                    
-                    // Mouse movement analysis
-                    mouseVariation: this.calculateMouseVariation(),
-                    avgClickSpeed: this.calculateAvgClickSpeed(),
-                    scrollPattern: this.analyzeScrollPattern()
-                },
-                
-                // Device fingerprint
-                deviceFingerprint: this.behaviorData.deviceFingerprint
-            };
-            
-            // Add real-time visitor data if available
-            if (this.visitorSession.ipData) {
-                baseData.realTimeData = {
-                    ipAddress: this.visitorSession.ipData.ip,
-                    location: {
-                        city: this.visitorSession.ipData.city,
-                        region: this.visitorSession.ipData.region,
-                        country: this.visitorSession.ipData.country,
-                        countryCode: this.visitorSession.ipData.countryCode,
-                        latitude: this.visitorSession.ipData.latitude,
-                        longitude: this.visitorSession.ipData.longitude,
-                        timezone: this.visitorSession.ipData.timezone,
-                        isp: this.visitorSession.ipData.isp,
-                        postal: this.visitorSession.ipData.postal
-                    },
-                    pageViews: this.visitorSession.pageViews.length,
-                    sessionInteractions: this.visitorSession.interactions
-                };
-            }
-            
-            return baseData;
-        }
-        
         calculateMouseVariation() {
             const movements = this.behaviorData.mouseMovements;
             if (movements.length < 2) return 0;
@@ -756,38 +1138,6 @@
             return 'normal';
         }
         
-        handleAnalysisResult(analysis, forcedAnalysis = false) {
-            if (this.config.debug) {
-                console.log('🔍 Analysis result:', analysis);
-            }
-            
-            // Execute protection based on risk level and mode
-            switch (analysis.action) {
-                case 'block':
-                    if (this.config.mode === 'block') {
-                        this.blockAds();
-                        if (this.config.showBlockMessage) {
-                            this.showBlockMessage();
-                        }
-                        this.logEvent('ads_blocked', analysis);
-                    }
-                    break;
-                    
-                case 'challenge':
-                    if (this.config.mode === 'challenge' || this.config.mode === 'block') {
-                        this.showChallenge(analysis);
-                        this.logEvent('challenge_shown', analysis);
-                    }
-                    break;
-                    
-                default:
-                    if (!forcedAnalysis) {
-                        this.allowAds();
-                        this.logEvent('ads_allowed', analysis);
-                    }
-            }
-        }
-        
         blockAds() {
             this.isBlocked = true;
             
@@ -825,26 +1175,6 @@
             }
         }
         
-        showBlockMessage() {
-            const message = document.createElement('div');
-            message.id = 'traffic-cop-block-message';
-            message.innerHTML = `
-                <div style="position: fixed; top: 20px; right: 20px; background: #f44336; color: white; 
-                           padding: 15px; border-radius: 8px; z-index: 999999; font-family: Arial, sans-serif;
-                           box-shadow: 0 4px 12px rgba(0,0,0,0.3); max-width: 300px;">
-                    <strong>🛡️ Bot Traffic Detected</strong><br>
-                    <small>Automated traffic blocked to protect this site's ad revenue.</small>
-                </div>
-            `;
-            document.body.appendChild(message);
-            
-            setTimeout(() => {
-                if (message.parentNode) {
-                    message.parentNode.removeChild(message);
-                }
-            }, 5000);
-        }
-        
         showChallenge(analysis) {
             const overlay = document.createElement('div');
             overlay.id = 'traffic-cop-challenge';
@@ -862,6 +1192,7 @@
                         <p style="font-size: 0.9em; color: #999;">
                             Risk Score: ${analysis.riskScore}%<br>
                             Detection: ${analysis.threats.join(', ')}
+                            ${analysis.vpnProxy?.isVPN ? '<br>VPN/Proxy detected' : ''}
                         </p>
                         <button onclick="window.trafficCop.passChallenge()" 
                                style="background: #4CAF50; color: white; border: none; padding: 15px 30px; 
@@ -874,7 +1205,7 @@
                             ✗ Close
                         </button>
                         <br>
-                        <small style="color: #999;">Powered by Traffic Cop</small>
+                        <small style="color: #999;">Powered by Traffic Cop v2.2</small>
                     </div>
                 </div>
             `;
@@ -962,28 +1293,6 @@
             return 'tc_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
         }
         
-        getStats() {
-            try {
-                const analytics = JSON.parse(localStorage.getItem('trafficCopAnalytics') || '[]');
-                const total = analytics.length;
-                const blocked = analytics.filter(a => a.action === 'block').length;
-                
-                return {
-                    totalSessions: total,
-                    blockedSessions: blocked,
-                    blockRate: total > 0 ? Math.round((blocked / total) * 100) : 0,
-                    isCurrentlyBlocked: this.isBlocked
-                };
-            } catch (e) {
-                return {
-                    totalSessions: 0,
-                    blockedSessions: 0,
-                    blockRate: 0,
-                    isCurrentlyBlocked: this.isBlocked
-                };
-            }
-        }
-        
         // Manual analysis method
         analyze() {
             return this.analyzeCurrentVisitor();
@@ -1002,10 +1311,16 @@
         // Destroy SDK instance
         destroy() {
             this.isBlocked = false;
+            this.adsBlocked = false;
             this.allowAds();
             
-            // Remove event listeners would go here if we stored references
-            // For now, just clear the instance
+            // Remove blocked ad attributes
+            document.querySelectorAll('[data-traffic-cop-vpn="blocked"]').forEach(element => {
+                element.style.display = '';
+                element.removeAttribute('data-traffic-cop-vpn');
+            });
+            
+            // Clear the instance
             if (window.trafficCop === this) {
                 window.trafficCop = null;
             }
@@ -1018,7 +1333,7 @@
             window.trafficCop = new TrafficCopSDK(apiKey, config);
             return window.trafficCop;
         },
-        version: '2.1.0',
+        version: '2.2.0',
         SDK: TrafficCopSDK
     };
     
@@ -1029,7 +1344,9 @@
             const apiKey = script.getAttribute('data-traffic-cop-key');
             if (apiKey) {
                 new TrafficCopSDK(apiKey, {
-                    debug: script.getAttribute('data-debug') === 'true'
+                    debug: script.getAttribute('data-debug') === 'true',
+                    enableVPNDetection: script.getAttribute('data-vpn-detection') !== 'false',
+                    blockAdsForVPN: script.getAttribute('data-block-ads-vpn') !== 'false'
                 });
                 break;
             }
