@@ -1,33 +1,346 @@
-<!-- Save as debug-dashboard.html -->
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Traffic Cop Debug Dashboard</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .debug-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #667eea;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        
+        .test-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        
+        .btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .status {
+            padding: 10px;
+            border-radius: 5px;
+            margin: 10px 0;
+            font-weight: bold;
+        }
+        
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        
+        .status.warning {
+            background: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeaa7;
+        }
+    </style>
 </head>
 <body>
-    <h1>Traffic Cop Debug Dashboard</h1>
-    <button onclick="testAPI()">Test API</button>
-    <pre id="output"></pre>
-    
+    <div class="debug-container">
+        <h1>🛡️ Traffic Cop Debug Dashboard</h1>
+        
+        <div class="test-buttons">
+            <button class="btn" onclick="testRealTimeDashboard()">Test Real-Time Dashboard</button>
+            <button class="btn" onclick="testAnalytics()">Test Analytics API</button>
+            <button class="btn" onclick="testKVContents()">Test KV Contents</button>
+            <button class="btn" onclick="testStorageMethods()">Test Storage Methods</button>
+            <button class="btn" onclick="generateTestTraffic()">Generate Test Traffic</button>
+            <button class="btn" onclick="testActivityLogs()">Test Activity Logs</button>
+            <button class="btn" onclick="testKVSimple()">Test KV Simple</button>
+            <button class="btn" onclick="clearOutput()">Clear Output</button>
+        </div>
+        
+        <div id="output"></div>
+    </div>
+
     <script>
-        async function testAPI() {
+        const API_BASE = 'https://traffic-cop-apii.vercel.app';
+        const API_KEY = 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583';
+        
+        function log(message, type = 'info') {
             const output = document.getElementById('output');
+            const timestamp = new Date().toLocaleTimeString();
+            const statusClass = type === 'error' ? 'error' : type === 'success' ? 'success' : type === 'warning' ? 'warning' : '';
+            
+            output.innerHTML += `<div class="status ${statusClass}">[${timestamp}] ${message}</div>`;
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        function logJSON(data, title) {
+            const output = document.getElementById('output');
+            output.innerHTML += `<div><strong>${title}:</strong></div><div class="output">${JSON.stringify(data, null, 2)}</div>`;
+            output.scrollTop = output.scrollHeight;
+        }
+        
+        async function testRealTimeDashboard() {
+            log('🔄 Testing Real-Time Dashboard API...', 'info');
             
             try {
-                const response = await fetch('https://traffic-cop-apii.vercel.app/api/v1/real-time-dashboard', {
+                const response = await fetch(`${API_BASE}/api/v1/real-time-dashboard`, {
                     headers: {
-                        'Authorization': 'Bearer tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583',
+                        'Authorization': `Bearer ${API_KEY}`,
                         'X-User-Timezone': 'Asia/Kolkata'
                     }
                 });
                 
-                const data = await response.json();
-                output.textContent = JSON.stringify(data, null, 2);
+                log(`📊 Dashboard API Status: ${response.status}`, response.ok ? 'success' : 'error');
                 
+                if (response.ok) {
+                    const data = await response.json();
+                    logJSON(data, 'Dashboard API Response');
+                    
+                    log(`📈 Daily Requests: ${data.dailyStats?.totalRequests || 0}`, 'info');
+                    log(`👥 Live Visitors: ${data.liveStats?.totalVisitors || 0}`, 'info');
+                    log(`🤖 Bots Detected: ${data.liveStats?.botsDetected || 0}`, 'info');
+                    log(`💾 Storage Type: ${data.storage || 'unknown'}`, 'info');
+                } else {
+                    const errorData = await response.text();
+                    log(`❌ Dashboard API Error: ${errorData}`, 'error');
+                }
             } catch (error) {
-                output.textContent = 'Error: ' + error.message;
+                log(`❌ Dashboard API Failed: ${error.message}`, 'error');
             }
         }
+        
+        async function testAnalytics() {
+            log('🔄 Testing Analytics API...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/analytics`, {
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'X-User-Timezone': 'Asia/Kolkata'
+                    }
+                });
+                
+                log(`📊 Analytics API Status: ${response.status}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logJSON(data, 'Analytics API Response');
+                } else {
+                    const errorData = await response.text();
+                    log(`❌ Analytics API Error: ${errorData}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Analytics API Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testKVContents() {
+            log('🔄 Testing KV Contents...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/debug/kv-contents`);
+                
+                log(`💾 KV Contents API Status: ${response.status}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logJSON(data, 'KV Contents Response');
+                    
+                    log(`📊 Daily Stats Exist: ${data.dailyStatsExists}`, 'info');
+                    log(`📋 Activity Log Length: ${data.activityLogLength}`, 'info');
+                } else {
+                    const errorData = await response.text();
+                    log(`❌ KV Contents Error: ${errorData}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ KV Contents Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testStorageMethods() {
+            log('🔄 Testing Storage Methods...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/debug/dashboard-methods`);
+                
+                log(`🗄️ Storage Methods API Status: ${response.status}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logJSON(data, 'Storage Methods Response');
+                    
+                    log(`📊 Daily Stats Total: ${data.dailyStats?.totalRequests || 0}`, 'info');
+                    log(`👥 Live Visitors Count: ${data.liveVisitorsCount || 0}`, 'info');
+                } else {
+                    const errorData = await response.text();
+                    log(`❌ Storage Methods Error: ${errorData}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Storage Methods Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function generateTestTraffic() {
+            log('🔄 Generating Test Traffic...', 'info');
+            
+            const testVisitor = {
+                userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                website: "newsparrow.in",
+                sessionId: `debug_test_${Date.now()}`,
+                behaviorData: {
+                    mouseMovements: [
+                        { x: 100, y: 200, timestamp: 1000 },
+                        { x: 150, y: 250, timestamp: 1500 }
+                    ],
+                    clickEvents: [
+                        { timestamp: 3000, target: "A" }
+                    ]
+                }
+            };
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/analyze`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(testVisitor)
+                });
+                
+                log(`🚦 Traffic Analysis Status: ${response.status}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logJSON(data, 'Traffic Analysis Response');
+                    
+                    log(`🎯 Risk Score: ${data.riskScore}`, 'info');
+                    log(`⚡ Action: ${data.action}`, 'info');
+                    log(`🆔 Session ID: ${data.sessionId}`, 'info');
+                    
+                    // Wait and test dashboard again
+                    setTimeout(async () => {
+                        log('🔄 Checking dashboard after traffic generation...', 'info');
+                        await testRealTimeDashboard();
+                    }, 3000);
+                } else {
+                    const errorData = await response.text();
+                    log(`❌ Traffic Analysis Error: ${errorData}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Traffic Analysis Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testActivityLogs() {
+            log('🔄 Testing Activity Logs...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/activity-logs?filter=today&limit=10`, {
+                    headers: {
+                        'Authorization': `Bearer ${API_KEY}`,
+                        'X-User-Timezone': 'Asia/Kolkata'
+                    }
+                });
+                
+                log(`📋 Activity Logs API Status: ${response.status}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logJSON(data, 'Activity Logs Response');
+                    
+                    log(`📊 Total Activities: ${data.total || 0}`, 'info');
+                    log(`📄 Activities Returned: ${data.activities?.length || 0}`, 'info');
+                } else {
+                    const errorData = await response.text();
+                    log(`❌ Activity Logs Error: ${errorData}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ Activity Logs Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        async function testKVSimple() {
+            log('🔄 Testing KV Simple...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/v1/test-kv-simple`);
+                
+                log(`🔧 KV Simple API Status: ${response.status}`, response.ok ? 'success' : 'error');
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    logJSON(data, 'KV Simple Response');
+                    
+                    log(`✅ KV Working: ${data.success}`, data.success ? 'success' : 'error');
+                    log(`🔄 KV Ready: ${data.kvReady}`, 'info');
+                } else {
+                    const errorData = await response.text();
+                    log(`❌ KV Simple Error: ${errorData}`, 'error');
+                }
+            } catch (error) {
+                log(`❌ KV Simple Failed: ${error.message}`, 'error');
+            }
+        }
+        
+        function clearOutput() {
+            document.getElementById('output').innerHTML = '';
+            log('🧹 Output cleared', 'info');
+        }
+        
+        // Auto-run basic tests on load
+        window.addEventListener('load', function() {
+            log('🚀 Traffic Cop Debug Dashboard Loaded', 'success');
+            log('Click buttons above to test different API endpoints', 'info');
+        });
     </script>
 </body>
 </html>
