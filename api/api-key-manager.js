@@ -1,10 +1,23 @@
 // api/api-key-manager.js
 const crypto = require('crypto');
-const { kv } = require('@vercel/kv');
 
 class TrafficCopAPIKeyManager {
     constructor() {
-        // All data stored in Vercel KV - no in-memory storage
+        this.kv = null; // Will be set by server.js
+        this.kvPrefix = 'tc_api_'; // Match server.js pattern
+    }
+
+    // Set KV instance from server.js
+    setKV(kvInstance) {
+        this.kv = kvInstance;
+    }
+
+    // Ensure KV is available
+    async ensureKVReady() {
+        if (!this.kv) {
+            throw new Error('KV not available - call setKV() first');
+        }
+        return true;
     }
 
     // Generate cryptographically secure API key
@@ -140,7 +153,39 @@ class TrafficCopAPIKeyManager {
         }
     }
 
-    // Create new publisher and store in traffic-cop-api-keys database
+    // Store API key with metadata (using tc_api_ prefix)
+    async storeAPIKey(apiKeyData) {
+        try {
+            await this.ensureKVReady();
+            
+            const keyData = {
+                ...apiKeyData,
+                createdAt: new Date().toISOString(),
+                lastUsed: new Date().toISOString(),
+                requestCount: 0,
+                status: 'active'
+            };
+            
+            // Store API key data with tc_api_ prefix
+            await this.kv.set(`${this.kvPrefix}key:${apiKeyData.apiKey}`, JSON.stringify(keyData));
+            
+            // Store publisher mapping
+            await this.kv.set(`${this.kvPrefix}publisher:${apiKeyData.publisherId}`, apiKeyData.apiKey);
+            
+            // Add to active keys list
+            await this.kv.sadd(`${this.kvPrefix}active_keys`, apiKeyData.apiKey);
+            
+            console.log(`🔑 API key stored: ${apiKeyData.apiKey.substring(0, 20)}...`);
+            
+            return keyData;
+            
+        } catch (error) {
+            console.error('API key storage error:', error);
+            throw error;
+        }
+    }
+
+    // Create new publisher and store in KV
     async createPublisher(publisherInfo) {
         try {
             // Validate required fields
@@ -164,10 +209,20 @@ class TrafficCopAPIKeyManager {
             const apiKey = this.generateAPIKey(publisherInfo);
             const publisherData = this.createPublisherData(publisherInfo, apiKey);
 
-            // Store in Vercel KV with multiple indexes
-            await kv.set(`api_key:${apiKey}`, publisherData);
-            await kv.set(`publisher:${publisherData.id}`, publisherData);
-            await kv.set(`email:${publisherInfo.email}`, publisherData.id);
+            // Store using the storeAPIKey method (consistent with server.js)
+            await this.storeAPIKey({
+                apiKey: apiKey,
+                publisherId: publisherData.id,
+                publisherName: publisherData.publisherName,
+                email: publisherData.email,
+                website: publisherData.website,
+                plan: publisherData.plan,
+                maxRequests: publisherData.security.rateLimits.requestsPerMonth,
+                features: publisherData.permissions
+            });
+
+            // Also store email mapping with tc_api_ prefix
+            await this.kv.set(`${this.kvPrefix}email:${publisherInfo.email}`, publisherData.id);
 
             return {
                 success: true,
@@ -215,72 +270,59 @@ class TrafficCopAPIKeyManager {
 </script>`;
     }
 
-    // Validate API key and update usage statistics
+    // Validate API key (compatible with server.js)
     async validateAPIKey(apiKey) {
         try {
-            const keyData = await kv.get(`api_key:${apiKey}`);
-
-            if (!keyData) {
-                return { valid: false, reason: 'Invalid API key' };
+            await this.ensureKVReady();
+            
+            const keyDataStr = await this.kv.get(`${this.kvPrefix}key:${apiKey}`);
+            if (!keyDataStr) {
+                return { valid: false, reason: 'API key not found' };
             }
-
-            // Check expiration
+            
+            const keyData = JSON.parse(keyDataStr);
+            
+            // Check if key is active
+            if (keyData.status !== 'active') {
+                return { valid: false, reason: 'API key is inactive' };
+            }
+            
+            // Check expiration if exists
             if (keyData.expiresAt && new Date() > new Date(keyData.expiresAt)) {
                 return { valid: false, reason: 'API key expired' };
             }
-
-            // Check status
-            if (keyData.status !== 'active') {
-                return { valid: false, reason: 'API key inactive' };
-            }
-
-            // Update usage statistics
-            keyData.usage.totalRequests++;
-            keyData.usage.lastUsed = new Date().toISOString();
             
-            // Update daily usage
-            const today = new Date().toDateString();
-            const lastReset = new Date(keyData.usage.lastDailyReset).toDateString();
-            if (today !== lastReset) {
-                keyData.usage.dailyRequests = 1;
-                keyData.usage.lastDailyReset = new Date().toISOString();
-            } else {
-                keyData.usage.dailyRequests++;
-            }
-
-            // Update monthly usage
-            const thisMonth = new Date().getMonth();
-            const lastResetMonth = new Date(keyData.usage.lastResetDate).getMonth();
-            if (thisMonth !== lastResetMonth) {
-                keyData.usage.monthlyRequests = 1;
-                keyData.usage.lastResetDate = new Date().toISOString();
-            } else {
-                keyData.usage.monthlyRequests++;
-            }
-
-            // Save updated data
-            await kv.set(`api_key:${apiKey}`, keyData);
-
-            return { valid: true, data: keyData };
-
+            // Update last used timestamp and request count
+            keyData.lastUsed = new Date().toISOString();
+            keyData.requestCount = (keyData.requestCount || 0) + 1;
+            
+            await this.kv.set(`${this.kvPrefix}key:${apiKey}`, JSON.stringify(keyData));
+            
+            return { 
+                valid: true, 
+                keyData: keyData,
+                publisherId: keyData.publisherId,
+                plan: keyData.plan,
+                website: keyData.website
+            };
+            
         } catch (error) {
-            console.error('Traffic Cop KV Error (validateAPIKey):', {
-                operation: 'validateAPIKey',
-                apiKey: apiKey.substring(0, 20) + '...',
-                error: error.message,
-                timestamp: new Date().toISOString()
-            });
-            
-            return { valid: false, reason: 'Database error' };
+            console.error('API key validation error:', error);
+            return { valid: false, reason: 'Validation error' };
         }
     }
 
-    // Get publisher by email
+    // Get publisher by email (using tc_api_ prefix)
     async getPublisherByEmail(email) {
         try {
-            const publisherId = await kv.get(`email:${email}`);
+            await this.ensureKVReady();
+            const publisherId = await this.kv.get(`${this.kvPrefix}email:${email}`);
             if (publisherId) {
-                return await kv.get(`publisher:${publisherId}`);
+                const publisherApiKey = await this.kv.get(`${this.kvPrefix}publisher:${publisherId}`);
+                if (publisherApiKey) {
+                    const keyDataStr = await this.kv.get(`${this.kvPrefix}key:${publisherApiKey}`);
+                    return keyDataStr ? JSON.parse(keyDataStr) : null;
+                }
             }
             return null;
         } catch (error) {
@@ -292,13 +334,14 @@ class TrafficCopAPIKeyManager {
     // Update publisher status
     async updatePublisherStatus(apiKey, status) {
         try {
-            const keyData = await kv.get(`api_key:${apiKey}`);
+            await this.ensureKVReady();
+            const keyDataStr = await this.kv.get(`${this.kvPrefix}key:${apiKey}`);
             
-            if (keyData) {
+            if (keyDataStr) {
+                const keyData = JSON.parse(keyDataStr);
                 keyData.status = status;
                 keyData.updatedAt = new Date().toISOString();
-                await kv.set(`api_key:${apiKey}`, keyData);
-                await kv.set(`publisher:${keyData.id}`, keyData);
+                await this.kv.set(`${this.kvPrefix}key:${apiKey}`, JSON.stringify(keyData));
                 return { success: true };
             }
             
@@ -312,13 +355,18 @@ class TrafficCopAPIKeyManager {
     // Get usage statistics for a publisher
     async getUsageStats(apiKey) {
         try {
-            const keyData = await kv.get(`api_key:${apiKey}`);
+            await this.ensureKVReady();
+            const keyDataStr = await this.kv.get(`${this.kvPrefix}key:${apiKey}`);
             
-            if (keyData) {
+            if (keyDataStr) {
+                const keyData = JSON.parse(keyDataStr);
                 return {
                     success: true,
-                    usage: keyData.usage,
-                    rateLimits: keyData.security.rateLimits,
+                    usage: keyData.usage || {
+                        totalRequests: keyData.requestCount || 0,
+                        lastUsed: keyData.lastUsed
+                    },
+                    rateLimits: this.getRateLimits(keyData.plan),
                     plan: keyData.plan,
                     status: keyData.status
                 };
@@ -328,6 +376,30 @@ class TrafficCopAPIKeyManager {
         } catch (error) {
             console.error('Error getting usage stats:', error);
             return { success: false, error: error.message };
+        }
+    }
+
+    // Check rate limits
+    async checkRateLimit(apiKey, requestType = 'analyze') {
+        try {
+            const keyDataStr = await this.kv.get(`${this.kvPrefix}key:${apiKey}`);
+            if (!keyDataStr) {
+                return { allowed: false, reason: 'Invalid API key' };
+            }
+
+            const keyData = JSON.parse(keyDataStr);
+            const rateLimits = this.getRateLimits(keyData.plan);
+            
+            // Check monthly limit
+            if (rateLimits.requestsPerMonth !== -1 && 
+                keyData.requestCount >= rateLimits.requestsPerMonth) {
+                return { allowed: false, reason: 'Monthly limit exceeded' };
+            }
+
+            return { allowed: true, rateLimits: rateLimits };
+        } catch (error) {
+            console.error('Rate limit check error:', error);
+            return { allowed: false, reason: 'Rate limit check failed' };
         }
     }
 }

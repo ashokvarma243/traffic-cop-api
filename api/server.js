@@ -1,9 +1,9 @@
-// server.js - Enhanced Traffic Cop API Server with KV Storage and Dynamic API Keys
+// server.js - Enhanced Traffic Cop API Server with KV Storage Only
 const url = require('url');
+const crypto = require('crypto');
 
-// Dynamic import for KV (since it's ES6 module)
+// Enhanced KV initialization
 let kv;
-let kvInitialized = false;
 let kvReady = false;
 
 async function initKV() {
@@ -36,23 +36,15 @@ async function initKV() {
 // Initialize immediately
 initKV();
 
-// Fallback in-memory storage (when KV is not available)
-let realTrafficData = {
-    dailyStats: new Map(),
-    detectionHistory: []
-};
-let realTimeVisitors = new Map();
-let visitorHistory = [];
-
-// API Key Management with KV Storage
+// Enhanced API Key Management with KV Storage
 class APIKeyManager {
     constructor() {
         this.kvPrefix = 'tc_api_';
     }
     
     async ensureKVReady() {
-        if (!kvInitialized) {
-            await initializeKV();
+        if (!kvReady) {
+            await initKV();
         }
         if (!kv) {
             throw new Error('KV module not available');
@@ -60,12 +52,52 @@ class APIKeyManager {
         return true;
     }
     
-    // Generate new API key
-    generateAPIKey(publisherId, plan = 'starter') {
+    // Generate cryptographically secure API key
+    generateAPIKey(publisherData) {
         const timestamp = Date.now();
-        const randomPart = Math.random().toString(36).substr(2, 32);
-        const planPrefix = plan.substring(0, 4);
-        return `tc_${planPrefix}_${timestamp}_${randomPart}`;
+        const randomBytes = crypto.randomBytes(24).toString('hex');
+        const checksum = crypto.createHash('sha256')
+            .update(`${timestamp}${randomBytes}${publisherData.email || publisherData.publisherId || 'default'}`)
+            .digest('hex')
+            .substring(0, 8);
+        return `tc_live_${timestamp}_${randomBytes}_${checksum}`;
+    }
+
+    
+    // Get rate limits based on plan
+    getRateLimits(plan) {
+        switch (plan) {
+            case 'trial':
+                return { 
+                    requestsPerMonth: 10000, 
+                    requestsPerMinute: 10,
+                    requestsPerDay: 500
+                };
+            case 'starter':
+                return { 
+                    requestsPerMonth: 100000, 
+                    requestsPerMinute: 100,
+                    requestsPerDay: 5000
+                };
+            case 'professional':
+                return { 
+                    requestsPerMonth: 1000000, 
+                    requestsPerMinute: 500,
+                    requestsPerDay: 50000
+                };
+            case 'enterprise':
+                return { 
+                    requestsPerMonth: -1,
+                    requestsPerMinute: 1000,
+                    requestsPerDay: -1
+                };
+            default:
+                return { 
+                    requestsPerMonth: 1000, 
+                    requestsPerMinute: 5,
+                    requestsPerDay: 100
+                };
+        }
     }
     
     // Store API key with metadata
@@ -78,7 +110,8 @@ class APIKeyManager {
                 createdAt: new Date().toISOString(),
                 lastUsed: new Date().toISOString(),
                 requestCount: 0,
-                status: 'active'
+                status: 'active',
+                rateLimits: this.getRateLimits(apiKeyData.plan || 'starter')
             };
             
             // Store API key data
@@ -87,10 +120,15 @@ class APIKeyManager {
             // Store publisher mapping
             await kv.set(`${this.kvPrefix}publisher:${apiKeyData.publisherId}`, apiKeyData.apiKey);
             
+            // Store email mapping for login
+            if (apiKeyData.email) {
+                await kv.set(`${this.kvPrefix}email:${apiKeyData.email}`, apiKeyData.publisherId);
+            }
+            
             // Add to active keys list
             await kv.sadd(`${this.kvPrefix}active_keys`, apiKeyData.apiKey);
             
-            console.log(`🔑 API key stored: ${apiKeyData.apiKey.substring(0, 20)}...`);
+            console.log(`🔑 Enhanced API key stored: ${apiKeyData.apiKey.substring(0, 20)}...`);
             
             return keyData;
             
@@ -100,7 +138,7 @@ class APIKeyManager {
         }
     }
     
-    // Validate API key
+    // Validate API key with rate limiting
     async validateAPIKey(apiKey) {
         try {
             await this.ensureKVReady();
@@ -117,6 +155,18 @@ class APIKeyManager {
                 return { valid: false, reason: 'API key is inactive' };
             }
             
+            // Check expiration if exists
+            if (keyData.expiresAt && new Date() > new Date(keyData.expiresAt)) {
+                return { valid: false, reason: 'API key expired' };
+            }
+            
+            // Check rate limits
+            const rateLimits = keyData.rateLimits || this.getRateLimits(keyData.plan || 'starter');
+            if (rateLimits.requestsPerMonth !== -1 && 
+                keyData.requestCount >= rateLimits.requestsPerMonth) {
+                return { valid: false, reason: 'Monthly limit exceeded' };
+            }
+            
             // Update last used timestamp and request count
             keyData.lastUsed = new Date().toISOString();
             keyData.requestCount = (keyData.requestCount || 0) + 1;
@@ -128,46 +178,83 @@ class APIKeyManager {
                 keyData: keyData,
                 publisherId: keyData.publisherId,
                 plan: keyData.plan,
-                website: keyData.website
+                website: keyData.website,
+                rateLimits: rateLimits
             };
             
         } catch (error) {
             console.error('API key validation error:', error);
-            // Fallback to hardcoded key for existing users
-            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                return {
-                    valid: true,
-                    keyData: { plan: 'professional', website: 'newsparrow.in' },
-                    publisherId: 'pub_newsparrow',
-                    plan: 'professional',
-                    website: 'newsparrow.in'
-                };
-            }
             return { valid: false, reason: 'Validation error' };
+        }
+    }
+    
+    // Get publisher by email
+    async getPublisherByEmail(email) {
+        try {
+            await this.ensureKVReady();
+            const publisherId = await kv.get(`${this.kvPrefix}email:${email}`);
+            if (publisherId) {
+                const publisherApiKey = await kv.get(`${this.kvPrefix}publisher:${publisherId}`);
+                if (publisherApiKey) {
+                    const keyDataStr = await kv.get(`${this.kvPrefix}key:${publisherApiKey}`);
+                    return keyDataStr ? JSON.parse(keyDataStr) : null;
+                }
+            }
+            return null;
+        } catch (error) {
+            console.error('Error getting publisher by email:', error);
+            return null;
+        }
+    }
+    
+    // Check rate limits
+    async checkRateLimit(apiKey) {
+        try {
+            const keyDataStr = await kv.get(`${this.kvPrefix}key:${apiKey}`);
+            if (!keyDataStr) {
+                return { allowed: false, reason: 'Invalid API key' };
+            }
+
+            const keyData = JSON.parse(keyDataStr);
+            const rateLimits = keyData.rateLimits || this.getRateLimits(keyData.plan || 'starter');
+            
+            // Check monthly limit
+            if (rateLimits.requestsPerMonth !== -1 && 
+                keyData.requestCount >= rateLimits.requestsPerMonth) {
+                return { allowed: false, reason: 'Monthly limit exceeded' };
+            }
+
+            return { allowed: true, rateLimits: rateLimits };
+        } catch (error) {
+            console.error('Rate limit check error:', error);
+            return { allowed: false, reason: 'Rate limit check failed' };
         }
     }
 }
 
-// KV Storage Helper Functions
+
+// KV-Only TrafficCopStorage class
 class TrafficCopStorage {
     constructor() {
         this.kvPrefix = 'tc_';
     }
     
     async ensureKVReady() {
-        if (!kv) {
-            const kvModule = await import('@vercel/kv');
-            kv = kvModule.kv;
+        if (!kvReady) {
+            await initKV();
         }
+        if (!kv) {
+            throw new Error('KV not available');
+        }
+        return true;
     }
     
-    // Enhanced storeVisitorSession with detailed logging
+    // Store visitor session (KV only)
     async storeVisitorSession(visitorData) {
         try {
             console.log('🔄 Starting storeVisitorSession for:', visitorData.sessionId);
             
             await this.ensureKVReady();
-            console.log('✅ KV ready check passed');
             
             const sessionKey = `${this.kvPrefix}session:${visitorData.sessionId}`;
             const sessionData = {
@@ -176,32 +263,25 @@ class TrafficCopStorage {
                 expiresAt: Date.now() + (30 * 60 * 1000)
             };
             
-            console.log('🔄 Attempting to store in KV with key:', sessionKey);
-            
             // Store session with 30-minute expiry
             await kv.setex(sessionKey, 1800, JSON.stringify(sessionData));
             console.log('✅ Session stored in KV successfully');
             
             // Add to activity log
-            console.log('🔄 Adding to activity log...');
             await this.addToActivityLog(visitorData);
-            console.log('✅ Activity log updated');
             
             // Update daily stats
-            console.log('🔄 Updating daily stats...');
             await this.updateDailyStats(visitorData);
-            console.log('✅ Daily stats updated');
             
             console.log(`💾 COMPLETED storing visitor session: ${visitorData.sessionId}`);
             
         } catch (error) {
-            console.error('❌ KV storage error in storeVisitorSession:', error);
-            throw error; // Re-throw to see the error in debug
+            console.error('❌ KV storage error:', error);
+            throw error;
         }
     }
-
     
-    // Add to activity log
+    // Add to activity log (KV only)
     async addToActivityLog(visitorData) {
         try {
             await this.ensureKVReady();
@@ -212,7 +292,6 @@ class TrafficCopStorage {
                 id: `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
             };
             
-            console.log('🔄 Adding to activity log with key: tc_activity_log');
             await kv.lpush(`${this.kvPrefix}activity_log`, JSON.stringify(logEntry));
             await kv.ltrim(`${this.kvPrefix}activity_log`, 0, 9999);
             console.log('✅ Activity log entry added');
@@ -222,120 +301,75 @@ class TrafficCopStorage {
             throw error;
         }
     }
-
-    async updateDailyStats(visitorData) {
-    try {
-        await this.ensureKVReady();
-        
-        const today = new Date().toISOString().split('T')[0];
-        const statsKey = `${this.kvPrefix}daily:${today}`;
-        
-        console.log('🔄 Updating daily stats for key:', statsKey);
-        
-        // Get current stats with better error handling
-        let currentStats;
-        try {
-            const currentStatsStr = await kv.get(statsKey);
-            console.log('📊 Raw KV data:', currentStatsStr);
-            
-            if (currentStatsStr && currentStatsStr !== 'null' && currentStatsStr !== 'undefined') {
-                // Only parse if we have valid data
-                currentStats = JSON.parse(currentStatsStr);
-                console.log('✅ Parsed existing stats:', currentStats);
-            } else {
-                console.log('📊 No existing stats, creating new');
-                currentStats = null;
-            }
-        } catch (parseError) {
-            console.error('❌ JSON parse error, creating fresh stats:', parseError);
-            currentStats = null;
-        }
-        
-        // Create fresh stats if parsing failed or no data exists
-        if (!currentStats) {
-            currentStats = {
-                date: today,
-                totalRequests: 0,
-                blockedBots: 0,
-                allowedUsers: 0,
-                challengedUsers: 0,
-                threats: [],
-                countries: {},
-                cities: {}
-            };
-            console.log('📊 Created fresh stats object');
-        }
-        
-        // Update counters
-        currentStats.totalRequests++;
-        console.log('📊 Total requests now:', currentStats.totalRequests);
-        
-        if (visitorData.action === 'block') {
-            currentStats.blockedBots++;
-        } else if (visitorData.action === 'challenge') {
-            currentStats.challengedUsers++;
-        } else {
-            currentStats.allowedUsers++;
-        }
-        
-        // Update geographic data safely
-        if (visitorData.geolocation) {
-            const country = visitorData.geolocation.country || 'Unknown';
-            const city = visitorData.geolocation.city || 'Unknown';
-            
-            currentStats.countries[country] = (currentStats.countries[country] || 0) + 1;
-            currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
-        }
-        
-        // Store updated stats with error handling
-        try {
-            const statsToStore = JSON.stringify(currentStats);
-            await kv.setex(statsKey, 604800, statsToStore);
-            console.log('✅ Daily stats updated and stored successfully');
-        } catch (storeError) {
-            console.error('❌ Failed to store stats:', storeError);
-            throw storeError;
-        }
-        
-    } catch (error) {
-        console.error('❌ Daily stats error:', error);
-        throw error;
-    }
-}
-
-
     
-    // Get live visitor sessions
-    async getLiveVisitors() {
+    // Update daily stats (KV only)
+    async updateDailyStats(visitorData) {
         try {
             await this.ensureKVReady();
             
-            const pattern = `${this.kvPrefix}session:*`;
-            const sessionKeys = await kv.keys(pattern);
+            const today = new Date().toISOString().split('T')[0];
+            const statsKey = `${this.kvPrefix}daily:${today}`;
             
-            const sessions = [];
-            for (const key of sessionKeys) {
-                const sessionDataStr = await kv.get(key);
-                if (sessionDataStr) {
-                    const session = JSON.parse(sessionDataStr);
-                    
-                    // Check if session is still active (last 5 minutes)
-                    const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
-                    if (session.timestamp && new Date(session.timestamp).getTime() > fiveMinutesAgo) {
-                        sessions.push(session);
-                    }
+            console.log('🔄 Updating daily stats for key:', statsKey);
+            
+            let currentStats;
+            try {
+                const currentStatsStr = await kv.get(statsKey);
+                
+                if (currentStatsStr && currentStatsStr !== 'null' && currentStatsStr !== 'undefined') {
+                    currentStats = JSON.parse(currentStatsStr);
+                } else {
+                    currentStats = null;
                 }
+            } catch (parseError) {
+                console.error('❌ JSON parse error, creating fresh stats:', parseError);
+                currentStats = null;
             }
             
-            return sessions.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            if (!currentStats) {
+                currentStats = {
+                    date: today,
+                    totalRequests: 0,
+                    blockedBots: 0,
+                    allowedUsers: 0,
+                    challengedUsers: 0,
+                    threats: [],
+                    countries: {},
+                    cities: {}
+                };
+            }
+            
+            // Update counters
+            currentStats.totalRequests++;
+            
+            if (visitorData.action === 'block') {
+                currentStats.blockedBots++;
+            } else if (visitorData.action === 'challenge') {
+                currentStats.challengedUsers++;
+            } else {
+                currentStats.allowedUsers++;
+            }
+            
+            // Update geographic data
+            if (visitorData.geolocation) {
+                const country = visitorData.geolocation.country || 'Unknown';
+                const city = visitorData.geolocation.city || 'Unknown';
+                
+                currentStats.countries[country] = (currentStats.countries[country] || 0) + 1;
+                currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
+            }
+            
+            // Store updated stats
+            await kv.setex(statsKey, 604800, JSON.stringify(currentStats));
+            console.log('✅ Daily stats updated successfully');
             
         } catch (error) {
-            console.error('Get live visitors error:', error);
-            return [];
+            console.error('❌ Daily stats error:', error);
+            throw error;
         }
     }
     
-    // Get daily statistics (Fixed)
+    // Get daily statistics (KV only)
     async getDailyStats(date = null) {
         try {
             await this.ensureKVReady();
@@ -343,16 +377,16 @@ class TrafficCopStorage {
             const targetDate = date || new Date().toISOString().split('T')[0];
             const statsKey = `${this.kvPrefix}daily:${targetDate}`;
             
-            console.log('📊 Getting daily stats for key:', statsKey);
+            console.log('📊 getDailyStats: Looking for key:', statsKey);
             
             const statsStr = await kv.get(statsKey);
+            console.log('📊 getDailyStats: Raw KV result:', statsStr);
             
-            if (statsStr) {
+            if (statsStr && statsStr !== 'null') {
                 const stats = JSON.parse(statsStr);
-                console.log('📊 Found stats:', stats);
+                console.log('📊 getDailyStats: Parsed stats:', stats);
                 return stats;
             } else {
-                console.log('📊 No stats found, returning empty');
                 return {
                     date: targetDate,
                     totalRequests: 0,
@@ -366,7 +400,7 @@ class TrafficCopStorage {
             }
             
         } catch (error) {
-            console.error('❌ Get daily stats error:', error);
+            console.error('❌ getDailyStats error:', error);
             return {
                 date: date || new Date().toISOString().split('T')[0],
                 totalRequests: 0,
@@ -379,49 +413,118 @@ class TrafficCopStorage {
             };
         }
     }
-
     
-    // Fallback in-memory storage
-    fallbackStorage(visitorData) {
-        console.log('📝 Using fallback in-memory storage');
-        recordRealTrafficEvent(
-            visitorData.action === 'block',
-            visitorData.riskScore,
-            visitorData.threats,
-            visitorData.userAgent,
-            visitorData.website,
-            visitorData.action
-        );
+    // Get live visitors (KV only)
+    async getLiveVisitors() {
+        try {
+            await this.ensureKVReady();
+            
+            console.log('👥 Getting live visitors from activity log...');
+            
+            const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, 100);
+            console.log('📋 Activity log entries found:', activityLog.length);
+            
+            if (!activityLog || activityLog.length === 0) {
+                return [];
+            }
+            
+            const fiveMinutesAgo = Date.now() - (5 * 60 * 1000);
+            const recentVisitors = [];
+            
+            for (const logEntry of activityLog) {
+                try {
+                    const visitor = JSON.parse(logEntry);
+                    const visitorTime = new Date(visitor.timestamp).getTime();
+                    
+                    if (visitorTime > fiveMinutesAgo) {
+                        recentVisitors.push(visitor);
+                    }
+                } catch (parseError) {
+                    console.warn('⚠️ Could not parse activity log entry');
+                }
+            }
+            
+            console.log('👥 Found recent visitors:', recentVisitors.length);
+            return recentVisitors.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+        } catch (error) {
+            console.error('❌ Get live visitors error:', error);
+            return [];
+        }
     }
     
-    // Get fallback stats from in-memory storage
-    getFallbackStats() {
-        const today = getTodayKey();
-        const todayStats = realTrafficData.dailyStats.get(today);
-        
-        if (!todayStats) {
+    // Get activity logs (KV only)
+    async getActivityLogs(filter = 'today', page = 1, limit = 50) {
+        try {
+            await this.ensureKVReady();
+            
+            const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, -1);
+            
+            if (!activityLog || activityLog.length === 0) {
+                return {
+                    activities: [],
+                    total: 0,
+                    page: page,
+                    limit: limit,
+                    hasMore: false
+                };
+            }
+            
+            // Parse and filter activities
+            const activities = [];
+            const now = new Date();
+            
+            for (const logEntry of activityLog) {
+                try {
+                    const activity = JSON.parse(logEntry);
+                    const activityDate = new Date(activity.timestamp);
+                    
+                    // Apply date filter
+                    let includeActivity = true;
+                    if (filter === 'today') {
+                        includeActivity = activityDate.toDateString() === now.toDateString();
+                    } else if (filter === 'week') {
+                        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                        includeActivity = activityDate >= weekAgo;
+                    } else if (filter === 'month') {
+                        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                        includeActivity = activityDate >= monthAgo;
+                    }
+                    
+                    if (includeActivity) {
+                        activities.push(activity);
+                    }
+                } catch (parseError) {
+                    console.warn('⚠️ Could not parse activity log entry');
+                }
+            }
+            
+            // Sort by timestamp (newest first)
+            activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            // Apply pagination
+            const startIndex = (page - 1) * limit;
+            const endIndex = startIndex + limit;
+            const paginatedActivities = activities.slice(startIndex, endIndex);
+            
             return {
-                date: today,
-                totalRequests: 0,
-                blockedBots: 0,
-                allowedUsers: 0,
-                challengedUsers: 0,
-                threats: [],
-                countries: {},
-                cities: {}
+                activities: paginatedActivities,
+                total: activities.length,
+                page: page,
+                limit: limit,
+                hasMore: endIndex < activities.length
+            };
+            
+        } catch (error) {
+            console.error('❌ Get activity logs error:', error);
+            return {
+                activities: [],
+                total: 0,
+                page: page,
+                limit: limit,
+                hasMore: false
             };
         }
-        
-        return {
-            date: today,
-            totalRequests: todayStats.totalRequests,
-            blockedBots: todayStats.blockedBots,
-            allowedUsers: todayStats.allowedUsers,
-            challengedUsers: todayStats.challengedUsers,
-            threats: Array.from(todayStats.threats),
-            countries: {},
-            cities: {}
-        };
     }
 }
 
@@ -469,7 +572,7 @@ async function getGeolocationFromIP(ipAddress) {
 const apiKeyManager = new APIKeyManager();
 const storage = new TrafficCopStorage();
 
-// Dynamic Bot Detection Engine - No Hard-Coded Names
+// Dynamic Bot Detection Engine
 class DynamicBotDetector {
     constructor() {
         this.trafficPatterns = new Map();
@@ -480,7 +583,7 @@ class DynamicBotDetector {
             behaviorScore: { normal: 0.8, suspicious: 0.4, malicious: 0.2 },
             sessionDuration: { normal: 300, suspicious: 30, malicious: 5 }
         };
-
+        
         // Use global config if available, otherwise use defaults
         this.actionThresholds = global.trafficCopConfig?.thresholds || {
             challenge: 40,
@@ -720,22 +823,12 @@ class DynamicBotDetector {
         // Enhanced logging for debugging
         console.log(`🎯 Bot Detection: SessionId=${sessionId}, Risk=${Math.round(riskScore)}, Thresholds=[Challenge:${currentThresholds.challenge}, Block:${currentThresholds.block}], Action=${action}`);
         
-        // Store learning data for model improvement
-        this.updateLearningData(sessionId, {
-            riskScore,
-            factors,
-            userAgentEntropy: userAgentAnalysis.entropy,
-            behaviorScore: behaviorAnalysis.score,
-            requestPattern: requestAnalysis,
-            appliedThresholds: currentThresholds
-        });
-        
         return {
             riskScore: Math.round(riskScore),
             action: action,
             confidence: Math.round(confidence * 100),
             threats: factors,
-            appliedThresholds: currentThresholds, // Include current thresholds in response
+            appliedThresholds: currentThresholds,
             analysis: {
                 requestPattern: requestAnalysis,
                 userAgentAnalysis: userAgentAnalysis,
@@ -829,62 +922,6 @@ class DynamicBotDetector {
         }
         
         return inconsistencies;
-    }
-    
-    updateLearningData(sessionId, analysisData) {
-        // Store data for machine learning model improvement
-        console.log(`Learning data updated for session ${sessionId}: Risk ${analysisData.riskScore}`);
-    }
-}
-
-// Function to get today's key for daily statistics
-function getTodayKey() {
-    return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-}
-
-// Function to record ONLY real traffic events (fallback)
-function recordRealTrafficEvent(isBot, riskScore, threats, userAgent, website, action) {
-    const today = getTodayKey();
-    
-    // Initialize today's stats if not exists
-    if (!realTrafficData.dailyStats.has(today)) {
-        realTrafficData.dailyStats.set(today, {
-            totalRequests: 0,
-            blockedBots: 0,
-            allowedUsers: 0,
-            challengedUsers: 0,
-            threats: new Set()
-        });
-    }
-    
-    const todayStats = realTrafficData.dailyStats.get(today);
-    
-    // Increment ONLY real counters
-    todayStats.totalRequests++;
-    
-    if (action === 'block') {
-        todayStats.blockedBots++;
-        threats.forEach(threat => todayStats.threats.add(threat));
-    } else if (action === 'challenge') {
-        todayStats.challengedUsers++;
-    } else {
-        todayStats.allowedUsers++;
-    }
-    
-    // Store ONLY real detection events
-    realTrafficData.detectionHistory.push({
-        timestamp: new Date().toISOString(),
-        isBot: action === 'block',
-        riskScore: riskScore,
-        threats: threats,
-        userAgent: userAgent,
-        website: website,
-        action: action
-    });
-    
-    // Keep only last 100 real events
-    if (realTrafficData.detectionHistory.length > 100) {
-        realTrafficData.detectionHistory.shift();
     }
 }
 
@@ -1088,7 +1125,7 @@ module.exports = async (req, res) => {
                     // Dynamic bot detection analysis
                     const analysis = analyzeTrafficDynamic(userAgent, website, requestData);
                     
-                    // 🔥 CRITICAL: Store visitor data in KV
+                    // Store visitor data in KV
                     const visitorData = {
                         sessionId: requestData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         userAgent: userAgent,
@@ -1102,7 +1139,7 @@ module.exports = async (req, res) => {
                         timestamp: new Date().toISOString()
                     };
                     
-                    // 🔥 THIS LINE IS CRITICAL - Store in KV
+                    // Store in KV
                     await storage.storeVisitorSession(visitorData);
                     
                     console.log(`💾 STORED IN KV: ${visitorData.sessionId}, Risk: ${analysis.riskScore}, Action: ${analysis.action}`);
@@ -1119,6 +1156,11 @@ module.exports = async (req, res) => {
                         timestamp: new Date().toISOString()
                     };
                     
+                    // If action is challenge, provide challenge URL
+                    if (analysis.action === 'challenge') {
+                        response.challengeUrl = `/captcha-challenge.html?session=${visitorData.sessionId}&website=${encodeURIComponent(website)}`;
+                    }
+                    
                     res.status(200).json(response);
                     
                 } catch (error) {
@@ -1127,107 +1169,6 @@ module.exports = async (req, res) => {
                         error: 'Invalid request data',
                         details: error.message
                     });
-                }
-            });
-            return;
-        }
-        
-        // Debug endpoint to check storage status
-        if (req.url === '/api/v1/debug/storage-test' && req.method === 'POST') {
-            try {
-                console.log('🔍 Testing storage function directly...');
-                
-                const testData = {
-                    sessionId: 'debug_test_' + Date.now(),
-                    userAgent: 'Debug Test',
-                    website: 'newsparrow.in',
-                    ipAddress: '127.0.0.1',
-                    riskScore: 10,
-                    action: 'allow',
-                    threats: [],
-                    publisherId: 'pub_newsparrow',
-                    timestamp: new Date().toISOString()
-                };
-                
-                // Test storage directly
-                await storage.storeVisitorSession(testData);
-                
-                console.log('✅ Storage function completed');
-                
-                // Try to retrieve data
-                const liveVisitors = await storage.getLiveVisitors();
-                const dailyStats = await storage.getDailyStats();
-                
-                res.status(200).json({
-                    success: true,
-                    message: 'Storage test completed',
-                    storedData: testData,
-                    liveVisitorsCount: liveVisitors.length,
-                    dailyStats: dailyStats
-                });
-                
-            } catch (error) {
-                console.error('❌ Storage test failed:', error);
-                res.status(500).json({
-                    success: false,
-                    error: error.message,
-                    stack: error.stack
-                });
-            }
-            return;
-        }
-
-
-        // Enhanced visitor tracking endpoint
-        if (req.url === '/api/v1/track-visitor' && req.method === 'POST') {
-            const auth = await authenticateAPIKey(req);
-            
-            if (!auth.authenticated) {
-                res.status(401).json({ error: auth.error });
-                return;
-            }
-            
-            let body = '';
-            req.on('data', chunk => body += chunk);
-            req.on('end', async () => {
-                try {
-                    const visitorData = JSON.parse(body);
-                    
-                    // Get real IP address
-                    const realIP = req.headers['x-forwarded-for']?.split(',')[0] || 
-                                  req.headers['x-real-ip'] || 
-                                  req.connection.remoteAddress || 
-                                  visitorData.ipAddress || 
-                                  'unknown';
-                    
-                    // Get geolocation data
-                    const geolocation = await getGeolocationFromIP(realIP);
-                    
-                    // Enhanced visitor data
-                    const enhancedVisitorData = {
-                        ...visitorData,
-                        ipAddress: realIP,
-                        geolocation: geolocation,
-                        userAgent: req.headers['user-agent'] || visitorData.userAgent,
-                        publisherId: auth.publisherId
-                    };
-                    
-                    // Store in KV
-                    await storage.storeVisitorSession(enhancedVisitorData);
-                    
-                    console.log(`👤 Visitor tracked and stored: ${realIP} from ${geolocation?.city}, ${geolocation?.country}`);
-                    
-                    res.status(200).json({
-                        success: true,
-                        message: 'Visitor tracked and stored successfully',
-                        sessionId: enhancedVisitorData.sessionId,
-                        geolocation: geolocation,
-                        storage: 'kv'
-                    });
-                    
-                } catch (error) {
-                    console.error('Visitor tracking error:', error);
-                    res.status(400).json({ error: 'Invalid visitor data' });
                 }
             });
             return;
@@ -1293,7 +1234,6 @@ module.exports = async (req, res) => {
             return;
         }
 
-
         // Enhanced real-time dashboard with KV data
         if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
             const auth = await authenticateAPIKey(req);
@@ -1306,11 +1246,15 @@ module.exports = async (req, res) => {
             const userTimezone = req.headers['x-user-timezone'] || 'UTC';
             
             try {
+                console.log('🔍 Dashboard: Getting live visitors...');
                 // Get live visitors from KV
                 const liveVisitors = await storage.getLiveVisitors();
+                console.log('👥 Dashboard: Live visitors count:', liveVisitors.length);
                 
+                console.log('📊 Dashboard: Getting daily stats...');
                 // Get daily stats from KV
                 const dailyStats = await storage.getDailyStats();
+                console.log('📊 Dashboard: Daily stats:', dailyStats);
                 
                 // Calculate bot statistics
                 const botStats = {
@@ -1343,7 +1287,7 @@ module.exports = async (req, res) => {
                     .slice(0, 10)
                     .map(([country, count]) => ({ country, count }));
                 
-                res.status(200).json({
+                const response = {
                     timestamp: new Date().toISOString(),
                     liveStats: {
                         onlineUsers: liveVisitors.filter(v => v.action !== 'block').length,
@@ -1367,10 +1311,17 @@ module.exports = async (req, res) => {
                         cities: []
                     },
                     storage: 'kv'
+                };
+                
+                console.log('📤 Dashboard response:', {
+                    dailyRequests: response.dailyStats.totalRequests,
+                    liveVisitors: response.liveStats.totalVisitors
                 });
                 
+                res.status(200).json(response);
+                
             } catch (error) {
-                console.error('Real-time dashboard error:', error);
+                console.error('❌ Real-time dashboard error:', error);
                 res.status(500).json({ error: 'Failed to load dashboard data' });
             }
             return;
@@ -1474,9 +1425,13 @@ module.exports = async (req, res) => {
                     // Generate unique publisher ID
                     const publisherId = `pub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                     
-                    // Generate API key based on plan
+                    // Generate API key based on plan - FIXED CALL
                     const plan = publisherInfo.plan || 'starter';
-                    const apiKey = apiKeyManager.generateAPIKey(publisherId, plan);
+                    const apiKey = apiKeyManager.generateAPIKey({
+                        publisherId: publisherId,
+                        email: publisherInfo.email,
+                        plan: plan
+                    });
                     
                     // Prepare API key data
                     const apiKeyData = {
@@ -1488,8 +1443,8 @@ module.exports = async (req, res) => {
                         plan: plan,
                         maxRequests: plan === 'starter' ? 100000 : plan === 'professional' ? 1000000 : -1,
                         features: plan === 'starter' ? ['basic_protection'] : 
-                                 plan === 'professional' ? ['basic_protection', 'advanced_analytics', 'custom_rules'] :
-                                 ['basic_protection', 'advanced_analytics', 'custom_rules', 'priority_support']
+                                plan === 'professional' ? ['basic_protection', 'advanced_analytics', 'custom_rules'] :
+                                ['basic_protection', 'advanced_analytics', 'custom_rules', 'priority_support']
                     };
                     
                     // Store API key in KV
@@ -1518,6 +1473,7 @@ module.exports = async (req, res) => {
             return;
         }
 
+
         // Publisher login endpoint with dynamic API key validation
         if (req.url === '/api/v1/publisher/login' && req.method === 'POST') {
             let body = '';
@@ -1536,19 +1492,6 @@ module.exports = async (req, res) => {
                             publisherName: validation.keyData.publisherName,
                             plan: validation.keyData.plan,
                             website: validation.keyData.website
-                        });
-                        return;
-                    }
-                    
-                    // Fallback for existing hardcoded key
-                    if (email === 'ashokvarma416@gmail.com' && 
-                        apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
-                        
-                        res.status(200).json({
-                            success: true,
-                            publisherName: 'Newsparrow',
-                            plan: 'professional',
-                            website: 'https://home.newsparrow.in'
                         });
                         return;
                     }
@@ -1609,319 +1552,6 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Serve captcha challenge page
-        if (req.method === 'GET') {
-            const parsedUrl = url.parse(req.url, true);
-            const pathname = parsedUrl.pathname;
-            
-            if (pathname === '/captcha-challenge.html') {
-                res.setHeader('Content-Type', 'text/html');
-                res.status(200).end(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Human Verification - Traffic Cop</title>
-    <style>
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            margin: 0;
-            padding: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-        .challenge-container {
-            background: white;
-            border-radius: 15px;
-            padding: 40px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
-            text-align: center;
-            max-width: 500px;
-            width: 90%;
-        }
-        .shield-icon {
-            font-size: 4em;
-            color: #667eea;
-            margin-bottom: 20px;
-        }
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-        }
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-        }
-        .captcha-box {
-            background: #f8f9fa;
-            border: 2px solid #e9ecef;
-            border-radius: 10px;
-            padding: 20px;
-            margin: 20px 0;
-        }
-        .math-challenge {
-            font-size: 1.8em;
-            color: #333;
-            margin-bottom: 15px;
-            font-weight: bold;
-        }
-        .answer-input {
-            padding: 15px;
-            font-size: 1.3em;
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            width: 120px;
-            text-align: center;
-            margin: 10px;
-        }
-        .verify-btn {
-            background: #28a745;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 5px;
-            font-size: 1.1em;
-            cursor: pointer;
-            margin-top: 20px;
-            transition: background 0.3s;
-        }
-        .verify-btn:hover {
-            background: #218838;
-        }
-        .verify-btn:disabled {
-            background: #6c757d;
-            cursor: not-allowed;
-        }
-        .error-message {
-            color: #dc3545;
-            margin-top: 15px;
-            display: none;
-            font-weight: bold;
-        }
-        .success-message {
-            color: #28a745;
-            margin-top: 15px;
-            display: none;
-            font-weight: bold;
-        }
-        .loading {
-            display: none;
-            color: #667eea;
-            margin-top: 10px;
-        }
-        .instructions {
-            background: #e3f2fd;
-            padding: 15px;
-            border-radius: 8px;
-            margin: 20px 0;
-            color: #1565c0;
-            font-weight: 500;
-        }
-        .attempts {
-            color: #dc3545;
-            font-size: 0.9em;
-            margin-top: 10px;
-        }
-    </style>
-</head>
-<body>
-    <div class="challenge-container">
-        <div class="shield-icon">🛡️</div>
-        <h1>Human Verification Required</h1>
-        <p class="subtitle">Complete this math problem to prove you're human</p>
-        
-        <div class="instructions">
-            <strong>Instructions:</strong> Solve the math problem below to continue to the website
-        </div>
-        
-        <div class="captcha-box">
-            <div class="math-challenge" id="math-problem">Loading...</div>
-            <input type="number" id="math-answer" class="answer-input" placeholder="Enter answer" min="0" max="100">
-        </div>
-        
-        <button class="verify-btn" id="verify-btn" onclick="verifyChallenge()">
-            Verify Answer
-        </button>
-        
-        <div class="error-message" id="error-message"></div>
-        <div class="success-message" id="success-message"></div>
-        <div class="loading" id="loading">Verifying your answer...</div>
-        <div class="attempts" id="attempts-counter"></div>
-        
-        <p style="margin-top: 30px; color: #666; font-size: 0.9em;">
-            Protected by Traffic Cop • AI-powered bot protection with KV storage
-        </p>
-    </div>
-
-    <script>
-        let mathAnswer = 0;
-        let attempts = 0;
-        let maxAttempts = 3;
-        let sessionId = new URLSearchParams(window.location.search).get('session') || 'unknown';
-        let website = new URLSearchParams(window.location.search).get('website') || 'newsparrow.in';
-        
-        function generateMathProblem() {
-            const problemTypes = [
-                // Addition
-                () => {
-                    const num1 = Math.floor(Math.random() * 20) + 1;
-                    const num2 = Math.floor(Math.random() * 20) + 1;
-                    return {
-                        problem: num1 + ' + ' + num2 + ' = ?',
-                        answer: num1 + num2
-                    };
-                },
-                // Subtraction
-                () => {
-                    const answer = Math.floor(Math.random() * 15) + 1;
-                    const num2 = Math.floor(Math.random() * 10) + 1;
-                    const num1 = answer + num2;
-                    return {
-                        problem: num1 + ' - ' + num2 + ' = ?',
-                        answer: answer
-                    };
-                },
-                // Multiplication (small numbers)
-                () => {
-                    const num1 = Math.floor(Math.random() * 8) + 2;
-                    const num2 = Math.floor(Math.random() * 5) + 2;
-                    return {
-                        problem:
-                        problem: num1 + ' × ' + num2 + ' = ?',
-                        answer: num1 * num2
-                    };
-                },
-                // Word problems
-                () => {
-                    const items = Math.floor(Math.random() * 10) + 5;
-                    const taken = Math.floor(Math.random() * items/2) + 1;
-                    return {
-                        problem: 'If you have ' + items + ' items and take away ' + taken + ', how many are left?',
-                        answer: items - taken
-                    };
-                }
-            ];
-            
-            const selectedProblem = problemTypes[Math.floor(Math.random() * problemTypes.length)]();
-            
-            document.getElementById('math-problem').textContent = selectedProblem.problem;
-            mathAnswer = selectedProblem.answer;
-            document.getElementById('math-answer').value = '';
-            document.getElementById('math-answer').focus();
-        }
-        
-        async function verifyChallenge() {
-            const verifyBtn = document.getElementById('verify-btn');
-            const errorMsg = document.getElementById('error-message');
-            const successMsg = document.getElementById('success-message');
-            const loading = document.getElementById('loading');
-            const attemptsCounter = document.getElementById('attempts-counter');
-            const userAnswer = parseInt(document.getElementById('math-answer').value);
-            
-            // Hide previous messages
-            errorMsg.style.display = 'none';
-            successMsg.style.display = 'none';
-            
-            // Validate input
-            if (isNaN(userAnswer) || document.getElementById('math-answer').value === '') {
-                errorMsg.textContent = 'Please enter a valid number';
-                errorMsg.style.display = 'block';
-                return;
-            }
-            
-            verifyBtn.disabled = true;
-            loading.style.display = 'block';
-            
-            // Simulate verification delay (important for security)
-            await new Promise(resolve => setTimeout(resolve, 2000));
-            
-            loading.style.display = 'none';
-            attempts++;
-            
-            if (userAnswer === mathAnswer) {
-                // Correct answer - verify with server
-                try {
-                    const response = await fetch('/api/v1/verify-challenge', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json'
-                        },
-                        body: JSON.stringify({
-                            sessionId: sessionId,
-                            challengeType: 'math',
-                            verified: true,
-                            answer: userAnswer,
-                            correctAnswer: mathAnswer,
-                            attempts: attempts
-                        })
-                    });
-                    
-                    if (response.ok) {
-                        successMsg.textContent = '✅ Correct! Redirecting to ' + website + '...';
-                        successMsg.style.display = 'block';
-                        
-                        // Redirect after success message
-                        setTimeout(() => {
-                            window.location.href = 'https://' + website;
-                        }, 2000);
-                        return;
-                    } else {
-                        throw new Error('Server verification failed');
-                    }
-                } catch (error) {
-                    console.error('Verification error:', error);
-                    errorMsg.textContent = 'Verification failed. Please try again.';
-                    errorMsg.style.display = 'block';
-                }
-            } else {
-                // Wrong answer
-                if (attempts >= maxAttempts) {
-                    errorMsg.textContent = 'Too many incorrect attempts. Please refresh the page to try again.';
-                    errorMsg.style.display = 'block';
-                    verifyBtn.disabled = true;
-                    document.getElementById('math-answer').disabled = true;
-                    return;
-                } else {
-                    errorMsg.textContent = 'Incorrect answer. Try again. (Attempt ' + attempts + '/' + maxAttempts + ')';
-                    errorMsg.style.display = 'block';
-                    attemptsCounter.textContent = 'Attempts remaining: ' + (maxAttempts - attempts);
-                    attemptsCounter.style.display = 'block';
-                    
-                    // Generate new problem after wrong answer
-                    setTimeout(() => {
-                        generateMathProblem();
-                    }, 1500);
-                }
-            }
-            
-            verifyBtn.disabled = false;
-        }
-        
-        // Allow Enter key to submit
-        document.getElementById('math-answer').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                verifyChallenge();
-            }
-        });
-        
-        // Initialize with first problem
-        generateMathProblem();
-        
-        // Update attempts counter
-        document.getElementById('attempts-counter').textContent = 'Attempts remaining: ' + maxAttempts;
-        document.getElementById('attempts-counter').style.display = 'block';
-    </script>
-</body>
-</html>
-                `);
-                return;
-            }
-        }
-
         // Activity logs endpoint with date filtering
         if (req.url.startsWith('/api/v1/activity-logs') && req.method === 'GET') {
             const auth = await authenticateAPIKey(req);
@@ -1977,31 +1607,149 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // API key details endpoint
-        if (req.url === '/api/v1/api-key/details' && req.method === 'GET') {
-            const auth = await authenticateAPIKey(req);
-            
-            if (!auth.authenticated) {
-                res.status(401).json({ error: auth.error });
-                return;
-            }
-            
+        // Debug endpoints for testing
+        if (req.url === '/api/v1/debug/storage-test' && req.method === 'POST') {
             try {
-                const usage = await apiKeyManager.getAPIKeyUsage(auth.apiKey);
+                console.log('🔍 Testing storage function directly...');
+                
+                const testData = {
+                    sessionId: 'debug_test_' + Date.now(),
+                    userAgent: 'Debug Test',
+                    website: 'newsparrow.in',
+                    ipAddress: '127.0.0.1',
+                    riskScore: 10,
+                    action: 'allow',
+                    threats: [],
+                    publisherId: 'pub_newsparrow',
+                    timestamp: new Date().toISOString()
+                };
+                
+                // Test storage directly
+                await storage.storeVisitorSession(testData);
+                
+                console.log('✅ Storage function completed');
+                
+                // Try to retrieve data
+                const liveVisitors = await storage.getLiveVisitors();
+                const dailyStats = await storage.getDailyStats();
                 
                 res.status(200).json({
                     success: true,
-                    apiKey: auth.apiKey.substring(0, 20) + '...',
-                    publisherId: auth.publisherId,
-                    plan: auth.plan,
-                    website: auth.website,
-                    usage: usage
+                    message: 'Storage test completed',
+                    storedData: testData,
+                    liveVisitorsCount: liveVisitors.length,
+                    dailyStats: dailyStats
                 });
+                
             } catch (error) {
-                res.status(500).json({ error: 'Failed to get API key details' });
+                console.error('❌ Storage test failed:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message,
+                    stack: error.stack
+                });
             }
             return;
         }
+
+        if (req.url === '/api/v1/debug/dashboard-methods' && req.method === 'GET') {
+            try {
+                console.log('🔍 Testing dashboard methods directly...');
+                
+                // Test getDailyStats method directly
+                console.log('📊 Calling storage.getDailyStats()...');
+                const dailyStats = await storage.getDailyStats();
+                console.log('📊 getDailyStats result:', dailyStats);
+                
+                // Test getLiveVisitors method directly
+                console.log('👥 Calling storage.getLiveVisitors()...');
+                const liveVisitors = await storage.getLiveVisitors();
+                console.log('👥 getLiveVisitors result:', liveVisitors);
+                
+                res.status(200).json({
+                    success: true,
+                    message: 'Dashboard methods tested',
+                    dailyStats: dailyStats,
+                    liveVisitors: liveVisitors,
+                    liveVisitorsCount: liveVisitors.length
+                });
+                
+            } catch (error) {
+                console.error('❌ Dashboard methods test failed:', error);
+                res.status(500).json({
+                    success: false,
+                    error: error.message,
+                    stack: error.stack
+                });
+            }
+            return;
+        }
+
+        if (req.url === '/api/v1/debug/kv-contents' && req.method === 'GET') {
+            try {
+                await storage.ensureKVReady();
+                
+                const today = new Date().toISOString().split('T')[0];
+                const dailyStatsKey = `tc_daily:${today}`;
+                const dailyStats = await kv.get(dailyStatsKey);
+                
+                const activityLog = await kv.lrange('tc_activity_log', 0, 10);
+                
+                res.status(200).json({
+                    success: true,
+                    today: today,
+                    dailyStatsKey: dailyStatsKey,
+                    dailyStatsExists: !!dailyStats,
+                    dailyStatsContent: dailyStats ? JSON.parse(dailyStats) : null,
+                    activityLogLength: activityLog ? activityLog.length : 0,
+                    activityLogSample: activityLog ? activityLog.slice(0, 2) : [],
+                    kvPrefix: storage.kvPrefix
+                });
+                
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message
+                });
+            }
+            return;
+        }
+
+                if (req.url === '/api/v1/test-kv-simple' && req.method === 'GET') {
+            try {
+                if (!kvReady) {
+                    await initKV();
+                }
+                
+                if (!kv) {
+                    throw new Error('KV not initialized');
+                }
+                
+                await kv.set('test', 'working');
+                const result = await kv.get('test');
+                
+                res.status(200).json({
+                    success: true,
+                    message: 'KV is working',
+                    test: result,
+                    kvReady: kvReady
+                });
+                
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message,
+                    kvReady: kvReady,
+                    envVars: {
+                        hasKvUrl: !!process.env.KV_URL,
+                        hasKvRestUrl: !!process.env.KV_REST_API_URL,
+                        hasKvToken: !!process.env.KV_REST_API_TOKEN
+                    }
+                });
+            }
+            return;
+        }
+
 
         // Migration endpoint to store existing API key in KV
         if (req.url === '/api/v1/migrate-existing-key' && req.method === 'POST') {
@@ -2055,137 +1803,297 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Debug endpoint to test KV storage directly
-        if (req.url === '/api/v1/debug/test-kv' && req.method === 'POST') {
-            try {
-                await storage.ensureKVReady();
+        // Serve captcha challenge page
+        if (req.method === 'GET') {
+            const parsedUrl = url.parse(req.url, true);
+            const pathname = parsedUrl.pathname;
+            
+            if (pathname === '/captcha-challenge.html') {
+                const sessionId = parsedUrl.query.session || 'unknown';
+                const website = parsedUrl.query.website || 'unknown';
                 
-                // Test storing a simple value
-                const testKey = 'tc_test_key';
-                const testData = {
-                    test: 'KV storage test',
-                    timestamp: new Date().toISOString()
-                };
+                // Generate random math challenge
+                const num1 = Math.floor(Math.random() * 20) + 1;
+                const num2 = Math.floor(Math.random() * 20) + 1;
+                const correctAnswer = num1 + num2;
                 
-                await kv.set(testKey, JSON.stringify(testData));
-                
-                // Try to retrieve it
-                const retrieved = await kv.get(testKey);
-                
-                res.status(200).json({
-                    success: true,
-                    message: 'KV storage is working',
-                    stored: testData,
-                    retrieved: retrieved ? JSON.parse(retrieved) : null
-                });
-                
-            } catch (error) {
-                res.status(500).json({
-                    success: false,
-                    error: 'KV storage failed',
-                    details: error.message
-                });
-            }
-            return;
+                const challengeHtml = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Security Verification - Traffic Cop</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
         }
-
-        // Debug endpoint to check KV contents
-        if (req.url === '/api/v1/debug/kv-contents' && req.method === 'GET') {
-            try {
-                await storage.ensureKVReady();
-                
-                // Check for session keys
-                const sessionKeys = [];
-                const dailyKeys = [];
-                const activityKeys = [];
-                
-                // Scan for our keys (this might be limited in some KV implementations)
-                try {
-                    // Try to get specific keys we expect
-                    const today = new Date().toISOString().split('T')[0];
-                    const dailyStatsKey = `tc_daily:${today}`;
-                    const dailyStats = await kv.get(dailyStatsKey);
-                    
-                    // Try to get activity log
-                    const activityLog = await kv.lrange('tc_activity_log', 0, 10);
-                    
-                    res.status(200).json({
-                        success: true,
-                        today: today,
-                        dailyStatsKey: dailyStatsKey,
-                        dailyStatsExists: !!dailyStats,
-                        dailyStatsContent: dailyStats,
-                        activityLogLength: activityLog ? activityLog.length : 0,
-                        activityLogSample: activityLog ? activityLog.slice(0, 2) : [],
-                        kvPrefix: storage.kvPrefix
-                    });
-                    
-                } catch (scanError) {
-                    res.status(200).json({
-                        success: false,
-                        error: 'Could not scan KV',
-                        details: scanError.message
-                    });
-                }
-                
-            } catch (error) {
-                res.status(500).json({
-                    success: false,
-                    error: error.message
-                });
-            }
-            return;
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #333;
         }
+        
+        .challenge-container {
+            background: white;
+            padding: 40px;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 90%;
+        }
+        
+        .shield-icon {
+            font-size: 48px;
+            color: #667eea;
+            margin-bottom: 20px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 24px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            line-height: 1.5;
+        }
+        
+        .math-challenge {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 20px 0;
+            border: 2px solid #e9ecef;
+        }
+        
+        .math-question {
+            font-size: 24px;
+            font-weight: bold;
+            color: #495057;
+            margin-bottom: 15px;
+        }
+        
+        input[type="number"] {
+            width: 100px;
+            padding: 12px;
+            font-size: 18px;
+            text-align: center;
+            border: 2px solid #dee2e6;
+            border-radius: 8px;
+            margin: 0 10px;
+        }
+        
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .verify-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            margin-top: 20px;
+            transition: transform 0.2s;
+        }
+        
+        .verify-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .verify-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .error-message {
+            color: #dc3545;
+            margin-top: 15px;
+            padding: 10px;
+            background: #f8d7da;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .success-message {
+            color: #155724;
+            margin-top: 15px;
+            padding: 10px;
+            background: #d4edda;
+            border-radius: 5px;
+            display: none;
+        }
+        
+        .attempts-counter {
+            margin-top: 10px;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .footer {
+            margin-top: 30px;
+            color: #999;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="challenge-container">
+        <div class="shield-icon">🛡️</div>
+        <h1>Security Verification</h1>
+        <p class="subtitle">Please complete this simple math problem to verify you're human</p>
+        
+        <div class="math-challenge">
+            <div class="math-question">
+                ${num1} + ${num2} = ?
+            </div>
+            <input type="number" id="answer" placeholder="?" autocomplete="off" autofocus>
+        </div>
+        
+        <button class="verify-btn" onclick="verifyAnswer()">Verify</button>
+        
+        <div id="error-message" class="error-message"></div>
+        <div id="success-message" class="success-message"></div>
+        <div id="attempts-counter" class="attempts-counter">Attempts: <span id="attempts">0</span>/3</div>
+        
+        <div class="footer">
+            Protected by Traffic Cop Security System
+        </div>
+    </div>
 
-
-        // Simplified KV test endpoint
-        if (req.url === '/api/v1/test-kv-simple' && req.method === 'GET') {
-            try {
-                if (!kvReady) {
-                    await initKV();
-                }
+    <script>
+        let attempts = 0;
+        const maxAttempts = 3;
+        const correctAnswer = ${correctAnswer};
+        const sessionId = '${sessionId}';
+        
+        function verifyAnswer() {
+            const userAnswer = parseInt(document.getElementById('answer').value);
+            const errorDiv = document.getElementById('error-message');
+            const successDiv = document.getElementById('success-message');
+            const attemptsSpan = document.getElementById('attempts');
+            const verifyBtn = document.querySelector('.verify-btn');
+            
+            attempts++;
+            attemptsSpan.textContent = attempts;
+            
+            if (isNaN(userAnswer)) {
+                showError('Please enter a valid number');
+                return;
+            }
+            
+            if (userAnswer === correctAnswer) {
+                successDiv.textContent = 'Verification successful! Redirecting...';
+                successDiv.style.display = 'block';
+                errorDiv.style.display = 'none';
                 
-                if (!kv) {
-                    throw new Error('KV not initialized');
-                }
-                
-                // Simple test
-                await kv.set('test', 'working');
-                const result = await kv.get('test');
-                
-                res.status(200).json({
-                    success: true,
-                    message: 'KV is working',
-                    test: result,
-                    kvReady: kvReady
-                });
-                
-            } catch (error) {
-                res.status(500).json({
-                    success: false,
-                    error: error.message,
-                    kvReady: kvReady,
-                    envVars: {
-                        hasKvUrl: !!process.env.KV_URL,
-                        hasKvRestUrl: !!process.env.KV_REST_API_URL,
-                        hasKvToken: !!process.env.KV_REST_API_TOKEN
+                // Send verification to server
+                fetch('/api/v1/verify-challenge', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        sessionId: sessionId,
+                        challengeType: 'math',
+                        verified: true,
+                        answer: userAnswer,
+                        correctAnswer: correctAnswer,
+                        attempts: attempts
+                    })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        setTimeout(() => {
+                            window.location.href = data.redirectUrl || '/';
+                        }, 2000);
+                    } else {
+                        showError('Verification failed. Please try again.');
                     }
+                })
+                .catch(error => {
+                    console.error('Verification error:', error);
+                    showError('Network error. Please try again.');
                 });
+                
+            } else {
+                if (attempts >= maxAttempts) {
+                    showError('Maximum attempts exceeded. Please refresh the page.');
+                    verifyBtn.disabled = true;
+                    document.getElementById('answer').disabled = true;
+                } else {
+                    showError(\`Incorrect answer. You have \${maxAttempts - attempts} attempts remaining.\`);
+                    document.getElementById('answer').value = '';
+                    document.getElementById('answer').focus();
+                }
             }
-            return;
         }
-
-
-
+        
+        function showError(message) {
+            const errorDiv = document.getElementById('error-message');
+            const successDiv = document.getElementById('success-message');
+            
+            errorDiv.textContent = message;
+            errorDiv.style.display = 'block';
+            successDiv.style.display = 'none';
+        }
+        
+        // Allow Enter key to submit
+        document.getElementById('answer').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                verifyAnswer();
+            }
+        });
+    </script>
+</body>
+</html>`;
+                
+                res.setHeader('Content-Type', 'text/html');
+                res.status(200).send(challengeHtml);
+                return;
+            }
+        }
 
         // 404 for unknown routes
-        res.status(404).json({ error: 'Not found' });
+        res.status(404).json({ 
+            error: 'Not found',
+            message: 'The requested endpoint does not exist',
+            availableEndpoints: [
+                '/health',
+                '/api/v1/analyze',
+                '/api/v1/real-time-dashboard',
+                '/api/v1/analytics',
+                '/api/v1/config',
+                '/api/v1/publisher/signup',
+                '/api/v1/publisher/login',
+                '/api/v1/activity-logs',
+                '/api/v1/verify-challenge'
+            ]
+        });
         
     } catch (error) {
         console.error('Server error:', error);
         res.status(500).json({ 
             error: 'Internal server error',
-            message: error.message 
+            message: error.message,
+            timestamp: new Date().toISOString()
         });
     }
 };
