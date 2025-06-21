@@ -138,11 +138,30 @@ class APIKeyManager {
         }
     }
     
-    // Validate API key with rate limiting
+    // Validate API key with rate limiting and fallback support
     async validateAPIKey(apiKey) {
         try {
             await this.ensureKVReady();
             
+            // CRITICAL: Fallback for existing hardcoded key
+            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+                return {
+                    valid: true,
+                    keyData: { 
+                        plan: 'professional', 
+                        website: 'newsparrow.in',
+                        publisherName: 'Newsparrow',
+                        email: 'ashokvarma416@gmail.com',
+                        requestCount: 0,
+                        status: 'active'
+                    },
+                    publisherId: 'pub_newsparrow',
+                    plan: 'professional',
+                    website: 'newsparrow.in'
+                };
+            }
+            
+            // Check KV storage for new keys
             const keyDataStr = await kv.get(`${this.kvPrefix}key:${apiKey}`);
             if (!keyDataStr) {
                 return { valid: false, reason: 'API key not found' };
@@ -184,9 +203,22 @@ class APIKeyManager {
             
         } catch (error) {
             console.error('API key validation error:', error);
+            
+            // Final fallback for existing hardcoded key in case of KV errors
+            if (apiKey === 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583') {
+                return {
+                    valid: true,
+                    keyData: { plan: 'professional', website: 'newsparrow.in' },
+                    publisherId: 'pub_newsparrow',
+                    plan: 'professional',
+                    website: 'newsparrow.in'
+                };
+            }
+            
             return { valid: false, reason: 'Validation error' };
         }
     }
+
     
     // Get publisher by email
     async getPublisherByEmail(email) {
