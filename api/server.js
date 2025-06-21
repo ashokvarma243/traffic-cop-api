@@ -4,25 +4,37 @@ const url = require('url');
 // Dynamic import for KV (since it's ES6 module)
 let kv;
 let kvInitialized = false;
+let kvReady = false;
 
-async function initializeKV() {
+async function initKV() {
     try {
-        if (!kv) {
+        // Use require instead of dynamic import for better compatibility
+        const { kv: kvClient } = require('@vercel/kv');
+        kv = kvClient;
+        kvReady = true;
+        console.log('✅ KV initialized with require method');
+        return true;
+    } catch (requireError) {
+        try {
+            // Fallback to dynamic import
             const kvModule = await import('@vercel/kv');
             kv = kvModule.kv;
-            kvInitialized = true;
-            console.log('✅ Vercel KV initialized successfully');
+            kvReady = true;
+            console.log('✅ KV initialized with dynamic import');
+            return true;
+        } catch (importError) {
+            console.error('❌ Both KV initialization methods failed:', {
+                requireError: requireError.message,
+                importError: importError.message
+            });
+            kvReady = false;
+            return false;
         }
-        return true;
-    } catch (error) {
-        console.error('❌ KV initialization failed:', error);
-        kvInitialized = false;
-        return false;
     }
 }
 
-// Initialize KV immediately
-initializeKV();
+// Initialize immediately
+initKV();
 
 // Fallback in-memory storage (when KV is not available)
 let realTrafficData = {
@@ -984,15 +996,14 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Enhanced traffic analysis endpoint with dynamic API key validation
+        // Enhanced traffic analysis endpoint with KV storage
         if (req.url === '/api/v1/analyze' && req.method === 'POST') {
             const auth = await authenticateAPIKey(req);
             
             if (!auth.authenticated) {
                 res.status(401).json({ 
                     error: 'Authentication failed',
-                    reason: auth.error,
-                    apiKey: auth.apiKey
+                    reason: auth.error
                 });
                 return;
             }
@@ -1004,37 +1015,21 @@ module.exports = async (req, res) => {
                     const requestData = JSON.parse(body);
                     const { userAgent, website } = requestData;
                     
-                    // Validate required fields
-                    if (!userAgent || !website) {
-                        res.status(400).json({
-                            error: 'Missing required fields: userAgent and website'
-                        });
-                        return;
-                    }
-                    
                     // Get real IP address
                     const realIP = req.headers['x-forwarded-for']?.split(',')[0] || 
-                                  req.headers['x-real-ip'] || 
-                                  req.connection.remoteAddress || 
-                                  requestData.ipAddress || 
-                                  'unknown';
+                                req.headers['x-real-ip'] || 
+                                req.connection.remoteAddress || 
+                                'unknown';
                     
                     // Get geolocation data
                     const geolocation = await getGeolocationFromIP(realIP);
                     
-                    // Enhanced request data with geolocation
-                    const enhancedRequestData = {
-                        ...requestData,
-                        ipAddress: realIP,
-                        geolocation: geolocation
-                    };
-                    
                     // Dynamic bot detection analysis
-                    const analysis = analyzeTrafficDynamic(userAgent, website, enhancedRequestData);
+                    const analysis = analyzeTrafficDynamic(userAgent, website, requestData);
                     
-                    // 🔥 ADD THIS: Store visitor data in KV
+                    // 🔥 CRITICAL: Store visitor data in KV
                     const visitorData = {
-                        sessionId: enhancedRequestData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        sessionId: requestData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         userAgent: userAgent,
                         website: website,
                         ipAddress: realIP,
@@ -1046,14 +1041,13 @@ module.exports = async (req, res) => {
                         timestamp: new Date().toISOString()
                     };
                     
-                    // 🔥 CRITICAL: Store in KV storage
+                    // 🔥 THIS LINE IS CRITICAL - Store in KV
                     await storage.storeVisitorSession(visitorData);
                     
-                    console.log(`💾 Stored visitor data: ${visitorData.sessionId}, Risk: ${analysis.riskScore}, Action: ${analysis.action}`);
+                    console.log(`💾 STORED IN KV: ${visitorData.sessionId}, Risk: ${analysis.riskScore}, Action: ${analysis.action}`);
                     
                     const response = {
                         sessionId: visitorData.sessionId,
-                        publisherApiKey: auth.apiKey.substring(0, 20) + '...',
                         publisherId: auth.publisherId,
                         website,
                         riskScore: analysis.riskScore,
@@ -1061,20 +1055,8 @@ module.exports = async (req, res) => {
                         confidence: analysis.confidence,
                         threats: analysis.threats,
                         geolocation: geolocation,
-                        responseTime: Math.floor(Math.random() * 50) + 15,
-                        timestamp: new Date().toISOString(),
-                        mlInsights: {
-                            mlRiskScore: analysis.riskScore,
-                            confidence: analysis.confidence,
-                            threatVector: analysis.threats,
-                            analysis: analysis.analysis
-                        }
+                        timestamp: new Date().toISOString()
                     };
-                    
-                    // If action is challenge, provide challenge URL
-                    if (analysis.action === 'challenge') {
-                        response.challengeUrl = `/captcha-challenge.html?session=${visitorData.sessionId}&website=${encodeURIComponent(website)}`;
-                    }
                     
                     res.status(200).json(response);
                     
@@ -1088,6 +1070,7 @@ module.exports = async (req, res) => {
             });
             return;
         }
+
 
         // Enhanced visitor tracking endpoint
         if (req.url === '/api/v1/track-visitor' && req.method === 'POST') {
@@ -1999,6 +1982,44 @@ module.exports = async (req, res) => {
             }
             return;
         }
+
+        // Simplified KV test endpoint
+        if (req.url === '/api/v1/test-kv-simple' && req.method === 'GET') {
+            try {
+                if (!kvReady) {
+                    await initKV();
+                }
+                
+                if (!kv) {
+                    throw new Error('KV not initialized');
+                }
+                
+                // Simple test
+                await kv.set('test', 'working');
+                const result = await kv.get('test');
+                
+                res.status(200).json({
+                    success: true,
+                    message: 'KV is working',
+                    test: result,
+                    kvReady: kvReady
+                });
+                
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: error.message,
+                    kvReady: kvReady,
+                    envVars: {
+                        hasKvUrl: !!process.env.KV_URL,
+                        hasKvRestUrl: !!process.env.KV_REST_API_URL,
+                        hasKvToken: !!process.env.KV_REST_API_TOKEN
+                    }
+                });
+            }
+            return;
+        }
+
 
 
 
