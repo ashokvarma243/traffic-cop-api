@@ -1132,6 +1132,67 @@ module.exports = async (req, res) => {
             return;
         }
 
+        // Real-time visitor tracking endpoint
+        if (req.url === '/api/v1/real-time-visitor' && req.method === 'POST') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
+                return;
+            }
+            
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', async () => {
+                try {
+                    const visitorData = JSON.parse(body);
+                    
+                    // Get real IP address
+                    const realIP = req.headers['x-forwarded-for']?.split(',')[0] || 
+                                req.headers['x-real-ip'] || 
+                                req.connection.remoteAddress || 
+                                visitorData.ipAddress || 
+                                'unknown';
+                    
+                    // Get geolocation data
+                    const geolocation = await getGeolocationFromIP(realIP);
+                    
+                    // Enhanced visitor data
+                    const enhancedVisitorData = {
+                        ...visitorData,
+                        ipAddress: realIP,
+                        geolocation: geolocation,
+                        userAgent: req.headers['user-agent'] || visitorData.userAgent,
+                        publisherId: auth.publisherId,
+                        sessionId: visitorData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                        timestamp: new Date().toISOString(),
+                        riskScore: 0,
+                        action: 'allow',
+                        threats: []
+                    };
+                    
+                    // Store in KV
+                    await storage.storeVisitorSession(enhancedVisitorData);
+                    
+                    console.log(`👤 Real-time visitor tracked: ${realIP} from ${geolocation?.city}, ${geolocation?.country}`);
+                    
+                    res.status(200).json({
+                        success: true,
+                        message: 'Real-time visitor tracked successfully',
+                        sessionId: enhancedVisitorData.sessionId,
+                        geolocation: geolocation,
+                        storage: 'kv'
+                    });
+                    
+                } catch (error) {
+                    console.error('Real-time visitor tracking error:', error);
+                    res.status(400).json({ error: 'Invalid visitor data' });
+                }
+            });
+            return;
+        }
+
+
         // Enhanced real-time dashboard with KV data
         if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
             const auth = await authenticateAPIKey(req);
