@@ -1,9 +1,8 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <!-- Add redirect loop prevention at the very top of <head> -->
+    <!-- Redirect loop prevention - MUST BE FIRST -->
     <script>
-    // Redirect loop prevention - MUST BE FIRST
     (function() {
         let redirectCount = parseInt(sessionStorage.getItem('redirect_count') || '0');
         
@@ -41,6 +40,52 @@
             max-width: 1400px;
             margin: 0 auto;
             padding: 20px;
+        }
+
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .header-left h1 {
+            color: #667eea;
+            font-size: 1.8em;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logout-button {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.3s ease;
+        }
+
+        .logout-button:hover {
+            background: #d32f2f;
+        }
+
+        #user-info {
+            color: #666;
+            font-size: 14px;
         }
 
         .header {
@@ -510,7 +555,20 @@
 </head>
 <body>
     <div class="dashboard-container">
-        <!-- Header -->
+        <!-- Header with Logout -->
+        <div class="dashboard-header">
+            <div class="header-left">
+                <h1>🛡️ Traffic Cop Dashboard</h1>
+            </div>
+            <div class="header-right">
+                <span id="user-info">Welcome, Publisher</span>
+                <button id="logout-btn" class="logout-button">
+                    🚪 Logout
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Header -->
         <div class="header">
             <h1>🛡️ Traffic Cop Publisher Dashboard</h1>
             <p class="subtitle">Real-time bot protection analytics for <span id="website-display">newsparrow.in</span></p>
@@ -535,60 +593,6 @@
             <button class="tab-button" onclick="showTab('activity-logs')">📋 Activity Logs</button>
             <button class="tab-button" onclick="showTab('settings')">⚙️ Settings</button>
         </div>
-        <!-- Add this to your publisher-dashboard.html -->
-        <div class="dashboard-header">
-            <div class="header-left">
-                <h1>Traffic Cop Dashboard</h1>
-            </div>
-            <div class="header-right">
-                <span id="user-info">Welcome, Publisher</span>
-                <button id="logout-btn" class="logout-button">
-                    <i class="fas fa-sign-out-alt"></i> Logout
-                </button>
-            </div>
-        </div>
-
-        <style>
-        .dashboard-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 15px 20px;
-            background: #fff;
-            border-bottom: 1px solid #e0e0e0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        .header-right {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-
-        .logout-button {
-            background: #f44336;
-            color: white;
-            border: none;
-            padding: 8px 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            transition: background-color 0.3s ease;
-        }
-
-        .logout-button:hover {
-            background: #d32f2f;
-        }
-
-        #user-info {
-            color: #666;
-            font-size: 14px;
-        }
-        </style>
-
 
         <!-- Overview Tab -->
         <div id="overview-tab" class="tab-content active">
@@ -778,10 +782,144 @@
 
     <script>
         // Configuration
-        const apiKey = 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583';
+        let apiKey = 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583';
         let refreshInterval = 10000; // 10 seconds
         let refreshTimer;
         let currentFilter = 'today';
+
+        // Fixed authentication check
+        function checkAuthentication() {
+            console.log('🔍 Checking authentication...');
+            
+            // Check URL parameters first (session token from login)
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionToken = urlParams.get('session');
+            
+            if (sessionToken) {
+                console.log('📝 Session token found in URL, validating...');
+                try {
+                    // Decode and validate session token
+                    const decodedSession = atob(sessionToken);
+                    console.log('🔓 Session validated successfully');
+                    
+                    // Store session data
+                    localStorage.setItem('traffic_cop_auth', JSON.stringify({
+                        sessionToken: sessionToken,
+                        apiKey: decodedSession,
+                        loginTime: new Date().toISOString(),
+                        expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+                    }));
+                    
+                    // Update API key for dashboard use
+                    apiKey = decodedSession;
+                    
+                    // Clean URL without redirect
+                    const cleanUrl = window.location.origin + window.location.pathname;
+                    window.history.replaceState({}, document.title, cleanUrl);
+                    
+                    // Clear redirect count on successful auth
+                    sessionStorage.removeItem('redirect_count');
+                    return true;
+                } catch (error) {
+                    console.error('❌ Session token validation failed:', error);
+                }
+            }
+            
+            // Check stored authentication
+            const authData = localStorage.getItem('traffic_cop_auth');
+            
+            if (!authData) {
+                console.log('❌ No authentication data found');
+                redirectToLogin();
+                return false;
+            }
+            
+            try {
+                const auth = JSON.parse(authData);
+                
+                // Check if session has expired
+                if (auth.expires && new Date() > new Date(auth.expires)) {
+                    console.log('⏰ Session expired');
+                    localStorage.removeItem('traffic_cop_auth');
+                    redirectToLogin();
+                    return false;
+                }
+                
+                // Update API key from stored auth
+                if (auth.apiKey) {
+                    apiKey = auth.apiKey;
+                }
+                
+                console.log('✅ Authentication valid');
+                // Clear redirect count on successful auth
+                sessionStorage.removeItem('redirect_count');
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Authentication parsing error:', error);
+                localStorage.removeItem('traffic_cop_auth');
+                redirectToLogin();
+                return false;
+            }
+        }
+        
+        function redirectToLogin() {
+            // Prevent multiple redirects
+            if (window.location.href.includes('publisher-login.html')) {
+                console.log('⚠️ Already on login page, preventing loop');
+                return;
+            }
+            
+            // Prevent immediate redirect if just came from login
+            if (sessionStorage.getItem('redirecting_to_login') === 'true') {
+                console.log('⚠️ Already redirecting, preventing loop');
+                return;
+            }
+            
+            // Add flag to prevent immediate redirect back
+            sessionStorage.setItem('redirecting_to_login', 'true');
+            
+            console.log('🔄 Redirecting to login page...');
+            setTimeout(() => {
+                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+            }, 100);
+        }
+
+        // Dashboard initialization
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('🚀 Initializing Traffic Cop Dashboard...');
+            
+            // Clear any redirect flags
+            sessionStorage.removeItem('redirecting_to_login');
+            
+            // Check authentication before proceeding
+            if (!checkAuthentication()) {
+                console.log('❌ Authentication failed, stopping initialization');
+                return; // IMPORTANT: Stop here if not authenticated
+            }
+            
+            // Only initialize dashboard if authenticated
+            console.log('✅ Authentication passed, initializing dashboard...');
+            initializeDashboard();
+        });
+        
+        function initializeDashboard() {
+            console.log('🔄 Loading dashboard...');
+            
+            // Initialize timezone manager
+            timezoneManager.init();
+            
+            // Load dashboard data
+            loadOverviewData();
+            setupLogoutButton();
+            
+            // Clear redirect count after successful initialization
+            setTimeout(() => {
+                sessionStorage.removeItem('redirect_count');
+            }, 2000);
+            
+            console.log('✅ Dashboard initialized successfully');
+        }
 
         // Timezone management
         const timezoneManager = {
@@ -828,11 +966,11 @@
             }
         };
 
-        // Dashboard functions
-        async function loadDashboard() {
+        // MISSING FUNCTION - Now implemented
+        async function loadOverviewData() {
+            console.log('🔄 Loading overview data...');
+            
             try {
-                console.log('🔄 Loading dashboard...');
-                
                 // Update UI with API key info
                 document.getElementById('api-key-display').value = apiKey.substring(0, 20) + '...';
                 document.getElementById('website-name').value = 'newsparrow.in';
@@ -1207,6 +1345,35 @@
             showMessage('Dashboard settings updated!', 'success');
         }
 
+        // Logout functionality
+        function setupLogoutButton() {
+            const logoutBtn = document.getElementById('logout-btn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    handleLogout();
+                });
+            }
+        }
+
+        function handleLogout() {
+            console.log('🚪 Logging out...');
+            
+            if (confirm('Are you sure you want to logout?')) {
+                // Clear all authentication data
+                localStorage.removeItem('traffic_cop_auth');
+                localStorage.removeItem('traffic_cop_api_key');
+                localStorage.removeItem('traffic_cop_publisher_id');
+                sessionStorage.clear();
+                
+                // Set logout flag
+                sessionStorage.setItem('logged_out', 'true');
+                
+                // Redirect to login
+                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+            }
+        }
+
         // Utility functions
         function showMessage(message, type) {
             const messageDiv = document.createElement('div');
@@ -1265,202 +1432,11 @@
             }
         });
 
-        // Add this to your dashboard JavaScript
-        document.addEventListener('DOMContentLoaded', function() {
-            // Logout functionality
-            const logoutBtn = document.getElementById('logout-btn');
-            
-            if (logoutBtn) {
-                logoutBtn.addEventListener('click', function() {
-                    handleLogout();
-                });
-            }
-            
-            // Check authentication on page load
-            checkAuthentication();
-        });
-
-        // Handle logout process
-        function handleLogout() {
-            // Show confirmation dialog
-            if (confirm('Are you sure you want to logout?')) {
-                try {
-                    // Clear authentication data
-                    localStorage.removeItem('traffic_cop_auth');
-                    localStorage.removeItem('traffic_cop_api_key');
-                    localStorage.removeItem('traffic_cop_publisher_id');
-                    sessionStorage.clear();
-                    
-                    // Clear any cookies if you're using them
-                    document.cookie = 'traffic_cop_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                    
-                    // Show logout message
-                    showLogoutMessage();
-                    
-                    // Redirect to login page after short delay
-                    setTimeout(() => {
-                        window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
-                    }, 1500);
-                    
-                } catch (error) {
-                    console.error('Logout error:', error);
-                    // Force redirect even if there's an error
-                    window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
-                }
-            }
-        }
-
-        // REPLACE your existing checkAuthentication function with this:
-        function checkAuthentication() {
-            console.log('🔍 Checking authentication...');
-            
-            // Check URL parameters first (session token from login)
-            const urlParams = new URLSearchParams(window.location.search);
-            const sessionToken = urlParams.get('session');
-            
-            if (sessionToken) {
-                console.log('📝 Session token found in URL, validating...');
-                try {
-                    // Decode and validate session token
-                    const decodedSession = atob(sessionToken);
-                    console.log('🔓 Session validated successfully');
-                    
-                    // Store session data
-                    localStorage.setItem('traffic_cop_auth', JSON.stringify({
-                        sessionToken: sessionToken,
-                        apiKey: decodedSession,
-                        loginTime: new Date().toISOString(),
-                        expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
-                    }));
-                    
-                    // Clean URL without redirect
-                    const cleanUrl = window.location.origin + window.location.pathname;
-                    window.history.replaceState({}, document.title, cleanUrl);
-                    
-                    // Clear redirect count on successful auth
-                    sessionStorage.removeItem('redirect_count');
-                    return true;
-                } catch (error) {
-                    console.error('❌ Session token validation failed:', error);
-                }
-            }
-            
-            // Check stored authentication
-            const authData = localStorage.getItem('traffic_cop_auth');
-            
-            if (!authData) {
-                console.log('❌ No authentication data found');
-                redirectToLogin();
-                return false;
-            }
-            
-            try {
-                const auth = JSON.parse(authData);
-                
-                // Check if session has expired
-                if (auth.expires && new Date() > new Date(auth.expires)) {
-                    console.log('⏰ Session expired');
-                    localStorage.removeItem('traffic_cop_auth');
-                    redirectToLogin();
-                    return false;
-                }
-                
-                console.log('✅ Authentication valid');
-                // Clear redirect count on successful auth
-                sessionStorage.removeItem('redirect_count');
-                return true;
-                
-            } catch (error) {
-                console.error('❌ Authentication parsing error:', error);
-                localStorage.removeItem('traffic_cop_auth');
-                redirectToLogin();
-                return false;
-            }
-        }
-
-        // ADD this new function
-        function redirectToLogin() {
-            // Prevent multiple redirects
-            if (window.location.href.includes('publisher-login.html')) {
-                console.log('⚠️ Already on login page, preventing loop');
-                return;
-            }
-            
-            // Prevent immediate redirect if just came from login
-            if (sessionStorage.getItem('redirecting_to_login') === 'true') {
-                console.log('⚠️ Already redirecting, preventing loop');
-                return;
-            }
-            
-            // Add flag to prevent immediate redirect back
-            sessionStorage.setItem('redirecting_to_login', 'true');
-            
-            console.log('🔄 Redirecting to login page...');
-            setTimeout(() => {
-                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
-            }, 100);
-        }
-
-
-        // Show logout message
-        function showLogoutMessage() {
-            const message = document.createElement('div');
-            message.id = 'logout-message';
-            message.innerHTML = `
-                <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                        background: #4CAF50; color: white; padding: 20px 40px;
-                        border-radius: 8px; z-index: 999999; font-family: Arial, sans-serif;
-                        box-shadow: 0 4px 12px rgba(0,0,0,0.3); text-align: center;">
-                    <i class="fas fa-check-circle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
-                    <strong>Logged out successfully!</strong><br>
-                    <small>Redirecting to login page...</small>
-                </div>
-            `;
-            document.body.appendChild(message);
-        }
-
-        // Prevent back button access after logout
-        window.addEventListener('pageshow', function(event) {
-            if (event.persisted) {
-                checkAuthentication();
-            }
-        });
-
-
-        // REPLACE your existing DOMContentLoaded listener with this:
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 Initializing Traffic Cop Dashboard...');
-            
-            // Clear any redirect flags
-            sessionStorage.removeItem('redirecting_to_login');
-            
-            // Check authentication before proceeding
-            if (!checkAuthentication()) {
-                console.log('❌ Authentication failed, stopping initialization');
-                return; // IMPORTANT: Stop here if not authenticated
-            }
-            
-            // Only initialize dashboard if authenticated
-            console.log('✅ Authentication passed, initializing dashboard...');
-            initializeDashboard();
-        });
-
-        // ADD this new function
-        function initializeDashboard() {
-            console.log('🔄 Loading dashboard...');
-            
-            // Your existing dashboard initialization code
-            loadOverviewData();
-            setupLogoutButton();
-            
-            // Clear redirect count after successful initialization
-            setTimeout(() => {
-                sessionStorage.removeItem('redirect_count');
-            }, 2000);
-            
-            console.log('✅ Dashboard initialized successfully');
-        }
-
+        // Auto-refresh dashboard data every interval
+        setTimeout(() => {
+            setupAutoRefresh();
+        }, 5000);
+        
     </script>
 </body>
 </html>
