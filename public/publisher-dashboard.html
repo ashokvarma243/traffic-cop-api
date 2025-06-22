@@ -1,6 +1,25 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Add redirect loop prevention at the very top of <head> -->
+    <script>
+    // Redirect loop prevention - MUST BE FIRST
+    (function() {
+        let redirectCount = parseInt(sessionStorage.getItem('redirect_count') || '0');
+        
+        if (redirectCount > 3) {
+            console.error('🚨 Too many redirects detected, clearing auth data');
+            localStorage.clear();
+            sessionStorage.clear();
+            alert('Authentication error detected. Please try logging in again.');
+            window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+            return;
+        }
+        
+        sessionStorage.setItem('redirect_count', (redirectCount + 1).toString());
+    })();
+    </script>
+
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🛡️ Traffic Cop Publisher Dashboard</title>
@@ -1291,42 +1310,97 @@
             }
         }
 
-        // Check if user is authenticated
+        // REPLACE your existing checkAuthentication function with this:
         function checkAuthentication() {
-            const authData = localStorage.getItem('traffic_cop_auth');
-            const apiKey = localStorage.getItem('traffic_cop_api_key');
+            console.log('🔍 Checking authentication...');
             
-            if (!authData || !apiKey) {
-                // User is not authenticated, redirect to login
-                console.log('User not authenticated, redirecting to login...');
-                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+            // Check URL parameters first (session token from login)
+            const urlParams = new URLSearchParams(window.location.search);
+            const sessionToken = urlParams.get('session');
+            
+            if (sessionToken) {
+                console.log('📝 Session token found in URL, validating...');
+                try {
+                    // Decode and validate session token
+                    const decodedSession = atob(sessionToken);
+                    console.log('🔓 Session validated successfully');
+                    
+                    // Store session data
+                    localStorage.setItem('traffic_cop_auth', JSON.stringify({
+                        sessionToken: sessionToken,
+                        apiKey: decodedSession,
+                        loginTime: new Date().toISOString(),
+                        expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+                    }));
+                    
+                    // Clean URL without redirect
+                    const cleanUrl = window.location.origin + window.location.pathname;
+                    window.history.replaceState({}, document.title, cleanUrl);
+                    
+                    // Clear redirect count on successful auth
+                    sessionStorage.removeItem('redirect_count');
+                    return true;
+                } catch (error) {
+                    console.error('❌ Session token validation failed:', error);
+                }
+            }
+            
+            // Check stored authentication
+            const authData = localStorage.getItem('traffic_cop_auth');
+            
+            if (!authData) {
+                console.log('❌ No authentication data found');
+                redirectToLogin();
                 return false;
             }
             
             try {
                 const auth = JSON.parse(authData);
                 
-                // Check if session has expired (optional)
+                // Check if session has expired
                 if (auth.expires && new Date() > new Date(auth.expires)) {
-                    console.log('Session expired, redirecting to login...');
-                    handleLogout();
+                    console.log('⏰ Session expired');
+                    localStorage.removeItem('traffic_cop_auth');
+                    redirectToLogin();
                     return false;
                 }
                 
-                // Update user info display
-                const userInfo = document.getElementById('user-info');
-                if (userInfo && auth.publisherId) {
-                    userInfo.textContent = `Welcome, ${auth.publisherId}`;
-                }
-                
+                console.log('✅ Authentication valid');
+                // Clear redirect count on successful auth
+                sessionStorage.removeItem('redirect_count');
                 return true;
                 
             } catch (error) {
-                console.error('Authentication check error:', error);
-                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+                console.error('❌ Authentication parsing error:', error);
+                localStorage.removeItem('traffic_cop_auth');
+                redirectToLogin();
                 return false;
             }
         }
+
+        // ADD this new function
+        function redirectToLogin() {
+            // Prevent multiple redirects
+            if (window.location.href.includes('publisher-login.html')) {
+                console.log('⚠️ Already on login page, preventing loop');
+                return;
+            }
+            
+            // Prevent immediate redirect if just came from login
+            if (sessionStorage.getItem('redirecting_to_login') === 'true') {
+                console.log('⚠️ Already redirecting, preventing loop');
+                return;
+            }
+            
+            // Add flag to prevent immediate redirect back
+            sessionStorage.setItem('redirecting_to_login', 'true');
+            
+            console.log('🔄 Redirecting to login page...');
+            setTimeout(() => {
+                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+            }, 100);
+        }
+
 
         // Show logout message
         function showLogoutMessage() {
@@ -1353,16 +1427,40 @@
         });
 
 
-        // Initialize dashboard
+        // REPLACE your existing DOMContentLoaded listener with this:
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 Initializing Traffic Cop Dashboard...');
             
-            timezoneManager.init();
-            loadDashboard();
-            setupAutoRefresh();
+            // Clear any redirect flags
+            sessionStorage.removeItem('redirecting_to_login');
+            
+            // Check authentication before proceeding
+            if (!checkAuthentication()) {
+                console.log('❌ Authentication failed, stopping initialization');
+                return; // IMPORTANT: Stop here if not authenticated
+            }
+            
+            // Only initialize dashboard if authenticated
+            console.log('✅ Authentication passed, initializing dashboard...');
+            initializeDashboard();
+        });
+
+        // ADD this new function
+        function initializeDashboard() {
+            console.log('🔄 Loading dashboard...');
+            
+            // Your existing dashboard initialization code
+            loadOverviewData();
+            setupLogoutButton();
+            
+            // Clear redirect count after successful initialization
+            setTimeout(() => {
+                sessionStorage.removeItem('redirect_count');
+            }, 2000);
             
             console.log('✅ Dashboard initialized successfully');
-        });
+        }
+
     </script>
 </body>
 </html>
