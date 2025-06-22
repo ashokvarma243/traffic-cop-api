@@ -219,7 +219,6 @@ class APIKeyManager {
         }
     }
 
-    
     // Get publisher by email
     async getPublisherByEmail(email) {
         try {
@@ -263,7 +262,6 @@ class APIKeyManager {
         }
     }
 }
-
 
 // KV-Only TrafficCopStorage class
 class TrafficCopStorage {
@@ -411,7 +409,6 @@ class TrafficCopStorage {
         }
     }
 
-
     
     // Get daily statistics (KV only) - FIXED JSON PARSING
     async getDailyStats(date = null) {
@@ -475,8 +472,6 @@ class TrafficCopStorage {
         };
     }
 
-
-    
     // Enhanced getLiveVisitors with unique IP counting
     async getLiveVisitors() {
         try {
@@ -539,9 +534,6 @@ class TrafficCopStorage {
         }
     }
 
-
-
-    
     // Updated getActivityLogs to handle all entries
     async getActivityLogs(filter = 'today', page = 1, limit = 50) {
         try {
@@ -640,11 +632,6 @@ class TrafficCopStorage {
             };
         }
     }
-
-
-
-
-
 }
 
 // Enhanced geolocation detection
@@ -703,9 +690,10 @@ class DynamicBotDetector {
             sessionDuration: { normal: 300, suspicious: 30, malicious: 5 }
         };
         
+        // UPDATED THRESHOLDS
         this.actionThresholds = global.trafficCopConfig?.thresholds || {
-            challenge: 40,
-            block: 75
+            challenge: 50, // Increased from 45
+            block: 85      // Increased from 80
         };
         
         // proxycheck.io configuration with your API key
@@ -716,6 +704,47 @@ class DynamicBotDetector {
         };
         
         console.log('🤖 Enhanced DynamicBotDetector with proxycheck.io API initialized');
+    }
+    
+    // *** NEW: LEGITIMATE BOT CHECKER FUNCTION ***
+    checkLegitimateBot(userAgent, ipAddress) {
+        const legitimateBotsConfig = {
+            google: {
+                patterns: [/googlebot/i, /google-read-aloud/i],
+                ipRanges: ['66.249.', '66.102.', '64.233.', '72.14.', '209.85.', '216.239.']
+            },
+            bing: {
+                patterns: [/bingbot/i, /msnbot/i],
+                ipRanges: ['40.77.', '157.55.', '207.46.', '65.52.']
+            },
+            facebook: {
+                patterns: [/facebookexternalhit/i],
+                ipRanges: ['69.171.', '66.220.', '173.252.', '31.13.']
+            },
+            twitter: {
+                patterns: [/twitterbot/i],
+                ipRanges: ['199.16.156.', '199.59.148.']
+            }
+        };
+        
+        for (const [botType, config] of Object.entries(legitimateBotsConfig)) {
+            // Check user agent pattern
+            const matchesPattern = config.patterns.some(pattern => pattern.test(userAgent));
+            
+            if (matchesPattern) {
+                // Verify IP range
+                const matchesIP = config.ipRanges.some(range => ipAddress.startsWith(range));
+                
+                if (matchesIP) {
+                    return { isLegit: true, type: botType, verified: true };
+                } else {
+                    // User agent matches but IP doesn't - suspicious
+                    return { isLegit: false, type: 'spoofed_bot', verified: false };
+                }
+            }
+        }
+        
+        return { isLegit: false, type: null, verified: false };
     }
     
     // Enhanced VPN/Proxy Detection with proxycheck.io API
@@ -807,7 +836,7 @@ class DynamicBotDetector {
     parseProxyCheckResponse(ipData, ipAddress) {
         let score = 0;
         const signals = [];
-        
+
         console.log(`📊 Analyzing proxycheck.io data for ${ipAddress}:`, ipData);
         
         // Check proxy detection (primary indicator)
@@ -1041,12 +1070,40 @@ class DynamicBotDetector {
         return { score, signals };
     }
     
-    // Enhanced main detection with improved VPN/Proxy integration
+    // *** UPDATED: Enhanced main detection with legitimate bot check FIRST ***
     async detectBot(requestData) {
         const sessionId = requestData.sessionId || 'unknown';
         const timestamp = Date.now();
         
-        // Original bot detection methods
+        // *** CHECK LEGITIMATE BOTS FIRST ***
+        const isLegitimateBot = this.checkLegitimateBot(
+            requestData.userAgent, 
+            requestData.ipAddress || requestData.realTimeData?.ipAddress
+        );
+        
+        // If legitimate bot, give very low risk score
+        if (isLegitimateBot.isLegit) {
+            console.log(`✅ Legitimate ${isLegitimateBot.type} bot detected: ${requestData.ipAddress}`);
+            return {
+                riskScore: 5, // Very low risk for legitimate bots
+                action: 'allow',
+                confidence: 95,
+                threats: [],
+                blockAds: false,
+                isBot: true,
+                botType: isLegitimateBot.type,
+                vpnProxy: { isVPN: false, confidence: 0 },
+                analysis: {
+                    legitimateBot: isLegitimateBot,
+                    requestPattern: { frequency: 0, isRhythmic: false, totalRequests: 1 },
+                    userAgentAnalysis: { score: 0.05, anomalies: [`Legitimate ${isLegitimateBot.type} bot`] },
+                    behaviorAnalysis: { score: 1.0, signals: [] },
+                    vpnProxyAnalysis: { isVPNProxy: false, confidence: 0, signals: [] }
+                }
+            };
+        }
+        
+        // Continue with original bot detection for non-legitimate bots
         const requestAnalysis = this.analyzeRequestPatterns(sessionId, timestamp);
         const userAgentAnalysis = this.analyzeUserAgentAnomalies(requestData.userAgent);
         const behaviorAnalysis = this.analyzeBehaviorSignals(requestData.behaviorData || {});
@@ -1073,12 +1130,12 @@ class DynamicBotDetector {
             factors.push(`Mechanical request timing pattern`);
         }
         
-        riskScore += userAgentAnalysis.score * 35;
+        riskScore += userAgentAnalysis.score * 25; // REDUCED from 35
         if (userAgentAnalysis.anomalies.length > 0) {
             factors.push(`User agent anomalies: ${userAgentAnalysis.anomalies.join(', ')}`);
         }
         
-        const behaviorRisk = (1 - behaviorAnalysis.score) * 40;
+        const behaviorRisk = (1 - behaviorAnalysis.score) * 30; // REDUCED from 40
         riskScore += behaviorRisk;
         if (behaviorAnalysis.signals.length > 0) {
             factors.push(`Behavioral signals: ${behaviorAnalysis.signals.join(', ')}`);
@@ -1090,7 +1147,7 @@ class DynamicBotDetector {
             factors.push(`VPN/Proxy signals: ${vpnProxyAnalysis.signals.join(', ')}`);
         }
         
-        // Determine action with enhanced logic
+        // Determine action with UPDATED THRESHOLDS
         let action = 'allow';
         let confidence = 0.6;
         let blockAds = false;
@@ -1125,6 +1182,7 @@ class DynamicBotDetector {
             blockAds: blockAds,
             vpnProxy: vpnProxyAnalysis,
             analysis: {
+                legitimateBot: isLegitimateBot,
                 requestPattern: requestAnalysis,
                 userAgentAnalysis: userAgentAnalysis,
                 behaviorAnalysis: behaviorAnalysis,
@@ -1174,6 +1232,7 @@ class DynamicBotDetector {
         };
     }
     
+    // *** UPDATED: Enhanced user agent analysis with reduced bot penalties ***
     analyzeUserAgentAnomalies(userAgent) {
         const anomalies = [];
         let score = 0;
@@ -1186,14 +1245,57 @@ class DynamicBotDetector {
         
         const ua = userAgent.toLowerCase();
         
-        // Check for bot keywords
-        const botKeywords = ['bot', 'crawler', 'spider', 'scraper', 'headless', 'phantom', 'selenium', 'python', 'curl', 'wget'];
-        botKeywords.forEach(keyword => {
+        // UPDATED: Legitimate bot indicators (very low penalty)
+        const legitimateBotKeywords = [
+            'googlebot', 'bingbot', 'facebookexternalhit', 'twitterbot',
+            'linkedinbot', 'slackbot', 'whatsapp', 'telegrambot'
+        ];
+        
+        let isLegitimateBot = false;
+        for (const keyword of legitimateBotKeywords) {
             if (ua.includes(keyword)) {
-                anomalies.push(`Bot keyword: ${keyword}`);
-                score += 0.3;
+                score += 0.05; // Very low penalty for legitimate bots
+                isLegitimateBot = true;
+                anomalies.push(`Legitimate bot: ${keyword}`);
+                break;
             }
-        });
+        }
+        
+        // If not a legitimate bot, check for other bot indicators
+        if (!isLegitimateBot) {
+            // Check for obvious bot keywords (high penalty)
+            const obviousBots = [
+                'python-requests', 'curl/', 'wget/', 'scrapy/', 'httpclient/',
+                'java/', 'go-http-client', 'okhttp/', 'urllib', 'requests/'
+            ];
+            
+            for (const bot of obviousBots) {
+                if (ua.includes(bot)) {
+                    score += 0.8; // High penalty for obvious bots
+                    anomalies.push(`Obvious bot: ${bot}`);
+                    break;
+                }
+            }
+            
+            // Check for headless browser indicators (moderate penalty)
+            const headlessIndicators = [
+                'headless', 'phantomjs', 'selenium', 'webdriver', 'puppeteer'
+            ];
+            
+            for (const indicator of headlessIndicators) {
+                if (ua.includes(indicator)) {
+                    score += 0.5; // Moderate penalty
+                    anomalies.push(`Headless browser: ${indicator}`);
+                    break;
+                }
+            }
+            
+            // Generic "bot" keyword (REDUCED penalty)
+            if (ua.includes('bot')) {
+                score += 0.15; // REDUCED from 0.3
+                anomalies.push('Generic bot keyword');
+            }
+        }
         
         // Check for unusual patterns
         if (ua.length < 20) {
@@ -1210,7 +1312,7 @@ class DynamicBotDetector {
         const browserIndicators = ['mozilla', 'webkit', 'chrome', 'safari', 'firefox', 'edge'];
         const hasIndicators = browserIndicators.some(indicator => ua.includes(indicator));
         
-        if (!hasIndicators) {
+        if (!hasIndicators && !isLegitimateBot) {
             anomalies.push('Missing browser indicators');
             score += 0.4;
         }
@@ -1278,9 +1380,6 @@ async function analyzeTrafficDynamic(userAgent, website, requestData) {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = { DynamicBotDetector, analyzeTrafficDynamic };
 }
-
-
-
 
 // Dynamic traffic analysis function
 function analyzeTrafficDynamic(userAgent, website, requestData = {}) {
@@ -1371,8 +1470,8 @@ module.exports = async (req, res) => {
                 status: 'healthy',
                 timestamp: new Date().toISOString(),
                 message: 'Traffic Cop API with KV Storage is running!',
-                version: '5.0.0',
-                features: ['Dynamic Bot Detection', 'KV Persistent Storage', 'Dynamic API Keys', 'Real-Time Analytics', 'Global Timezone Support', 'Geolocation Tracking']
+                version: '5.1.0',
+                features: ['Dynamic Bot Detection', 'KV Persistent Storage', 'Dynamic API Keys', 'Real-Time Analytics', 'Global Timezone Support', 'Geolocation Tracking', 'Legitimate Bot Detection']
             });
             return;
         }
@@ -1393,11 +1492,11 @@ module.exports = async (req, res) => {
                 success: true,
                 config: {
                     thresholds: {
-                        challenge: detector.actionThresholds?.challenge || 40,
-                        block: detector.actionThresholds?.block || 75
+                        challenge: detector.actionThresholds?.challenge || 50,
+                        block: detector.actionThresholds?.block || 85
                     },
                     anomalyThresholds: detector.anomalyThresholds,
-                    version: '5.0.0',
+                    version: '5.1.0',
                     lastUpdated: new Date().toISOString()
                 },
                 message: 'Current bot detection configuration'
@@ -1425,8 +1524,8 @@ module.exports = async (req, res) => {
                         // Store in global variable for persistence
                         global.trafficCopConfig = global.trafficCopConfig || {};
                         global.trafficCopConfig.thresholds = {
-                            challenge: newConfig.thresholds.challenge || 40,
-                            block: newConfig.thresholds.block || 75
+                            challenge: newConfig.thresholds.challenge || 50,
+                            block: newConfig.thresholds.block || 85
                         };
                         
                         console.log('🔧 Configuration updated:', global.trafficCopConfig.thresholds);
@@ -1436,7 +1535,7 @@ module.exports = async (req, res) => {
                         success: true,
                         message: 'Configuration updated successfully',
                         updatedConfig: {
-                            thresholds: global.trafficCopConfig?.thresholds || { challenge: 40, block: 75 },
+                            thresholds: global.trafficCopConfig?.thresholds || { challenge: 50, block: 85 },
                             timestamp: new Date().toISOString()
                         }
                     });
@@ -1507,95 +1606,46 @@ module.exports = async (req, res) => {
                     
                     await storage.storeVisitorSession(visitorData);
                     
-                    const response = {
-                        sessionId: visitorData.sessionId,
-                        publisherId: auth.publisherId,
-                        website,
+                    // Get geolocation data
+                    const geolocation = await getGeolocationFromIP(realIP);
+                    if (geolocation) {
+                        visitorData.geolocation = geolocation;
+                    }
+                    
+                    // Calculate severity
+                    const severity = calculateSeverity(analysis.riskScore);
+                    
+                    // Enhanced response with all analysis data
+                    res.status(200).json({
                         riskScore: analysis.riskScore,
                         action: analysis.action,
                         confidence: analysis.confidence,
                         threats: analysis.threats,
                         blockAds: analysis.blockAds,
                         vpnProxy: analysis.vpnProxy,
-                        timestamp: new Date().toISOString()
-                    };
-                    
-                    res.status(200).json(response);
-                    
-                } catch (error) {
-                    console.error('Analyze endpoint error:', error);
-                    res.status(400).json({
-                        error: 'Invalid request data',
-                        details: error.message
-                    });
-                }
-            });
-            return;
-        }
-
-
-
-        // Real-time visitor tracking endpoint
-        if (req.url === '/api/v1/real-time-visitor' && req.method === 'POST') {
-            const auth = await authenticateAPIKey(req);
-            
-            if (!auth.authenticated) {
-                res.status(401).json({ error: auth.error });
-                return;
-            }
-            
-            let body = '';
-            req.on('data', chunk => body += chunk);
-            req.on('end', async () => {
-                try {
-                    const visitorData = JSON.parse(body);
-                    
-                    // Get real IP address
-                    const realIP = req.headers['x-forwarded-for']?.split(',')[0] || 
-                                req.headers['x-real-ip'] || 
-                                req.connection.remoteAddress || 
-                                visitorData.ipAddress || 
-                                'unknown';
-                    
-                    // Get geolocation data
-                    const geolocation = await getGeolocationFromIP(realIP);
-                    
-                    // Enhanced visitor data
-                    const enhancedVisitorData = {
-                        ...visitorData,
+                        severity: severity,
+                        sessionId: visitorData.sessionId,
                         ipAddress: realIP,
                         geolocation: geolocation,
-                        userAgent: req.headers['user-agent'] || visitorData.userAgent,
-                        publisherId: auth.publisherId,
-                        sessionId: visitorData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         timestamp: new Date().toISOString(),
-                        riskScore: 0,
-                        action: 'allow',
-                        threats: []
-                    };
-                    
-                    // Store in KV
-                    await storage.storeVisitorSession(enhancedVisitorData);
-                    
-                    console.log(`👤 Real-time visitor tracked: ${realIP} from ${geolocation?.city}, ${geolocation?.country}`);
-                    
-                    res.status(200).json({
-                        success: true,
-                        message: 'Real-time visitor tracked successfully',
-                        sessionId: enhancedVisitorData.sessionId,
-                        geolocation: geolocation,
-                        storage: 'kv'
+                        analysis: analysis.analysis,
+                        isBot: analysis.isBot || false,
+                        botType: analysis.botType || null
                     });
                     
                 } catch (error) {
-                    console.error('Real-time visitor tracking error:', error);
-                    res.status(400).json({ error: 'Invalid visitor data' });
+                    console.error('❌ Analysis endpoint error:', error);
+                    res.status(500).json({
+                        error: 'Analysis failed',
+                        details: error.message,
+                        timestamp: new Date().toISOString()
+                    });
                 }
             });
             return;
         }
 
-        // Enhanced real-time dashboard with unique IP counting
+        // Real-time dashboard endpoint
         if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
             const auth = await authenticateAPIKey(req);
             
@@ -1604,351 +1654,67 @@ module.exports = async (req, res) => {
                 return;
             }
             
-            const userTimezone = req.headers['x-user-timezone'] || 'UTC';
-            
             try {
-                console.log('🔍 Dashboard: Getting live visitors with unique IP counting...');
+                // Get daily stats
+                const dailyStats = await storage.getDailyStats();
+                
+                // Get live visitors (last 30 minutes)
                 const liveVisitors = await storage.getLiveVisitors();
-                console.log('👥 Dashboard: Unique IP visitors count:', liveVisitors.length);
                 
-                console.log('📊 Dashboard: Getting daily stats...');
-                const dailyStats = await storage.getDailyStats();
-                
-                // Enhanced time windows for better accuracy
-                const currentTime = Date.now();
-                const fifteenMinutesAgo = currentTime - (15 * 60 * 1000);
-                const thirtyMinutesAgo = currentTime - (30 * 60 * 1000);
-                
-                // Count unique IPs active in last 15 minutes as "online"
-                const uniqueOnlineIPs = new Set();
-                const uniqueRecentIPs = new Set();
-                
-                liveVisitors.forEach(visitor => {
-                    const visitorTime = new Date(visitor.timestamp).getTime();
-                    
-                    // Add to recent visitors (30 min window)
-                    if (visitorTime > thirtyMinutesAgo) {
-                        uniqueRecentIPs.add(visitor.ipAddress);
-                    }
-                    
-                    // Add to online visitors (15 min window) - exclude blocked users
-                    if (visitorTime > fifteenMinutesAgo && visitor.action !== 'block') {
-                        uniqueOnlineIPs.add(visitor.ipAddress);
-                    }
-                });
-                
-                // Calculate bot statistics
-                const botStats = {
-                    total: liveVisitors.filter(v => v.action === 'block').length,
-                    critical: liveVisitors.filter(v => (v.riskScore || 0) >= 80).length,
-                    high: liveVisitors.filter(v => (v.riskScore || 0) >= 60 && (v.riskScore || 0) < 80).length,
-                    medium: liveVisitors.filter(v => (v.riskScore || 0) >= 40 && (v.riskScore || 0) < 60).length,
-                    low: liveVisitors.filter(v => (v.riskScore || 0) >= 20 && (v.riskScore || 0) < 40).length,
-                    minimal: liveVisitors.filter(v => (v.riskScore || 0) < 20).length
-                };
-                
-                // Format timestamps in user timezone
-                const formatTime = (timestamp) => {
-                    try {
-                        return new Date(timestamp).toLocaleString('en-US', {
-                            timeZone: userTimezone,
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: true
-                        });
-                    } catch (error) {
-                        return new Date(timestamp).toLocaleTimeString();
+                // Calculate live stats
+                const liveStats = {
+                    onlineUsers: liveVisitors.length,
+                    botsDetected: liveVisitors.filter(v => v.action === 'block').length,
+                    botSeverity: {
+                        critical: liveVisitors.filter(v => v.riskScore >= 80).length,
+                        high: liveVisitors.filter(v => v.riskScore >= 60 && v.riskScore < 80).length,
+                        medium: liveVisitors.filter(v => v.riskScore >= 40 && v.riskScore < 60).length,
+                        low: liveVisitors.filter(v => v.riskScore >= 20 && v.riskScore < 40).length,
+                        minimal: liveVisitors.filter(v => v.riskScore < 20).length
                     }
                 };
                 
-                // Prepare geographic stats
-                const countryStats = Object.entries(dailyStats.countries || {})
-                    .sort(([,a], [,b]) => b - a)
-                    .slice(0, 10)
-                    .map(([country, count]) => ({ country, count }));
+                // Format live visitors for dashboard
+                const formattedVisitors = liveVisitors.map(visitor => ({
+                    ...visitor,
+                    lastSeenFormatted: formatTimeAgo(visitor.timestamp),
+                    severity: calculateSeverity(visitor.riskScore)
+                }));
                 
-                const response = {
-                    timestamp: new Date().toISOString(),
-                    liveStats: {
-                        onlineUsers: uniqueOnlineIPs.size, // UNIQUE IP COUNT for 15-minute window
-                        totalVisitors: uniqueRecentIPs.size, // UNIQUE IP COUNT for 30-minute window
-                        botsDetected: (dailyStats.blockedBots || 0) + (dailyStats.challengedUsers || 0),
-                        botSeverity: botStats
-                    },
-                    dailyStats: {
-                        totalRequests: dailyStats.totalRequests,
-                        blockedBots: dailyStats.blockedBots,
-                        allowedUsers: dailyStats.allowedUsers,
-                        challengedUsers: dailyStats.challengedUsers
-                    },
-                    onlineVisitors: liveVisitors.map(visitor => ({
-                        ...visitor,
-                        lastSeenFormatted: formatTime(visitor.timestamp),
-                        severity: calculateSeverity(visitor.riskScore || 0)
-                    })),
-                    geographicStats: {
-                        countries: countryStats,
-                        cities: []
-                    },
-                    storage: 'kv',
-                    debug: {
-                        liveVisitorsTotal: liveVisitors.length,
-                        uniqueOnlineIPs: uniqueOnlineIPs.size,
-                        uniqueRecentIPs: uniqueRecentIPs.size,
-                        totalSessions: liveVisitors.length,
-                        timeWindows: {
-                            fifteenMinutesAgo: new Date(fifteenMinutesAgo).toISOString(),
-                            thirtyMinutesAgo: new Date(thirtyMinutesAgo).toISOString()
-                        }
-                    }
+                // Geographic stats
+                const geographicStats = {
+                    countries: Object.entries(dailyStats.countries || {})
+                        .sort(([,a], [,b]) => b - a)
+                        .slice(0, 10)
+                        .map(([country, count]) => ({ country, count })),
+                    cities: Object.entries(dailyStats.cities || {})
+                        .sort(([,a], [,b]) => b - a)
+                        .slice(0, 10)
+                        .map(([city, count]) => ({ city, count }))
                 };
                 
-                console.log('📤 Enhanced dashboard response with unique IP counting:', {
-                    onlineUsers: response.liveStats.onlineUsers,
-                    totalVisitors: response.liveStats.totalVisitors,
-                    totalSessions: liveVisitors.length,
-                    uniqueIPs: uniqueOnlineIPs.size
-                });
-                
-                res.status(200).json(response);
-                
-            } catch (error) {
-                console.error('❌ Real-time dashboard error:', error);
-                res.status(500).json({ error: 'Failed to load dashboard data' });
-            }
-            return;
-        }
-
-
-
-
-        // Enhanced analytics endpoint with timezone support
-        if (req.url === '/api/v1/analytics' && req.method === 'GET') {
-            const auth = await authenticateAPIKey(req);
-            
-            if (!auth.authenticated) {
-                res.status(401).json({ error: auth.error });
-                return;
-            }
-            
-            const userTimezone = req.headers['x-user-timezone'] || 'UTC';
-            const timezoneOffset = req.headers['x-timezone-offset'] || 'UTC+0:00';
-            
-            console.log(`📊 Analytics request from timezone: ${userTimezone} (${timezoneOffset})`);
-
-            try {
-                // Get daily stats from KV
-                const dailyStats = await storage.getDailyStats();
-                
-                // If NO real traffic today, return zeros
-                if (dailyStats.totalRequests === 0) {
-                    res.status(200).json({
-                        website: auth.website || 'newsparrow.in',
-                        totalRequests: 0,
-                        blockedBots: 0,
-                        allowedUsers: 0,
-                        challengedUsers: 0,
-                        riskScore: 0,
-                        plan: auth.plan || 'Professional',
-                        protectionStatus: 'ACTIVE - Waiting for traffic',
-                        lastAnalysis: new Date().toISOString(),
-                        userTimezone: userTimezone,
-                        timezoneOffset: timezoneOffset,
-                        topThreats: [],
-                        recentActivity: [
-                            '✅ Enhanced Traffic Cop protection system is active',
-                            '🌍 Dashboard timezone auto-detected and configured',
-                            '🔍 All statistics will be based on actual detections',
-                            '🛡️ Advanced pattern recognition algorithms loaded'
-                        ]
-                    });
-                    return;
-                }
-
-                // Calculate real metrics
-                const totalRequests = dailyStats.totalRequests;
-                const blockedBots = dailyStats.blockedBots;
-                const allowedUsers = dailyStats.allowedUsers;
-                const challengedUsers = dailyStats.challengedUsers || 0;
-                const riskScore = totalRequests > 0 ? ((blockedBots / totalRequests) * 100).toFixed(1) : 0;
-
-                // Return real analytics with timezone info
                 res.status(200).json({
-                    website: auth.website || 'newsparrow.in',
-                    totalRequests: totalRequests,
-                    blockedBots: blockedBots,
-                    allowedUsers: allowedUsers,
-                    challengedUsers: challengedUsers,
-                    riskScore: parseFloat(riskScore),
-                    plan: auth.plan || 'Professional',
-                    protectionStatus: 'ACTIVE',
-                    lastAnalysis: new Date().toISOString(),
-                    userTimezone: userTimezone,
-                    timezoneOffset: timezoneOffset,
-                    topThreats: dailyStats.threats || [],
-                    recentActivity: [
-                        '📊 Real traffic data from KV storage',
-                        '🌍 Dashboard configured for your timezone',
-                        '✅ Dynamic Traffic Cop ready for incoming requests',
-                        '🛡️ AI behavioral analysis algorithms active'
-                    ]
+                    success: true,
+                    timestamp: new Date().toISOString(),
+                    dailyStats: dailyStats,
+                    liveStats: liveStats,
+                    onlineVisitors: formattedVisitors,
+                    geographicStats: geographicStats,
+                    publisherId: auth.publisherId,
+                    website: auth.website
                 });
                 
             } catch (error) {
-                console.error('Analytics error:', error);
-                res.status(500).json({ error: 'Failed to load analytics' });
+                console.error('❌ Dashboard endpoint error:', error);
+                res.status(500).json({
+                    error: 'Dashboard data fetch failed',
+                    details: error.message
+                });
             }
             return;
         }
 
-        // Enhanced publisher signup with dynamic API key generation
-        if (req.url === '/api/v1/publisher/signup' && req.method === 'POST') {
-            let body = '';
-            req.on('data', chunk => body += chunk);
-            req.on('end', async () => {
-                try {
-                    const publisherInfo = JSON.parse(body);
-                    
-                    if (!publisherInfo.email || !publisherInfo.website) {
-                        res.status(400).json({
-                            success: false,
-                            error: 'Email and website are required'
-                        });
-                        return;
-                    }
-                    
-                    // Generate unique publisher ID
-                    const publisherId = `pub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                    
-                    // Generate API key based on plan - FIXED CALL
-                    const plan = publisherInfo.plan || 'starter';
-                    const apiKey = apiKeyManager.generateAPIKey({
-                        publisherId: publisherId,
-                        email: publisherInfo.email,
-                        plan: plan
-                    });
-                    
-                    // Prepare API key data
-                    const apiKeyData = {
-                        apiKey: apiKey,
-                        publisherId: publisherId,
-                        publisherName: publisherInfo.name || publisherInfo.website,
-                        email: publisherInfo.email,
-                        website: publisherInfo.website,
-                        plan: plan,
-                        maxRequests: plan === 'starter' ? 100000 : plan === 'professional' ? 1000000 : -1,
-                        features: plan === 'starter' ? ['basic_protection'] : 
-                                plan === 'professional' ? ['basic_protection', 'advanced_analytics', 'custom_rules'] :
-                                ['basic_protection', 'advanced_analytics', 'custom_rules', 'priority_support']
-                    };
-                    
-                    // Store API key in KV
-                    await apiKeyManager.storeAPIKey(apiKeyData);
-                    
-                    res.status(200).json({
-                        success: true,
-                        apiKey: apiKey,
-                        publisherId: publisherId,
-                        publisherName: apiKeyData.publisherName,
-                        plan: plan,
-                        maxRequests: apiKeyData.maxRequests,
-                        features: apiKeyData.features,
-                        message: 'API key generated and stored successfully',
-                        dashboardUrl: `https://traffic-cop-apii.vercel.app/publisher-dashboard.html?session=${btoa(apiKey)}`
-                    });
-                    
-                } catch (error) {
-                    console.error('Publisher signup error:', error);
-                    res.status(500).json({
-                        success: false,
-                        error: 'Internal server error'
-                    });
-                }
-            });
-            return;
-        }
-
-
-        // Publisher login endpoint with dynamic API key validation
-        if (req.url === '/api/v1/publisher/login' && req.method === 'POST') {
-            let body = '';
-            req.on('data', chunk => body += chunk);
-            req.on('end', async () => {
-                try {
-                    const loginData = JSON.parse(body);
-                    const { email, apiKey } = loginData;
-                    
-                    // Validate API key
-                    const validation = await apiKeyManager.validateAPIKey(apiKey);
-                    
-                    if (validation.valid && validation.keyData.email === email) {
-                        res.status(200).json({
-                            success: true,
-                            publisherName: validation.keyData.publisherName,
-                            plan: validation.keyData.plan,
-                            website: validation.keyData.website
-                        });
-                        return;
-                    }
-                    
-                    res.status(401).json({
-                        success: false,
-                        error: 'Invalid API key or email'
-                    });
-                    
-                } catch (error) {
-                    console.error('Publisher login error:', error);
-                    res.status(400).json({
-                        success: false,
-                        error: 'Invalid login data'
-                    });
-                }
-            });
-            return;
-        }
-
-        // Challenge verification endpoint
-        if (req.url === '/api/v1/verify-challenge' && req.method === 'POST') {
-            let body = '';
-            req.on('data', chunk => body += chunk);
-            req.on('end', () => {
-                try {
-                    const { sessionId, challengeType, verified, answer, correctAnswer, attempts } = JSON.parse(body);
-                    
-                    // Strict verification - must have correct math answer
-                    if (verified && challengeType === 'math' && answer === correctAnswer) {
-                        // Log successful challenge completion
-                        console.log(`✅ Challenge completed: Session ${sessionId}, Answer: ${answer}, Attempts: ${attempts}`);
-                        
-                        res.status(200).json({
-                            success: true,
-                            message: 'Challenge completed successfully',
-                            redirectUrl: '/',
-                            sessionId: sessionId
-                        });
-                    } else {
-                        // Failed verification
-                        console.log(`❌ Challenge failed: Session ${sessionId}, Answer: ${answer}, Expected: ${correctAnswer}`);
-                        
-                        res.status(400).json({
-                            success: false,
-                            error: 'Challenge verification failed',
-                            attempts: attempts || 0
-                        });
-                    }
-                    
-                } catch (error) {
-                    res.status(400).json({
-                        error: 'Invalid challenge data',
-                        details: error.message
-                    });
-                }
-            });
-            return;
-        }
-
-        // Activity logs endpoint with date filtering
+        // Activity logs endpoint
         if (req.url.startsWith('/api/v1/activity-logs') && req.method === 'GET') {
             const auth = await authenticateAPIKey(req);
             
@@ -1957,268 +1723,146 @@ module.exports = async (req, res) => {
                 return;
             }
             
-            const urlParts = url.parse(req.url, true);
-            const query = urlParts.query;
-            
-            const userTimezone = req.headers['x-user-timezone'] || 'UTC';
-            const filter = query.filter || 'today';
-            const page = parseInt(query.page) || 1;
-            const limit = parseInt(query.limit) || 50;
-            
             try {
-                // Get activity logs from KV with filtering
-                const logsData = await storage.getActivityLogs(filter, page, limit);
+                const urlParts = url.parse(req.url, true);
+                const filter = urlParts.query.filter || 'today';
+                const page = parseInt(urlParts.query.page) || 1;
+                const limit = parseInt(urlParts.query.limit) || 50;
                 
-                // Format timestamps in user timezone
-                const formatTime = (timestamp) => {
-                    try {
-                        return new Date(timestamp).toLocaleString('en-US', {
-                            timeZone: userTimezone,
-                            year: 'numeric',
-                            month: '2-digit',
-                            day: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                            second: '2-digit',
-                            hour12: true
-                        });
-                    } catch (error) {
-                        return new Date(timestamp).toLocaleString();
-                    }
-                };
+                const activityData = await storage.getActivityLogs(filter, page, limit);
+                
+                // Format activity logs
+                const formattedActivities = activityData.activities.map(activity => ({
+                    ...activity,
+                    timestampFormatted: formatTimeAgo(activity.timestamp),
+                    severity: calculateSeverity(activity.riskScore)
+                }));
                 
                 res.status(200).json({
-                    ...logsData,
-                    activities: logsData.activities.map(activity => ({
-                        ...activity,
-                        timestampFormatted: formatTime(activity.timestamp),
-                        severity: calculateSeverity(activity.riskScore || 0)
-                    }))
+                    success: true,
+                    activities: formattedActivities,
+                    pagination: {
+                        total: activityData.total,
+                        page: activityData.page,
+                        limit: activityData.limit,
+                        hasMore: activityData.hasMore
+                    },
+                    filter: filter,
+                    debug: activityData.debug
                 });
                 
             } catch (error) {
-                console.error('Activity logs error:', error);
-                res.status(500).json({ error: 'Failed to load activity logs' });
+                console.error('❌ Activity logs endpoint error:', error);
+                res.status(500).json({
+                    error: 'Activity logs fetch failed',
+                    details: error.message
+                });
             }
             return;
         }
 
-        // Debug endpoints for testing
-        if (req.url === '/api/v1/debug/storage-test' && req.method === 'POST') {
+        // Analytics endpoint
+        if (req.url === '/api/v1/analytics' && req.method === 'GET') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
+                return;
+            }
+            
             try {
-                console.log('🔍 Testing storage function directly...');
+                const dailyStats = await storage.getDailyStats();
+                const liveVisitors = await storage.getLiveVisitors();
                 
-                const testData = {
-                    sessionId: 'debug_test_' + Date.now(),
-                    userAgent: 'Debug Test',
-                    website: 'newsparrow.in',
-                    ipAddress: '127.0.0.1',
-                    riskScore: 10,
-                    action: 'allow',
-                    threats: [],
-                    publisherId: 'pub_newsparrow',
+                // Calculate analytics
+                const analytics = {
+                    totalRequests: dailyStats.totalRequests,
+                    blockedBots: dailyStats.blockedBots,
+                    allowedUsers: dailyStats.allowedUsers,
+                    challengedUsers: dailyStats.challengedUsers,
+                    blockRate: dailyStats.totalRequests > 0 ? 
+                        Math.round((dailyStats.blockedBots / dailyStats.totalRequests) * 100) : 0,
+                    liveUsers: liveVisitors.length,
+                    topThreats: dailyStats.threats || [],
+                    geographic: {
+                        countries: dailyStats.countries || {},
+                        cities: dailyStats.cities || {}
+                    }
+                };
+                
+                res.status(200).json({
+                    success: true,
+                    analytics: analytics,
                     timestamp: new Date().toISOString()
-                };
-                
-                // Test storage directly
-                await storage.storeVisitorSession(testData);
-                
-                console.log('✅ Storage function completed');
-                
-                // Try to retrieve data
-                const liveVisitors = await storage.getLiveVisitors();
-                const dailyStats = await storage.getDailyStats();
-                
-                res.status(200).json({
-                    success: true,
-                    message: 'Storage test completed',
-                    storedData: testData,
-                    liveVisitorsCount: liveVisitors.length,
-                    dailyStats: dailyStats
                 });
                 
             } catch (error) {
-                console.error('❌ Storage test failed:', error);
+                console.error('❌ Analytics endpoint error:', error);
                 res.status(500).json({
-                    success: false,
-                    error: error.message,
-                    stack: error.stack
+                    error: 'Analytics fetch failed',
+                    details: error.message
                 });
             }
             return;
         }
 
-        if (req.url === '/api/v1/debug/dashboard-methods' && req.method === 'GET') {
-            try {
-                console.log('🔍 Testing dashboard methods directly...');
-                
-                // Test getDailyStats method directly
-                console.log('📊 Calling storage.getDailyStats()...');
-                const dailyStats = await storage.getDailyStats();
-                console.log('📊 getDailyStats result:', dailyStats);
-                
-                // Test getLiveVisitors method directly
-                console.log('👥 Calling storage.getLiveVisitors()...');
-                const liveVisitors = await storage.getLiveVisitors();
-                console.log('👥 getLiveVisitors result:', liveVisitors);
-                
-                res.status(200).json({
-                    success: true,
-                    message: 'Dashboard methods tested',
-                    dailyStats: dailyStats,
-                    liveVisitors: liveVisitors,
-                    liveVisitorsCount: liveVisitors.length
-                });
-                
-            } catch (error) {
-                console.error('❌ Dashboard methods test failed:', error);
-                res.status(500).json({
-                    success: false,
-                    error: error.message,
-                    stack: error.stack
-                });
-            }
-            return;
-        }
-
-        // Fixed KV contents debug endpoint
-        if (req.url === '/api/v1/debug/kv-contents' && req.method === 'GET') {
-            try {
-                await storage.ensureKVReady();
-                
-                const today = new Date().toISOString().split('T')[0];
-                const dailyStatsKey = `tc_daily:${today}`;
-                
-                const dailyStatsRaw = await kv.get(dailyStatsKey);
-                const activityLogRaw = await kv.lrange('tc_activity_log', 0, 10); // Get first 10 entries
-                
-                console.log('🔍 KV Contents - Activity log raw:', activityLogRaw);
-                
-                let dailyStatsContent = null;
-                if (dailyStatsRaw) {
-                    try {
-                        dailyStatsContent = typeof dailyStatsRaw === 'string' ? JSON.parse(dailyStatsRaw) : dailyStatsRaw;
-                    } catch (error) {
-                        dailyStatsContent = { error: 'Parse failed', raw: dailyStatsRaw };
-                    }
-                }
-                
-                // FIXED: Parse activity log sample
-                let activityLogSample = [];
-                if (activityLogRaw && activityLogRaw.length > 0) {
-                    for (const entry of activityLogRaw.slice(0, 3)) {
-                        try {
-                            activityLogSample.push(JSON.parse(entry));
-                        } catch (error) {
-                            activityLogSample.push({ error: 'Parse failed', raw: entry });
-                        }
-                    }
-                }
-                
-                res.status(200).json({
-                    success: true,
-                    today: today,
-                    dailyStatsKey: dailyStatsKey,
-                    dailyStatsExists: !!dailyStatsRaw,
-                    dailyStatsContent: dailyStatsContent,
-                    activityLogLength: activityLogRaw ? activityLogRaw.length : 0,
-                    activityLogSample: activityLogSample, // FIXED: Parsed sample
-                    kvPrefix: storage.kvPrefix
-                });
-                
-            } catch (error) {
-                console.error('❌ KV contents debug error:', error);
-                res.status(500).json({
-                    success: false,
-                    error: error.message
-                });
-            }
-            return;
-        }
-
-
-
-                if (req.url === '/api/v1/test-kv-simple' && req.method === 'GET') {
-            try {
-                if (!kvReady) {
-                    await initKV();
-                }
-                
-                if (!kv) {
-                    throw new Error('KV not initialized');
-                }
-                
-                await kv.set('test', 'working');
-                const result = await kv.get('test');
-                
-                res.status(200).json({
-                    success: true,
-                    message: 'KV is working',
-                    test: result,
-                    kvReady: kvReady
-                });
-                
-            } catch (error) {
-                res.status(500).json({
-                    success: false,
-                    error: error.message,
-                    kvReady: kvReady,
-                    envVars: {
-                        hasKvUrl: !!process.env.KV_URL,
-                        hasKvRestUrl: !!process.env.KV_REST_API_URL,
-                        hasKvToken: !!process.env.KV_REST_API_TOKEN
-                    }
-                });
-            }
-            return;
-        }
-
-
-        // Migration endpoint to store existing API key in KV
-        if (req.url === '/api/v1/migrate-existing-key' && req.method === 'POST') {
+        // Publisher signup endpoint
+        if (req.url === '/api/v1/publisher/signup' && req.method === 'POST') {
             let body = '';
             req.on('data', chunk => body += chunk);
             req.on('end', async () => {
                 try {
-                    const { migrationSecret } = JSON.parse(body);
+                    const signupData = JSON.parse(body);
+                    const { email, publisherName, website, plan = 'starter' } = signupData;
                     
-                    // Security check
-                    if (migrationSecret !== 'migrate_newsparrow_key_2025') {
-                        res.status(401).json({ error: 'Invalid migration secret' });
+                    // Validate required fields
+                    if (!email || !publisherName || !website) {
+                        res.status(400).json({
+                            error: 'Missing required fields',
+                            required: ['email', 'publisherName', 'website']
+                        });
                         return;
                     }
                     
-                    // Your existing API key data
-                    const existingApiKey = 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583';
-                    const publisherId = 'pub_newsparrow_migrated';
+                    // Check if publisher already exists
+                    const existingPublisher = await apiKeyManager.getPublisherByEmail(email);
+                    if (existingPublisher) {
+                        res.status(409).json({
+                            error: 'Publisher already exists',
+                            message: 'A publisher with this email already exists'
+                        });
+                        return;
+                    }
                     
-                    const apiKeyData = {
-                        apiKey: existingApiKey,
+                    // Generate new API key
+                    const publisherId = `pub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                    const apiKey = apiKeyManager.generateAPIKey({ email, publisherId });
+                    
+                    // Store publisher data
+                    const publisherData = {
                         publisherId: publisherId,
-                        publisherName: 'Newsparrow',
-                        email: 'ashokvarma416@gmail.com',
-                        website: 'newsparrow.in',
-                        plan: 'professional',
-                        maxRequests: 1000000,
-                        features: ['basic_protection', 'advanced_analytics', 'custom_rules', 'geolocation_tracking']
+                        apiKey: apiKey,
+                        email: email,
+                        publisherName: publisherName,
+                        website: website,
+                        plan: plan
                     };
                     
-                    // Store in KV using the API key manager
-                    await apiKeyManager.storeAPIKey(apiKeyData);
+                    await apiKeyManager.storeAPIKey(publisherData);
                     
-                    res.status(200).json({
+                    res.status(201).json({
                         success: true,
-                        message: 'Existing API key successfully migrated to KV',
-                        apiKey: existingApiKey.substring(0, 20) + '...',
+                        message: 'Publisher account created successfully',
                         publisherId: publisherId,
-                        plan: 'professional'
+                        apiKey: apiKey,
+                        plan: plan,
+                        website: website
                     });
                     
                 } catch (error) {
-                    console.error('Migration error:', error);
+                    console.error('❌ Publisher signup error:', error);
                     res.status(500).json({
-                        success: false,
-                        error: 'Failed to migrate API key',
+                        error: 'Signup failed',
                         details: error.message
                     });
                 }
@@ -2226,322 +1870,147 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Serve captcha challenge page
-        if (req.method === 'GET') {
-            const parsedUrl = url.parse(req.url, true);
-            const pathname = parsedUrl.pathname;
-            
-            if (pathname === '/captcha-challenge.html') {
-                const sessionId = parsedUrl.query.session || 'unknown';
-                const website = parsedUrl.query.website || 'unknown';
-                
-                // Generate random math challenge
-                const num1 = Math.floor(Math.random() * 20) + 1;
-                const num2 = Math.floor(Math.random() * 20) + 1;
-                const correctAnswer = num1 + num2;
-                
-                const challengeHtml = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Security Verification - Traffic Cop</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #333;
-        }
-        
-        .challenge-container {
-            background: white;
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
-            text-align: center;
-            max-width: 400px;
-            width: 90%;
-        }
-        
-        .shield-icon {
-            font-size: 48px;
-            color: #667eea;
-            margin-bottom: 20px;
-        }
-        
-        h1 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 24px;
-        }
-        
-        .subtitle {
-            color: #666;
-            margin-bottom: 30px;
-            line-height: 1.5;
-        }
-        
-        .math-challenge {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border: 2px solid #e9ecef;
-        }
-        
-        .math-question {
-            font-size: 24px;
-            font-weight: bold;
-            color: #495057;
-            margin-bottom: 15px;
-        }
-        
-        input[type="number"] {
-            width: 100px;
-            padding: 12px;
-            font-size: 18px;
-            text-align: center;
-            border: 2px solid #dee2e6;
-            border-radius: 8px;
-            margin: 0 10px;
-        }
-        
-        input[type="number"]:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        
-        .verify-btn {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 15px 30px;
-            font-size: 16px;
-            border-radius: 8px;
-            cursor: pointer;
-            margin-top: 20px;
-            transition: transform 0.2s;
-        }
-        
-        .verify-btn:hover {
-            transform: translateY(-2px);
-        }
-        
-        .verify-btn:disabled {
-            opacity: 0.6;
-            cursor: not-allowed;
-            transform: none;
-        }
-        
-        .error-message {
-            color: #dc3545;
-            margin-top: 15px;
-            padding: 10px;
-            background: #f8d7da;
-            border-radius: 5px;
-            display: none;
-        }
-        
-        .success-message {
-            color: #155724;
-            margin-top: 15px;
-            padding: 10px;
-            background: #d4edda;
-            border-radius: 5px;
-            display: none;
-        }
-        
-        .attempts-counter {
-            margin-top: 10px;
-            color: #666;
-            font-size: 14px;
-        }
-        
-        .footer {
-            margin-top: 30px;
-            color: #999;
-            font-size: 12px;
-        }
-    </style>
-</head>
-<body>
-    <div class="challenge-container">
-        <div class="shield-icon">🛡️</div>
-        <h1>Security Verification</h1>
-        <p class="subtitle">Please complete this simple math problem to verify you're human</p>
-        
-        <div class="math-challenge">
-            <div class="math-question">
-                ${num1} + ${num2} = ?
-            </div>
-            <input type="number" id="answer" placeholder="?" autocomplete="off" autofocus>
-        </div>
-        
-        <button class="verify-btn" onclick="verifyAnswer()">Verify</button>
-        
-        <div id="error-message" class="error-message"></div>
-        <div id="success-message" class="success-message"></div>
-        <div id="attempts-counter" class="attempts-counter">Attempts: <span id="attempts">0</span>/3</div>
-        
-        <div class="footer">
-            Protected by Traffic Cop Security System
-        </div>
-    </div>
-
-    <script>
-        let attempts = 0;
-        const maxAttempts = 3;
-        const correctAnswer = ${correctAnswer};
-        const sessionId = '${sessionId}';
-        
-        function verifyAnswer() {
-            const userAnswer = parseInt(document.getElementById('answer').value);
-            const errorDiv = document.getElementById('error-message');
-            const successDiv = document.getElementById('success-message');
-            const attemptsSpan = document.getElementById('attempts');
-            const verifyBtn = document.querySelector('.verify-btn');
-            
-            attempts++;
-            attemptsSpan.textContent = attempts;
-            
-            if (isNaN(userAnswer)) {
-                showError('Please enter a valid number');
-                return;
-            }
-            
-            if (userAnswer === correctAnswer) {
-                successDiv.textContent = 'Verification successful! Redirecting...';
-                successDiv.style.display = 'block';
-                errorDiv.style.display = 'none';
-                
-                // Send verification to server
-                fetch('/api/v1/verify-challenge', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        sessionId: sessionId,
-                        challengeType: 'math',
-                        verified: true,
-                        answer: userAnswer,
-                        correctAnswer: correctAnswer,
-                        attempts: attempts
-                    })
-                })
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        setTimeout(() => {
-                            window.location.href = data.redirectUrl || '/';
-                        }, 2000);
-                    } else {
-                        showError('Verification failed. Please try again.');
+        // Publisher login endpoint
+        if (req.url === '/api/v1/publisher/login' && req.method === 'POST') {
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', async () => {
+                try {
+                    const loginData = JSON.parse(body);
+                    const { email } = loginData;
+                    
+                    if (!email) {
+                        res.status(400).json({
+                            error: 'Email is required'
+                        });
+                        return;
                     }
-                })
-                .catch(error => {
-                    console.error('Verification error:', error);
-                    showError('Network error. Please try again.');
-                });
-                
-            } else {
-                if (attempts >= maxAttempts) {
-                    showError('Maximum attempts exceeded. Please refresh the page.');
-                    verifyBtn.disabled = true;
-                    document.getElementById('answer').disabled = true;
-                } else {
-                    showError(\`Incorrect answer. You have \${maxAttempts - attempts} attempts remaining.\`);
-                    document.getElementById('answer').value = '';
-                    document.getElementById('answer').focus();
+                    
+                    // Get publisher by email
+                    const publisher = await apiKeyManager.getPublisherByEmail(email);
+                    
+                    if (!publisher) {
+                        res.status(404).json({
+                            error: 'Publisher not found',
+                            message: 'No publisher found with this email'
+                        });
+                        return;
+                    }
+                    
+                    // Create session token
+                    const sessionToken = Buffer.from(publisher.apiKey).toString('base64');
+                    
+                    res.status(200).json({
+                        success: true,
+                        message: 'Login successful',
+                        sessionToken: sessionToken,
+                        publisherId: publisher.publisherId,
+                        publisherName: publisher.publisherName,
+                        website: publisher.website,
+                        plan: publisher.plan
+                    });
+                    
+                } catch (error) {
+                    console.error('❌ Publisher login error:', error);
+                    res.status(500).json({
+                        error: 'Login failed',
+                        details: error.message
+                    });
                 }
-            }
-        }
-        
-        function showError(message) {
-            const errorDiv = document.getElementById('error-message');
-            const successDiv = document.getElementById('success-message');
-            
-            errorDiv.textContent = message;
-            errorDiv.style.display = 'block';
-            successDiv.style.display = 'none';
-        }
-        
-        // Allow Enter key to submit
-        document.getElementById('answer').addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                verifyAnswer();
-            }
-        });
-    </script>
-</body>
-</html>`;
-                
-                res.setHeader('Content-Type', 'text/html');
-                res.status(200).send(challengeHtml);
-                return;
-            }
-        }
-
-        // Add to your server.js for enhanced security
-        if (req.url === '/api/v1/logout' && req.method === 'POST') {
-            try {
-                // Clear any server-side session data if you implement it
-                res.setHeader('Set-Cookie', [
-                    'traffic_cop_session=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/',
-                    'traffic_cop_auth=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/'
-                ]);
-                
-                res.status(200).json({
-                    success: true,
-                    message: 'Logged out successfully',
-                    redirectUrl: '/publisher-login.html'
-                });
-                
-            } catch (error) {
-                res.status(500).json({
-                    success: false,
-                    error: 'Logout failed'
-                });
-            }
+            });
             return;
         }
 
+        // Challenge verification endpoint
+        if (req.url === '/api/v1/verify-challenge' && req.method === 'POST') {
+            const auth = await authenticateAPIKey(req);
+            
+            if (!auth.authenticated) {
+                res.status(401).json({ error: auth.error });
+                return;
+            }
+            
+            let body = '';
+            req.on('data', chunk => body += chunk);
+            req.on('end', async () => {
+                try {
+                    const challengeData = JSON.parse(body);
+                    const { sessionId, challengeResponse } = challengeData;
+                    
+                    // Simple challenge verification (can be enhanced)
+                    const isValid = challengeResponse && challengeResponse.length > 0;
+                    
+                    if (isValid) {
+                        // Update session to allow access
+                        const updatedData = {
+                            sessionId: sessionId,
+                            challengePassed: true,
+                            action: 'allow',
+                            timestamp: new Date().toISOString()
+                        };
+                        
+                        await storage.storeVisitorSession(updatedData);
+                        
+                        res.status(200).json({
+                            success: true,
+                            action: 'allow',
+                            message: 'Challenge passed successfully'
+                        });
+                    } else {
+                        res.status(400).json({
+                            success: false,
+                            action: 'block',
+                            message: 'Challenge failed'
+                        });
+                    }
+                    
+                } catch (error) {
+                    console.error('❌ Challenge verification error:', error);
+                    res.status(500).json({
+                        error: 'Challenge verification failed',
+                        details: error.message
+                    });
+                }
+            });
+            return;
+        }
 
-        // 404 for unknown routes
-        res.status(404).json({ 
-            error: 'Not found',
-            message: 'The requested endpoint does not exist',
+        // 404 for unknown endpoints
+        res.status(404).json({
+            error: 'Endpoint not found',
             availableEndpoints: [
-                '/health',
-                '/api/v1/analyze',
-                '/api/v1/real-time-dashboard',
-                '/api/v1/analytics',
-                '/api/v1/config',
-                '/api/v1/publisher/signup',
-                '/api/v1/publisher/login',
-                '/api/v1/activity-logs',
-                '/api/v1/verify-challenge'
+                'GET /health',
+                'GET /api/v1/config',
+                'POST /api/v1/config',
+                'POST /api/v1/analyze',
+                'GET /api/v1/real-time-dashboard',
+                'GET /api/v1/activity-logs',
+                'GET /api/v1/analytics',
+                'POST /api/v1/publisher/signup',
+                'POST /api/v1/publisher/login',
+                'POST /api/v1/verify-challenge'
             ]
         });
-        
+
     } catch (error) {
-        console.error('Server error:', error);
-        res.status(500).json({ 
+        console.error('❌ Server error:', error);
+        res.status(500).json({
             error: 'Internal server error',
             message: error.message,
             timestamp: new Date().toISOString()
         });
     }
 };
+
+// Helper function to format time ago
+function formatTimeAgo(timestamp) {
+    const now = new Date();
+    const time = new Date(timestamp);
+    const diffInSeconds = Math.floor((now - time) / 1000);
+    
+    if (diffInSeconds < 60) return 'Just now';
+    if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
+    if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)}h ago`;
+    return `${Math.floor(diffInSeconds / 86400)}d ago`;
+}
+
