@@ -908,6 +908,17 @@ class DynamicBotDetector {
         
         return { isLegit: false, type: null, verified: false };
     }
+    // Add this helper method to your DynamicBotDetector class
+    calculateBotSeverity(riskScore) {
+        return {
+            critical: riskScore >= 80 ? 1 : 0,
+            high: (riskScore >= 60 && riskScore < 80) ? 1 : 0,
+            medium: (riskScore >= 40 && riskScore < 60) ? 1 : 0,
+            low: (riskScore >= 20 && riskScore < 40) ? 1 : 0,
+            minimal: riskScore < 20 ? 1 : 0
+        };
+    }
+
     
     // Enhanced VPN/Proxy Detection with proxycheck.io API
     async detectVPNProxy(ipAddress, userAgent, headers) {
@@ -1308,7 +1319,9 @@ class DynamicBotDetector {
                 requestPattern: requestAnalysis,
                 userAgentAnalysis: userAgentAnalysis,
                 behaviorAnalysis: behaviorAnalysis,
-                vpnProxyAnalysis: vpnProxyAnalysis
+                vpnProxyAnalysis: vpnProxyAnalysis,
+                // FIXED: Always include botSeverity
+                botSeverity: this.calculateBotSeverity(riskScore)
             }
         };
     }
