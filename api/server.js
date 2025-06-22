@@ -477,14 +477,13 @@ class TrafficCopStorage {
 
 
     
-    // Fixed getLiveVisitors method
+    // Enhanced getLiveVisitors with unique IP counting
     async getLiveVisitors() {
         try {
             await this.ensureKVReady();
             
             console.log('👥 Getting live visitors from activity log...');
             
-            // Use the same logic as the working getActivityLogs
             const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, -1);
             console.log('📋 Activity log entries found:', activityLog ? activityLog.length : 0);
             
@@ -493,10 +492,10 @@ class TrafficCopStorage {
                 return [];
             }
             
-            // Use 30-minute window for live visitors (more realistic)
+            // Use 30-minute window for live visitors
             const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
             const recentVisitors = [];
-            const uniqueSessions = new Set();
+            const uniqueIPs = new Set(); // Track unique IPs
             
             for (let i = 0; i < activityLog.length; i++) {
                 try {
@@ -510,20 +509,20 @@ class TrafficCopStorage {
                     }
                     
                     // Validate required fields
-                    if (!visitor || !visitor.timestamp || !visitor.sessionId) {
+                    if (!visitor || !visitor.timestamp || !visitor.ipAddress) {
                         continue;
                     }
                     
                     const visitorTime = new Date(visitor.timestamp).getTime();
                     
-                    console.log(`🕒 Checking visitor: ${visitor.sessionId}, Time: ${new Date(visitorTime).toISOString()}, Cutoff: ${new Date(thirtyMinutesAgo).toISOString()}`);
-                    
                     if (visitorTime > thirtyMinutesAgo) {
-                        // Only count unique sessions as "live users"
-                        if (!uniqueSessions.has(visitor.sessionId)) {
-                            uniqueSessions.add(visitor.sessionId);
+                        // Only count unique IPs for live users
+                        if (!uniqueIPs.has(visitor.ipAddress)) {
+                            uniqueIPs.add(visitor.ipAddress);
                             recentVisitors.push(visitor);
-                            console.log(`✅ Added recent visitor: ${visitor.sessionId}`);
+                            console.log(`✅ Added unique IP visitor: ${visitor.ipAddress}`);
+                        } else {
+                            console.log(`⏭️ Skipped duplicate IP: ${visitor.ipAddress}`);
                         }
                     }
                 } catch (parseError) {
@@ -531,7 +530,7 @@ class TrafficCopStorage {
                 }
             }
             
-            console.log('👥 Found recent unique visitors:', recentVisitors.length);
+            console.log(`👥 Found ${recentVisitors.length} unique IP visitors from ${activityLog.length} total sessions`);
             return recentVisitors.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             
         } catch (error) {
@@ -539,6 +538,7 @@ class TrafficCopStorage {
             return [];
         }
     }
+
 
 
     
@@ -1595,7 +1595,7 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Enhanced real-time dashboard with better live user calculation
+        // Enhanced real-time dashboard with unique IP counting
         if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
             const auth = await authenticateAPIKey(req);
             
@@ -1607,29 +1607,34 @@ module.exports = async (req, res) => {
             const userTimezone = req.headers['x-user-timezone'] || 'UTC';
             
             try {
-                console.log('🔍 Dashboard: Getting live visitors...');
+                console.log('🔍 Dashboard: Getting live visitors with unique IP counting...');
                 const liveVisitors = await storage.getLiveVisitors();
-                console.log('👥 Dashboard: Live visitors count:', liveVisitors.length);
+                console.log('👥 Dashboard: Unique IP visitors count:', liveVisitors.length);
                 
                 console.log('📊 Dashboard: Getting daily stats...');
                 const dailyStats = await storage.getDailyStats();
-                console.log('📊 Dashboard: Daily stats:', dailyStats);
                 
-                // ENHANCED: Better live user calculation
+                // Enhanced time windows for better accuracy
                 const currentTime = Date.now();
-                const fiveMinutesAgo = currentTime - (5 * 60 * 1000);
-                const tenMinutesAgo = currentTime - (10 * 60 * 1000);
+                const fifteenMinutesAgo = currentTime - (15 * 60 * 1000);
+                const thirtyMinutesAgo = currentTime - (30 * 60 * 1000);
                 
-                // Count users active in last 5 minutes as "live"
-                const veryRecentVisitors = liveVisitors.filter(visitor => {
-                    const visitorTime = new Date(visitor.timestamp).getTime();
-                    return visitorTime > fiveMinutesAgo && visitor.action !== 'block';
-                });
+                // Count unique IPs active in last 15 minutes as "online"
+                const uniqueOnlineIPs = new Set();
+                const uniqueRecentIPs = new Set();
                 
-                // Count users active in last 10 minutes for total visitors
-                const recentVisitors = liveVisitors.filter(visitor => {
+                liveVisitors.forEach(visitor => {
                     const visitorTime = new Date(visitor.timestamp).getTime();
-                    return visitorTime > tenMinutesAgo;
+                    
+                    // Add to recent visitors (30 min window)
+                    if (visitorTime > thirtyMinutesAgo) {
+                        uniqueRecentIPs.add(visitor.ipAddress);
+                    }
+                    
+                    // Add to online visitors (15 min window) - exclude blocked users
+                    if (visitorTime > fifteenMinutesAgo && visitor.action !== 'block') {
+                        uniqueOnlineIPs.add(visitor.ipAddress);
+                    }
                 });
                 
                 // Calculate bot statistics
@@ -1641,10 +1646,6 @@ module.exports = async (req, res) => {
                     low: liveVisitors.filter(v => (v.riskScore || 0) >= 20 && (v.riskScore || 0) < 40).length,
                     minimal: liveVisitors.filter(v => (v.riskScore || 0) < 20).length
                 };
-                
-                // ENHANCED: Calculate fields with better logic
-                const totalBotsDetected = (dailyStats.blockedBots || 0) + (dailyStats.challengedUsers || 0);
-                const onlineUsers = veryRecentVisitors.length; // Users active in last 5 minutes
                 
                 // Format timestamps in user timezone
                 const formatTime = (timestamp) => {
@@ -1670,9 +1671,9 @@ module.exports = async (req, res) => {
                 const response = {
                     timestamp: new Date().toISOString(),
                     liveStats: {
-                        onlineUsers: onlineUsers, // ENHANCED: Better calculation
-                        totalVisitors: recentVisitors.length, // 10-minute window
-                        botsDetected: totalBotsDetected,
+                        onlineUsers: uniqueOnlineIPs.size, // UNIQUE IP COUNT for 15-minute window
+                        totalVisitors: uniqueRecentIPs.size, // UNIQUE IP COUNT for 30-minute window
+                        botsDetected: (dailyStats.blockedBots || 0) + (dailyStats.challengedUsers || 0),
                         botSeverity: botStats
                     },
                     dailyStats: {
@@ -1693,20 +1694,21 @@ module.exports = async (req, res) => {
                     storage: 'kv',
                     debug: {
                         liveVisitorsTotal: liveVisitors.length,
-                        veryRecentCount: veryRecentVisitors.length,
-                        recentCount: recentVisitors.length,
+                        uniqueOnlineIPs: uniqueOnlineIPs.size,
+                        uniqueRecentIPs: uniqueRecentIPs.size,
+                        totalSessions: liveVisitors.length,
                         timeWindows: {
-                            fiveMinutesAgo: new Date(fiveMinutesAgo).toISOString(),
-                            tenMinutesAgo: new Date(tenMinutesAgo).toISOString()
+                            fifteenMinutesAgo: new Date(fifteenMinutesAgo).toISOString(),
+                            thirtyMinutesAgo: new Date(thirtyMinutesAgo).toISOString()
                         }
                     }
                 };
                 
-                console.log('📤 Enhanced dashboard response:', {
+                console.log('📤 Enhanced dashboard response with unique IP counting:', {
                     onlineUsers: response.liveStats.onlineUsers,
                     totalVisitors: response.liveStats.totalVisitors,
-                    botsDetected: response.liveStats.botsDetected,
-                    debug: response.debug
+                    totalSessions: liveVisitors.length,
+                    uniqueIPs: uniqueOnlineIPs.size
                 });
                 
                 res.status(200).json(response);
@@ -1717,6 +1719,7 @@ module.exports = async (req, res) => {
             }
             return;
         }
+
 
 
 
