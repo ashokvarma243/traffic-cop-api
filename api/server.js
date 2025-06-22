@@ -1,4 +1,4 @@
-// server.js - Enhanced Traffic Cop API Server with KV Storage Only
+// server.js - Enhanced Traffic Cop API Server with Fixed Bot Detection
 const url = require('url');
 const crypto = require('crypto');
 
@@ -62,7 +62,6 @@ class APIKeyManager {
             .substring(0, 8);
         return `tc_live_${timestamp}_${randomBytes}_${checksum}`;
     }
-
     
     // Get rate limits based on plan
     getRateLimits(plan) {
@@ -263,7 +262,7 @@ class APIKeyManager {
     }
 }
 
-// KV-Only TrafficCopStorage class
+// FIXED: TrafficCopStorage class with proper bot counting
 class TrafficCopStorage {
     constructor() {
         this.kvPrefix = 'tc_';
@@ -332,7 +331,7 @@ class TrafficCopStorage {
         }
     }
     
-    // Update daily stats (KV only) - FIXED JSON STORAGE
+    // FIXED: Enhanced updateDailyStats with comprehensive bot counting
     async updateDailyStats(visitorData) {
         try {
             await this.ensureKVReady();
@@ -346,13 +345,10 @@ class TrafficCopStorage {
             try {
                 const currentStatsStr = await kv.get(statsKey);
                 
-                // CRITICAL FIX: Handle both string and object responses
                 if (currentStatsStr) {
                     if (typeof currentStatsStr === 'string') {
-                        // It's already a JSON string, parse it
                         currentStats = JSON.parse(currentStatsStr);
                     } else if (typeof currentStatsStr === 'object') {
-                        // It's already an object, use it directly
                         currentStats = currentStatsStr;
                     } else {
                         currentStats = null;
@@ -372,21 +368,73 @@ class TrafficCopStorage {
                     blockedBots: 0,
                     allowedUsers: 0,
                     challengedUsers: 0,
+                    botsDetected: 0, // Total bots detected
+                    vpnUsers: 0,     // NEW: VPN users count
+                    legitimateBots: 0, // NEW: Legitimate bots count
                     threats: [],
                     countries: {},
-                    cities: {}
+                    cities: {},
+                    userAgents: {},  // NEW: Track user agent patterns
+                    riskDistribution: { // NEW: Risk score distribution
+                        low: 0,      // 0-30%
+                        medium: 0,   // 30-60%
+                        high: 0,     // 60-80%
+                        critical: 0  // 80%+
+                    }
                 };
             }
             
             // Update counters
             currentStats.totalRequests++;
             
-            if (visitorData.action === 'block') {
+            // Enhanced bot counting logic
+            const riskScore = visitorData.riskScore || 0;
+            const action = visitorData.action || 'allow';
+            const userAgent = visitorData.userAgent || '';
+            const isVPN = visitorData.vpnProxy?.isVPN || false;
+            const botType = visitorData.analysis?.legitimateBot?.type || null;
+            
+            // Multiple criteria for bot detection
+            const isBot = this.isTrafficBot(riskScore, action, userAgent, isVPN, botType);
+            
+            if (isBot) {
+                currentStats.botsDetected++;
+                
+                // Categorize bot types
+                if (botType && ['google', 'bing', 'facebook', 'twitter'].includes(botType)) {
+                    currentStats.legitimateBots++;
+                }
+            }
+            
+            // Count VPN users separately
+            if (isVPN) {
+                currentStats.vpnUsers++;
+            }
+            
+            // Update action counters
+            if (action === 'block') {
                 currentStats.blockedBots++;
-            } else if (visitorData.action === 'challenge') {
+            } else if (action === 'challenge') {
                 currentStats.challengedUsers++;
             } else {
                 currentStats.allowedUsers++;
+            }
+            
+            // Update risk distribution
+            if (riskScore >= 80) {
+                currentStats.riskDistribution.critical++;
+            } else if (riskScore >= 60) {
+                currentStats.riskDistribution.high++;
+            } else if (riskScore >= 30) {
+                currentStats.riskDistribution.medium++;
+            } else {
+                currentStats.riskDistribution.low++;
+            }
+            
+            // Track user agent patterns
+            if (userAgent) {
+                const uaKey = this.categorizeUserAgent(userAgent);
+                currentStats.userAgents[uaKey] = (currentStats.userAgents[uaKey] || 0) + 1;
             }
             
             // Update geographic data
@@ -398,15 +446,140 @@ class TrafficCopStorage {
                 currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
             }
             
+            // Add threats with deduplication
+            if (visitorData.threats && visitorData.threats.length > 0) {
+                const existingThreats = new Set(currentStats.threats);
+                visitorData.threats.forEach(threat => existingThreats.add(threat));
+                currentStats.threats = Array.from(existingThreats);
+                
+                // Limit threats array to prevent excessive growth
+                if (currentStats.threats.length > 100) {
+                    currentStats.threats = currentStats.threats.slice(-100);
+                }
+            }
+            
+            // Add timestamp for last update
+            currentStats.lastUpdated = new Date().toISOString();
+            
             // CRITICAL: Always store as JSON string
             const statsToStore = JSON.stringify(currentStats);
-            await kv.setex(statsKey, 604800, statsToStore);
-            console.log('✅ Daily stats stored as JSON string:', statsToStore);
+            await kv.setex(statsKey, 604800, statsToStore); // 7 days expiry
+            
+            console.log('✅ Enhanced daily stats updated:', {
+                totalRequests: currentStats.totalRequests,
+                botsDetected: currentStats.botsDetected,
+                blockedBots: currentStats.blockedBots,
+                vpnUsers: currentStats.vpnUsers,
+                legitimateBots: currentStats.legitimateBots,
+                riskDistribution: currentStats.riskDistribution
+            });
             
         } catch (error) {
             console.error('❌ Daily stats error:', error);
             throw error;
         }
+    }
+
+    // Helper function: Enhanced bot detection logic
+    isTrafficBot(riskScore, action, userAgent, isVPN, botType) {
+        // Legitimate bots are still counted as bots but with special handling
+        if (botType && ['google', 'bing', 'facebook', 'twitter'].includes(botType)) {
+            return true; // Legitimate bots are still bots
+        }
+        
+        // Risk-based detection
+        if (riskScore >= 40) {
+            return true;
+        }
+        
+        // Action-based detection
+        if (action === 'block' || action === 'challenge') {
+            return true;
+        }
+        
+        // User agent-based detection
+        if (userAgent) {
+            const ua = userAgent.toLowerCase();
+            const botKeywords = [
+                'bot', 'crawler', 'spider', 'scraper', 'python-requests',
+                'curl', 'wget', 'headless', 'phantom', 'selenium',
+                'scrapy', 'beautifulsoup', 'mechanize', 'httpclient'
+            ];
+            
+            if (botKeywords.some(keyword => ua.includes(keyword))) {
+                return true;
+            }
+        }
+        
+        // VPN users with suspicious behavior
+        if (isVPN && riskScore >= 30) {
+            return true;
+        }
+        
+        return false;
+    }
+
+    // Helper function: Categorize user agents for analytics
+    categorizeUserAgent(userAgent) {
+        const ua = userAgent.toLowerCase();
+        
+        // Search engine bots
+        if (ua.includes('googlebot')) return 'googlebot';
+        if (ua.includes('bingbot')) return 'bingbot';
+        if (ua.includes('facebookexternalhit')) return 'facebook';
+        if (ua.includes('twitterbot')) return 'twitter';
+        
+        // Browsers
+        if (ua.includes('chrome') && !ua.includes('headless')) return 'chrome';
+        if (ua.includes('firefox')) return 'firefox';
+        if (ua.includes('safari') && !ua.includes('chrome')) return 'safari';
+        if (ua.includes('edge')) return 'edge';
+        
+        // Automation tools
+        if (ua.includes('selenium')) return 'selenium';
+        if (ua.includes('puppeteer')) return 'puppeteer';
+        if (ua.includes('headless')) return 'headless_browser';
+        if (ua.includes('phantom')) return 'phantomjs';
+        
+        // Programming languages/libraries
+        if (ua.includes('python')) return 'python';
+        if (ua.includes('curl')) return 'curl';
+        if (ua.includes('wget')) return 'wget';
+        if (ua.includes('scrapy')) return 'scrapy';
+        if (ua.includes('requests')) return 'requests_library';
+        
+        // Mobile
+        if (ua.includes('mobile') || ua.includes('android') || ua.includes('iphone')) return 'mobile';
+        
+        // Generic bot
+        if (ua.includes('bot')) return 'generic_bot';
+        
+        return 'other';
+    }
+
+    // Helper function: Get enhanced empty stats structure
+    getEmptyStats(date = null) {
+        return {
+            date: date || new Date().toISOString().split('T')[0],
+            totalRequests: 0,
+            blockedBots: 0,
+            allowedUsers: 0,
+            challengedUsers: 0,
+            botsDetected: 0,
+            vpnUsers: 0,
+            legitimateBots: 0,
+            threats: [],
+            countries: {},
+            cities: {},
+            userAgents: {},
+            riskDistribution: {
+                low: 0,
+                medium: 0,
+                high: 0,
+                critical: 0
+            },
+            lastUpdated: new Date().toISOString()
+        };
     }
 
     
@@ -422,12 +595,10 @@ class TrafficCopStorage {
             
             const statsData = await kv.get(statsKey);
             console.log('📊 getDailyStats: Raw KV result type:', typeof statsData);
-            console.log('📊 getDailyStats: Raw KV result:', statsData);
             
             if (statsData) {
                 let stats;
                 
-                // CRITICAL FIX: Handle different data types
                 if (typeof statsData === 'string') {
                     try {
                         stats = JSON.parse(statsData);
@@ -437,12 +608,16 @@ class TrafficCopStorage {
                         return this.getEmptyStats(targetDate);
                     }
                 } else if (typeof statsData === 'object' && statsData !== null) {
-                    // It's already an object, use it directly
                     stats = statsData;
                     console.log('📊 Using object data directly');
                 } else {
                     console.log('📊 Invalid data type, returning empty stats');
                     return this.getEmptyStats(targetDate);
+                }
+                
+                // Ensure botsDetected field exists
+                if (!stats.botsDetected) {
+                    stats.botsDetected = (stats.blockedBots || 0) + (stats.challengedUsers || 0);
                 }
                 
                 console.log('📊 Final stats:', stats);
@@ -466,6 +641,7 @@ class TrafficCopStorage {
             blockedBots: 0,
             allowedUsers: 0,
             challengedUsers: 0,
+            botsDetected: 0, // NEW: Include botsDetected
             threats: [],
             countries: {},
             cities: {}
@@ -490,7 +666,7 @@ class TrafficCopStorage {
             // Use 30-minute window for live visitors
             const thirtyMinutesAgo = Date.now() - (30 * 60 * 1000);
             const recentVisitors = [];
-            const uniqueIPs = new Set(); // Track unique IPs
+            const uniqueIPs = new Set();
             
             for (let i = 0; i < activityLog.length; i++) {
                 try {
@@ -503,7 +679,6 @@ class TrafficCopStorage {
                         visitor = entry;
                     }
                     
-                    // Validate required fields
                     if (!visitor || !visitor.timestamp || !visitor.ipAddress) {
                         continue;
                     }
@@ -511,13 +686,10 @@ class TrafficCopStorage {
                     const visitorTime = new Date(visitor.timestamp).getTime();
                     
                     if (visitorTime > thirtyMinutesAgo) {
-                        // Only count unique IPs for live users
                         if (!uniqueIPs.has(visitor.ipAddress)) {
                             uniqueIPs.add(visitor.ipAddress);
                             recentVisitors.push(visitor);
                             console.log(`✅ Added unique IP visitor: ${visitor.ipAddress}`);
-                        } else {
-                            console.log(`⏭️ Skipped duplicate IP: ${visitor.ipAddress}`);
                         }
                     }
                 } catch (parseError) {
@@ -541,7 +713,6 @@ class TrafficCopStorage {
             
             console.log('📋 Getting activity logs with filter:', filter);
             
-            // Get all entries now that we know parsing works
             const activityLog = await kv.lrange(`${this.kvPrefix}activity_log`, 0, -1);
             console.log('📋 Raw entries found:', activityLog ? activityLog.length : 0);
             
@@ -570,9 +741,7 @@ class TrafficCopStorage {
                         activity = entry;
                     }
                     
-                    // Validate required fields
                     if (activity && activity.timestamp && activity.sessionId) {
-                        // Apply date filter
                         let includeActivity = true;
                         
                         if (filter === 'today') {
@@ -598,10 +767,8 @@ class TrafficCopStorage {
             
             console.log(`📋 Parsing: ${successCount} success, ${errorCount} errors, ${activities.length} after filter`);
             
-            // Sort by timestamp (newest first)
             activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             
-            // Apply pagination
             const startIndex = (page - 1) * limit;
             const endIndex = startIndex + limit;
             const paginatedActivities = activities.slice(startIndex, endIndex);
@@ -637,7 +804,6 @@ class TrafficCopStorage {
 // Enhanced geolocation detection
 async function getGeolocationFromIP(ipAddress) {
     try {
-        // Use multiple geolocation services for reliability
         const services = [
             `http://ip-api.com/json/${ipAddress}`,
             `https://ipapi.co/${ipAddress}/json/`
@@ -649,7 +815,6 @@ async function getGeolocationFromIP(ipAddress) {
                 if (response.ok) {
                     const data = await response.json();
                     
-                    // Normalize response format
                     return {
                         country: data.country || data.country_name || 'Unknown',
                         countryCode: data.countryCode || data.country_code || 'XX',
@@ -678,7 +843,7 @@ async function getGeolocationFromIP(ipAddress) {
 const apiKeyManager = new APIKeyManager();
 const storage = new TrafficCopStorage();
 
-// Enhanced DynamicBotDetector with proxycheck.io API Integration
+// FIXED: Enhanced DynamicBotDetector with legitimate bot detection
 class DynamicBotDetector {
     constructor() {
         this.trafficPatterns = new Map();
@@ -690,23 +855,23 @@ class DynamicBotDetector {
             sessionDuration: { normal: 300, suspicious: 30, malicious: 5 }
         };
         
-        // UPDATED THRESHOLDS
+        // FIXED: Updated thresholds
         this.actionThresholds = global.trafficCopConfig?.thresholds || {
-            challenge: 50, // Increased from 45
-            block: 85      // Increased from 80
+            challenge: 45,
+            block: 80  // Lowered from 85
         };
         
-        // proxycheck.io configuration with your API key
+        // proxycheck.io configuration
         this.proxycheckConfig = {
             apiKey: process.env.PROXYCHECK_API_KEY || '776969-1r4653-70557d-2317a9',
             baseUrl: 'https://proxycheck.io/v2/',
             timeout: 8000
         };
         
-        console.log('🤖 Enhanced DynamicBotDetector with proxycheck.io API initialized');
+        console.log('🤖 Enhanced DynamicBotDetector with legitimate bot detection initialized');
     }
     
-    // *** NEW: LEGITIMATE BOT CHECKER FUNCTION ***
+    // NEW: Legitimate bot checker function
     checkLegitimateBot(userAgent, ipAddress) {
         const legitimateBotsConfig = {
             google: {
@@ -728,17 +893,14 @@ class DynamicBotDetector {
         };
         
         for (const [botType, config] of Object.entries(legitimateBotsConfig)) {
-            // Check user agent pattern
             const matchesPattern = config.patterns.some(pattern => pattern.test(userAgent));
             
             if (matchesPattern) {
-                // Verify IP range
                 const matchesIP = config.ipRanges.some(range => ipAddress.startsWith(range));
                 
                 if (matchesIP) {
                     return { isLegit: true, type: botType, verified: true };
                 } else {
-                    // User agent matches but IP doesn't - suspicious
                     return { isLegit: false, type: 'spoofed_bot', verified: false };
                 }
             }
@@ -753,7 +915,6 @@ class DynamicBotDetector {
         const vpnProxySignals = [];
         
         try {
-            // Method 1: Use proxycheck.io API (most accurate)
             const proxycheckResult = await this.checkProxyCheckIO(ipAddress);
             if (proxycheckResult.success) {
                 vpnProxyScore += proxycheckResult.score;
@@ -761,14 +922,12 @@ class DynamicBotDetector {
                 console.log(`✅ proxycheck.io result: Score=${proxycheckResult.score}, Signals=[${proxycheckResult.signals.join(', ')}]`);
             }
             
-            // Method 2: HTTP Headers Analysis (fallback/additional)
             const headerAnalysis = this.analyzeProxyHeaders(headers);
             vpnProxyScore += headerAnalysis.score;
             if (headerAnalysis.signals.length > 0) {
                 vpnProxySignals.push(...headerAnalysis.signals);
             }
             
-            // Method 3: Basic IP Analysis (additional verification)
             const ipAnalysis = await this.analyzeIPAddress(ipAddress);
             vpnProxyScore += ipAnalysis.score;
             if (ipAnalysis.signals.length > 0) {
@@ -780,17 +939,16 @@ class DynamicBotDetector {
         }
         
         return {
-            isVPNProxy: vpnProxyScore > 65, // Increased threshold for better accuracy
+            isVPNProxy: vpnProxyScore > 65,
             confidence: Math.min(vpnProxyScore, 100),
             signals: vpnProxySignals,
             score: vpnProxyScore
         };
     }
     
-    // NEW: proxycheck.io API integration
+    // proxycheck.io API integration
     async checkProxyCheckIO(ipAddress) {
         try {
-            // Build comprehensive API URL with your key
             const apiUrl = `${this.proxycheckConfig.baseUrl}${ipAddress}?key=${this.proxycheckConfig.apiKey}&vpn=3&asn=1&risk=2&port=1&seen=1&days=7&tag=traffic-cop-newsparrow`;
             
             console.log(`🔍 Checking IP ${ipAddress} with proxycheck.io API...`);
@@ -839,17 +997,14 @@ class DynamicBotDetector {
 
         console.log(`📊 Analyzing proxycheck.io data for ${ipAddress}:`, ipData);
         
-        // Check proxy detection (primary indicator)
         if (ipData.proxy === 'yes') {
-            score += 70; // High confidence for confirmed proxy
+            score += 70;
             signals.push('proxycheck_proxy_confirmed');
             
-            // Add proxy type information
             if (ipData.type) {
                 const typeStr = ipData.type.toLowerCase();
                 signals.push(`proxy_type_${typeStr}`);
                 
-                // Different scores for different proxy types
                 switch (typeStr) {
                     case 'vpn':
                         score += 25;
@@ -872,11 +1027,9 @@ class DynamicBotDetector {
                 }
             }
             
-            // Add port information if available
             if (ipData.port) {
                 signals.push(`proxy_port_${ipData.port}`);
                 
-                // Common VPN/proxy ports get extra attention
                 const suspiciousPorts = [1080, 1194, 3128, 8080, 8888, 9050];
                 if (suspiciousPorts.includes(parseInt(ipData.port))) {
                     score += 10;
@@ -884,33 +1037,28 @@ class DynamicBotDetector {
                 }
             }
             
-            // Last seen information
             if (ipData.last_seen_human) {
                 signals.push(`last_seen_${ipData.last_seen_human.replace(/\s+/g, '_')}`);
             }
         }
         
-        // Check separate VPN detection
         if (ipData.vpn === 'yes') {
             score += 60;
             signals.push('proxycheck_vpn_detected');
         }
         
-        // Use risk score from proxycheck.io (0-100 scale)
         if (ipData.risk !== undefined) {
             const riskScore = parseInt(ipData.risk);
-            const riskContribution = Math.min(35, riskScore * 0.35); // Scale appropriately
+            const riskContribution = Math.min(35, riskScore * 0.35);
             score += riskContribution;
             signals.push(`proxycheck_risk_${riskScore}`);
             
             console.log(`🎯 proxycheck.io risk score for ${ipAddress}: ${riskScore}% (contributing ${riskContribution} to total)`);
         }
         
-        // Provider/ASN analysis
         if (ipData.provider) {
             const providerLower = ipData.provider.toLowerCase();
             
-            // Check for suspicious keywords in provider name
             const suspiciousKeywords = ['vpn', 'proxy', 'hosting', 'datacenter', 'cloud', 'server', 'virtual'];
             suspiciousKeywords.forEach(keyword => {
                 if (providerLower.includes(keyword)) {
@@ -919,7 +1067,6 @@ class DynamicBotDetector {
                 }
             });
             
-            // Check for known VPN providers
             const knownVPNProviders = [
                 'nordvpn', 'expressvpn', 'surfshark', 'cyberghost', 'purevpn',
                 'protonvpn', 'mullvad', 'windscribe', 'tunnelbear', 'hotspot shield',
@@ -928,20 +1075,17 @@ class DynamicBotDetector {
             
             knownVPNProviders.forEach(vpnProvider => {
                 if (providerLower.includes(vpnProvider)) {
-                    score += 50; // Very high score for known VPN providers
+                    score += 50;
                     signals.push(`known_vpn_provider_${vpnProvider}`);
                 }
             });
         }
         
-        // Country-based adjustments
         if (ipData.country) {
             if (ipData.country === 'IN') {
-                // Reduce score for Indian IPs to minimize false positives
                 score = Math.max(0, score - 15);
                 signals.push('indian_ip_adjustment');
                 
-                // Additional reduction for known Indian ISPs
                 if (ipData.provider) {
                     const indianISPs = ['bharti', 'airtel', 'jio', 'bsnl', 'vodafone', 'idea'];
                     const providerLower = ipData.provider.toLowerCase();
@@ -952,13 +1096,11 @@ class DynamicBotDetector {
                     }
                 }
             } else {
-                // Slight increase for foreign IPs
                 score += 3;
                 signals.push(`foreign_country_${ipData.country}`);
             }
         }
         
-        // ASN analysis
         if (ipData.asn) {
             signals.push(`asn_${ipData.asn}`);
         }
@@ -979,33 +1121,29 @@ class DynamicBotDetector {
         const signals = [];
         
         try {
-            // Use ipapi.co as fallback for basic geolocation
             const response = await fetch(`https://ipapi.co/${ipAddress}/json/`);
             const data = await response.json();
             
-            // Check for datacenter/hosting providers
             if (data.org) {
                 const orgLower = data.org.toLowerCase();
                 
                 if (orgLower.includes('hosting')) {
-                    score += 15; // Reduced since proxycheck.io is primary
+                    score += 15;
                     signals.push('datacenter_hosting');
                 }
                 
-                // Check for cloud providers
                 const cloudProviders = ['amazon', 'google', 'microsoft', 'digitalocean', 'vultr', 'linode', 'ovh'];
                 cloudProviders.forEach(provider => {
                     if (orgLower.includes(provider)) {
-                        score += 12; // Reduced since proxycheck.io is primary
+                        score += 12;
                         signals.push(`cloud_provider_${provider}`);
                     }
                 });
                 
-                // Check for VPN keywords in ISP name
                 const vpnKeywords = ['vpn', 'proxy', 'tunnel', 'private', 'secure', 'anonymous'];
                 vpnKeywords.forEach(keyword => {
                     if (orgLower.includes(keyword)) {
-                        score += 20; // Still significant as it's obvious
+                        score += 20;
                         signals.push(`isp_vpn_keyword_${keyword}`);
                     }
                 });
@@ -1023,7 +1161,6 @@ class DynamicBotDetector {
         let score = 0;
         const signals = [];
         
-        // Check for proxy headers (reduced weight since proxycheck.io is primary)
         const proxyHeaders = [
             'x-forwarded-for',
             'x-real-ip',
@@ -1036,18 +1173,16 @@ class DynamicBotDetector {
         
         for (const header of proxyHeaders) {
             if (headers[header]) {
-                score += 8; // Reduced from 15 since proxycheck.io is primary
+                score += 8;
                 signals.push(`header_${header}`);
                 
-                // Multiple IPs in X-Forwarded-For indicates proxy chain
                 if (header === 'x-forwarded-for' && headers[header].includes(',')) {
-                    score += 12; // Reduced from 20
+                    score += 12;
                     signals.push('proxy_chain_detected');
                 }
             }
         }
         
-        // Check for VPN-specific headers
         const vpnHeaders = ['x-vpn-client', 'x-tunnel-proto', 'x-anonymizer'];
         for (const header of vpnHeaders) {
             if (headers[header]) {
@@ -1059,23 +1194,12 @@ class DynamicBotDetector {
         return { score, signals };
     }
     
-    // ISP analysis (simplified since proxycheck.io provides better data)
-    async analyzeISP(ipAddress) {
-        let score = 0;
-        const signals = [];
-        
-        // This is now primarily handled by proxycheck.io
-        // Keep minimal implementation for edge cases
-        
-        return { score, signals };
-    }
-    
-    // *** UPDATED: Enhanced main detection with legitimate bot check FIRST ***
+    // FIXED: Enhanced main detection with legitimate bot check FIRST
     async detectBot(requestData) {
         const sessionId = requestData.sessionId || 'unknown';
         const timestamp = Date.now();
         
-        // *** CHECK LEGITIMATE BOTS FIRST ***
+        // CHECK LEGITIMATE BOTS FIRST
         const isLegitimateBot = this.checkLegitimateBot(
             requestData.userAgent, 
             requestData.ipAddress || requestData.realTimeData?.ipAddress
@@ -1085,7 +1209,7 @@ class DynamicBotDetector {
         if (isLegitimateBot.isLegit) {
             console.log(`✅ Legitimate ${isLegitimateBot.type} bot detected: ${requestData.ipAddress}`);
             return {
-                riskScore: 5, // Very low risk for legitimate bots
+                riskScore: 5,
                 action: 'allow',
                 confidence: 95,
                 threats: [],
@@ -1119,7 +1243,6 @@ class DynamicBotDetector {
         let riskScore = 0;
         const factors = [];
         
-        // Original bot detection factors
         if (requestAnalysis.frequency > this.anomalyThresholds.requestFrequency.malicious) {
             riskScore += 40;
             factors.push(`High request frequency: ${requestAnalysis.frequency.toFixed(1)}/sec`);
@@ -1168,7 +1291,6 @@ class DynamicBotDetector {
             blockAds = true;
             factors.push('Ad blocking enabled for VPN/Proxy user');
             
-            // Log detailed VPN/Proxy information
             console.log(`🔍 VPN/Proxy user detected: IP=${requestData.ipAddress}, Confidence=${vpnProxyAnalysis.confidence}%, Signals=[${vpnProxyAnalysis.signals.join(', ')}]`);
         }
         
@@ -1200,20 +1322,17 @@ class DynamicBotDetector {
         const patterns = this.trafficPatterns.get(sessionId);
         patterns.push(timestamp);
         
-        // Keep only last 10 requests
         if (patterns.length > 10) {
             patterns.shift();
         }
         
-        // Calculate request frequency
         if (patterns.length < 2) {
             return { frequency: 0, isRhythmic: false, totalRequests: patterns.length };
         }
         
-        const timeSpan = (patterns[patterns.length - 1] - patterns[0]) / 1000; // seconds
+        const timeSpan = (patterns[patterns.length - 1] - patterns[0]) / 1000;
         const frequency = patterns.length / timeSpan;
         
-        // Check for rhythmic patterns (bot-like)
         const intervals = [];
         for (let i = 1; i < patterns.length; i++) {
             intervals.push(patterns[i] - patterns[i - 1]);
@@ -1221,7 +1340,7 @@ class DynamicBotDetector {
         
         const avgInterval = intervals.reduce((a, b) => a + b, 0) / intervals.length;
         const variance = intervals.reduce((acc, interval) => acc + Math.pow(interval - avgInterval, 2), 0) / intervals.length;
-        const isRhythmic = variance < 1000; // Very consistent timing
+        const isRhythmic = variance < 1000;
         
         return {
             frequency: frequency,
@@ -1232,7 +1351,7 @@ class DynamicBotDetector {
         };
     }
     
-    // *** UPDATED: Enhanced user agent analysis with reduced bot penalties ***
+    // UPDATED: Enhanced user agent analysis with reduced bot penalties
     analyzeUserAgentAnomalies(userAgent) {
         const anomalies = [];
         let score = 0;
@@ -1381,31 +1500,6 @@ if (typeof module !== 'undefined' && module.exports) {
     module.exports = { DynamicBotDetector, analyzeTrafficDynamic };
 }
 
-// Dynamic traffic analysis function
-function analyzeTrafficDynamic(userAgent, website, requestData = {}) {
-    const detector = new DynamicBotDetector();
-    
-    // Prepare enhanced request data
-    const enhancedData = {
-        ...requestData,
-        userAgent: userAgent,
-        website: website,
-        sessionId: requestData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-        timestamp: Date.now()
-    };
-    
-    // Run dynamic detection
-    const result = detector.detectBot(enhancedData);
-    
-    return {
-        riskScore: result.riskScore,
-        action: result.action,
-        confidence: result.confidence,
-        threats: result.threats,
-        analysis: result.analysis
-    };
-}
-
 // Enhanced authentication function
 async function authenticateAPIKey(req) {
     const authHeader = req.headers.authorization;
@@ -1416,7 +1510,6 @@ async function authenticateAPIKey(req) {
     
     const apiKey = authHeader.substring(7);
     
-    // Validate API key using KV storage
     const validation = await apiKeyManager.validateAPIKey(apiKey);
     
     if (!validation.valid) {
@@ -1485,15 +1578,14 @@ module.exports = async (req, res) => {
                 return;
             }
             
-            // Get current configuration from DynamicBotDetector
             const detector = new DynamicBotDetector();
             
             res.status(200).json({
                 success: true,
                 config: {
                     thresholds: {
-                        challenge: detector.actionThresholds?.challenge || 50,
-                        block: detector.actionThresholds?.block || 85
+                        challenge: detector.actionThresholds?.challenge || 45,
+                        block: detector.actionThresholds?.block || 80
                     },
                     anomalyThresholds: detector.anomalyThresholds,
                     version: '5.1.0',
@@ -1519,13 +1611,11 @@ module.exports = async (req, res) => {
                 try {
                     const newConfig = JSON.parse(body);
                     
-                    // Update global configuration
                     if (newConfig.thresholds) {
-                        // Store in global variable for persistence
                         global.trafficCopConfig = global.trafficCopConfig || {};
                         global.trafficCopConfig.thresholds = {
-                            challenge: newConfig.thresholds.challenge || 50,
-                            block: newConfig.thresholds.block || 85
+                            challenge: newConfig.thresholds.challenge || 45,
+                            block: newConfig.thresholds.block || 80
                         };
                         
                         console.log('🔧 Configuration updated:', global.trafficCopConfig.thresholds);
@@ -1535,7 +1625,7 @@ module.exports = async (req, res) => {
                         success: true,
                         message: 'Configuration updated successfully',
                         updatedConfig: {
-                            thresholds: global.trafficCopConfig?.thresholds || { challenge: 50, block: 85 },
+                            thresholds: global.trafficCopConfig?.thresholds || { challenge: 45, block: 80 },
                             timestamp: new Date().toISOString()
                         }
                     });
@@ -1550,7 +1640,7 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Enhanced analyze endpoint with VPN/Proxy detection
+        // FIXED: Enhanced analyze endpoint with proper IP handling
         if (req.url === '/api/v1/analyze' && req.method === 'POST') {
             const auth = await authenticateAPIKey(req);
             
@@ -1569,25 +1659,26 @@ module.exports = async (req, res) => {
                     const requestData = JSON.parse(body);
                     const { userAgent, website } = requestData;
                     
-                    // Get real IP address
-                    const realIP = req.headers['x-forwarded-for']?.split(',')[0] || 
+                    // FIXED: Use provided IP from request body for testing, fallback to headers
+                    const realIP = requestData.ipAddress || 
+                                req.headers['x-forwarded-for']?.split(',')[0] || 
                                 req.headers['x-real-ip'] || 
                                 req.connection.remoteAddress || 
                                 'unknown';
                     
-                    // Get all headers for VPN/proxy analysis
                     const allHeaders = req.headers;
                     
-                    // Enhanced request data with headers and IP
                     const enhancedRequestData = {
                         ...requestData,
                         ipAddress: realIP,
                         headers: allHeaders
                     };
                     
-                    // Use enhanced bot detection
                     const detector = new DynamicBotDetector();
                     const analysis = await detector.detectBot(enhancedRequestData);
+                    
+                    // Get geolocation data
+                    const geolocation = await getGeolocationFromIP(realIP);
                     
                     // Store visitor data in KV
                     const visitorData = {
@@ -1601,19 +1692,11 @@ module.exports = async (req, res) => {
                         blockAds: analysis.blockAds,
                         vpnProxy: analysis.vpnProxy,
                         publisherId: auth.publisherId,
+                        geolocation: geolocation,
                         timestamp: new Date().toISOString()
                     };
                     
                     await storage.storeVisitorSession(visitorData);
-                    
-                    // Get geolocation data
-                    const geolocation = await getGeolocationFromIP(realIP);
-                    if (geolocation) {
-                        visitorData.geolocation = geolocation;
-                    }
-                    
-                    // Calculate severity
-                    const severity = calculateSeverity(analysis.riskScore);
                     
                     // Enhanced response with all analysis data
                     res.status(200).json({
@@ -1623,7 +1706,7 @@ module.exports = async (req, res) => {
                         threats: analysis.threats,
                         blockAds: analysis.blockAds,
                         vpnProxy: analysis.vpnProxy,
-                        severity: severity,
+                        severity: calculateSeverity(analysis.riskScore),
                         sessionId: visitorData.sessionId,
                         ipAddress: realIP,
                         geolocation: geolocation,
@@ -1645,7 +1728,7 @@ module.exports = async (req, res) => {
             return;
         }
 
-        // Real-time dashboard endpoint
+        // FIXED: Real-time dashboard endpoint with proper bot counting
         if (req.url === '/api/v1/real-time-dashboard' && req.method === 'GET') {
             const auth = await authenticateAPIKey(req);
             
@@ -1661,16 +1744,16 @@ module.exports = async (req, res) => {
                 // Get live visitors (last 30 minutes)
                 const liveVisitors = await storage.getLiveVisitors();
                 
-                // Calculate live stats
+                // FIXED: Calculate live stats with proper bot counting
                 const liveStats = {
                     onlineUsers: liveVisitors.length,
-                    botsDetected: liveVisitors.filter(v => v.action === 'block').length,
+                    botsDetected: dailyStats.botsDetected || 0, // Use the new botsDetected field
                     botSeverity: {
-                        critical: liveVisitors.filter(v => v.riskScore >= 80).length,
-                        high: liveVisitors.filter(v => v.riskScore >= 60 && v.riskScore < 80).length,
-                        medium: liveVisitors.filter(v => v.riskScore >= 40 && v.riskScore < 60).length,
-                        low: liveVisitors.filter(v => v.riskScore >= 20 && v.riskScore < 40).length,
-                        minimal: liveVisitors.filter(v => v.riskScore < 20).length
+                        critical: liveVisitors.filter(v => (v.riskScore || 0) >= 80).length,
+                        high: liveVisitors.filter(v => (v.riskScore || 0) >= 60 && (v.riskScore || 0) < 80).length,
+                                                medium: liveVisitors.filter(v => (v.riskScore || 0) >= 40 && (v.riskScore || 0) < 60).length,
+                        low: liveVisitors.filter(v => (v.riskScore || 0) >= 20 && (v.riskScore || 0) < 40).length,
+                        minimal: liveVisitors.filter(v => (v.riskScore || 0) < 20).length
                     }
                 };
                 
@@ -1678,7 +1761,7 @@ module.exports = async (req, res) => {
                 const formattedVisitors = liveVisitors.map(visitor => ({
                     ...visitor,
                     lastSeenFormatted: formatTimeAgo(visitor.timestamp),
-                    severity: calculateSeverity(visitor.riskScore)
+                    severity: calculateSeverity(visitor.riskScore || 0)
                 }));
                 
                 // Geographic stats
@@ -1735,7 +1818,7 @@ module.exports = async (req, res) => {
                 const formattedActivities = activityData.activities.map(activity => ({
                     ...activity,
                     timestampFormatted: formatTimeAgo(activity.timestamp),
-                    severity: calculateSeverity(activity.riskScore)
+                    severity: calculateSeverity(activity.riskScore || 0)
                 }));
                 
                 res.status(200).json({
@@ -1776,10 +1859,11 @@ module.exports = async (req, res) => {
                 
                 // Calculate analytics
                 const analytics = {
-                    totalRequests: dailyStats.totalRequests,
-                    blockedBots: dailyStats.blockedBots,
-                    allowedUsers: dailyStats.allowedUsers,
-                    challengedUsers: dailyStats.challengedUsers,
+                    totalRequests: dailyStats.totalRequests || 0,
+                    blockedBots: dailyStats.blockedBots || 0,
+                    allowedUsers: dailyStats.allowedUsers || 0,
+                    challengedUsers: dailyStats.challengedUsers || 0,
+                    botsDetected: dailyStats.botsDetected || 0,
                     blockRate: dailyStats.totalRequests > 0 ? 
                         Math.round((dailyStats.blockedBots / dailyStats.totalRequests) * 100) : 0,
                     liveUsers: liveVisitors.length,
