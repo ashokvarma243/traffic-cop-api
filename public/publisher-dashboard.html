@@ -1246,6 +1246,113 @@
             }
         });
 
+        // Add this to your dashboard JavaScript
+        document.addEventListener('DOMContentLoaded', function() {
+            // Logout functionality
+            const logoutBtn = document.getElementById('logout-btn');
+            
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', function() {
+                    handleLogout();
+                });
+            }
+            
+            // Check authentication on page load
+            checkAuthentication();
+        });
+
+        // Handle logout process
+        function handleLogout() {
+            // Show confirmation dialog
+            if (confirm('Are you sure you want to logout?')) {
+                try {
+                    // Clear authentication data
+                    localStorage.removeItem('traffic_cop_auth');
+                    localStorage.removeItem('traffic_cop_api_key');
+                    localStorage.removeItem('traffic_cop_publisher_id');
+                    sessionStorage.clear();
+                    
+                    // Clear any cookies if you're using them
+                    document.cookie = 'traffic_cop_session=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
+                    
+                    // Show logout message
+                    showLogoutMessage();
+                    
+                    // Redirect to login page after short delay
+                    setTimeout(() => {
+                        window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+                    }, 1500);
+                    
+                } catch (error) {
+                    console.error('Logout error:', error);
+                    // Force redirect even if there's an error
+                    window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+                }
+            }
+        }
+
+        // Check if user is authenticated
+        function checkAuthentication() {
+            const authData = localStorage.getItem('traffic_cop_auth');
+            const apiKey = localStorage.getItem('traffic_cop_api_key');
+            
+            if (!authData || !apiKey) {
+                // User is not authenticated, redirect to login
+                console.log('User not authenticated, redirecting to login...');
+                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+                return false;
+            }
+            
+            try {
+                const auth = JSON.parse(authData);
+                
+                // Check if session has expired (optional)
+                if (auth.expires && new Date() > new Date(auth.expires)) {
+                    console.log('Session expired, redirecting to login...');
+                    handleLogout();
+                    return false;
+                }
+                
+                // Update user info display
+                const userInfo = document.getElementById('user-info');
+                if (userInfo && auth.publisherId) {
+                    userInfo.textContent = `Welcome, ${auth.publisherId}`;
+                }
+                
+                return true;
+                
+            } catch (error) {
+                console.error('Authentication check error:', error);
+                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
+                return false;
+            }
+        }
+
+        // Show logout message
+        function showLogoutMessage() {
+            const message = document.createElement('div');
+            message.id = 'logout-message';
+            message.innerHTML = `
+                <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                        background: #4CAF50; color: white; padding: 20px 40px;
+                        border-radius: 8px; z-index: 999999; font-family: Arial, sans-serif;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.3); text-align: center;">
+                    <i class="fas fa-check-circle" style="font-size: 24px; margin-bottom: 10px;"></i><br>
+                    <strong>Logged out successfully!</strong><br>
+                    <small>Redirecting to login page...</small>
+                </div>
+            `;
+            document.body.appendChild(message);
+        }
+
+        // Prevent back button access after logout
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted) {
+                checkAuthentication();
+            }
+        });
+
+
         // Initialize dashboard
         document.addEventListener('DOMContentLoaded', function() {
             console.log('🚀 Initializing Traffic Cop Dashboard...');
