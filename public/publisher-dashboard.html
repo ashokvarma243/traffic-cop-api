@@ -26,8 +26,9 @@
     <!-- Poppins Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     
+    <!-- Keep your existing CSS styles here -->
     <style>
         :root {
             --primary-yellow: #f7db05;
@@ -35,10 +36,14 @@
             --light-yellow: #fdf6c3;
             --dark-grey: #1a1a1a;
             --medium-grey: #2d2d2d;
-            --light-grey: #f5f5f5;
+            --light-grey: #f8f9fa;
             --white: #ffffff;
-            --shadow: rgba(13, 13, 13, 0.1);
-            --shadow-dark: rgba(13, 13, 13, 0.3);
+            --card-bg: #fafbfc;
+            --border-color: #e1e5e9;
+            --text-muted: #6c757d;
+            --shadow-sm: 0 2px 4px rgba(0,0,0,0.1);
+            --shadow-md: 0 4px 8px rgba(0,0,0,0.12);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
         }
 
         * {
@@ -49,925 +54,964 @@
 
         body {
             font-family: 'Poppins', sans-serif;
-            background: linear-gradient(135deg, var(--primary-black) 0%, var(--dark-grey) 100%);
-            min-height: 100vh;
-            color: var(--white);
+            background: var(--light-grey);
+            color: var(--primary-black);
             line-height: 1.6;
+            overflow-x: hidden;
         }
 
-        .dashboard-container {
-            max-width: 1400px;
-            margin: 0 auto;
+        /* Main Layout Container */
+        .dashboard-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+
+        /* Left Sidebar */
+        .sidebar {
+            width: 280px;
+            background: var(--white);
+            border-right: 1px solid var(--border-color);
+            box-shadow: var(--shadow-md);
+            position: fixed;
+            height: 100vh;
+            overflow-y: auto;
+            z-index: 1000;
+        }
+
+        .sidebar-header {
             padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: linear-gradient(135deg, var(--primary-yellow) 0%, #ffd700 100%);
         }
 
-        .dashboard-header {
+        .sidebar-title {
+            font-size: 1.2rem;
+            font-weight: 800;
+            color: var(--primary-black);
+            margin-bottom: 4px;
+        }
+
+        .sidebar-subtitle {
+            font-size: 0.8rem;
+            color: var(--medium-grey);
+            font-weight: 500;
+        }
+
+        .nav-menu {
+            padding: 20px 0;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            color: var(--text-muted);
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 0.9rem;
+            transition: all 0.2s ease;
+            border-left: 3px solid transparent;
+            cursor: pointer;
+            border: none;
+            background: none;
+            width: 100%;
+            text-align: left;
+        }
+
+        .nav-item:hover {
+            background: var(--light-yellow);
+            color: var(--primary-black);
+            border-left-color: var(--primary-yellow);
+        }
+
+        .nav-item.active {
+            background: var(--light-yellow);
+            color: var(--primary-black);
+            border-left-color: var(--primary-yellow);
+            font-weight: 600;
+        }
+
+        .nav-item span {
+            margin-left: 12px;
+        }
+
+        /* User Profile Section */
+        .user-profile {
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            padding: 20px;
+            border-top: 1px solid var(--border-color);
+            background: var(--card-bg);
+        }
+
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 12px;
+        }
+
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary-yellow) 0%, #ffd700 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            color: var(--primary-black);
+        }
+
+        .user-details h4 {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--primary-black);
+        }
+
+        .user-details p {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .logout-btn {
+            width: 100%;
+            padding: 8px 16px;
+            background: var(--primary-black);
+            color: var(--primary-yellow);
+            border: none;
+            border-radius: 6px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .logout-btn:hover {
+            background: var(--primary-yellow);
+            color: var(--primary-black);
+        }
+
+        /* Main Content Area */
+        .main-content {
+            flex: 1;
+            margin-left: 280px;
+            background: var(--light-grey);
+        }
+
+        /* Compact Top Header */
+        .top-header {
+            background: var(--white);
+            padding: 12px 24px;
+            border-bottom: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .header-content {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 20px 30px;
-            background: var(--white);
-            border-radius: 20px;
-            margin-bottom: 30px;
-            box-shadow: 0 10px 40px var(--shadow);
-            border: 2px solid var(--primary-yellow);
         }
 
-        .header-left h1 {
-            color: var(--primary-black);
-            font-size: 1.8em;
+        .page-title {
+            font-size: 1.4rem;
             font-weight: 700;
+            color: var(--primary-black);
         }
 
-        .header-right {
+        .header-actions {
             display: flex;
             align-items: center;
-            gap: 20px;
+            gap: 16px;
         }
 
-        .logout-button {
-            background: var(--primary-black);
-            color: var(--primary-yellow);
-            border: 2px solid var(--primary-yellow);
-            padding: 12px 24px;
-            border-radius: 12px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 600;
-            font-family: 'Poppins', sans-serif;
+        .live-indicator {
             display: flex;
             align-items: center;
             gap: 8px;
-            transition: all 0.3s ease;
-        }
-
-        .logout-button:hover {
             background: var(--primary-yellow);
             color: var(--primary-black);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px var(--shadow-dark);
-        }
-
-        #user-info {
-            color: var(--primary-black);
-            font-size: 14px;
-            font-weight: 500;
-        }
-
-        .header {
-            background: var(--white);
+            padding: 6px 12px;
             border-radius: 20px;
-            padding: 40px;
-            margin-bottom: 30px;
-            box-shadow: 0 20px 60px var(--shadow);
-            text-align: center;
-            border: 2px solid var(--primary-yellow);
-        }
-
-        .header h1 {
-            color: var(--primary-black);
-            margin-bottom: 15px;
-            font-size: 3em;
-            font-weight: 800;
-            background: linear-gradient(135deg, var(--primary-black) 0%, var(--dark-grey) 100%);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .header .subtitle {
-            color: var(--medium-grey);
-            font-size: 1.3em;
-            margin-bottom: 25px;
-            font-weight: 400;
-        }
-
-        .timezone-info {
-            background: var(--light-yellow);
-            padding: 20px;
-            border-radius: 15px;
-            margin-top: 25px;
-            border-left: 5px solid var(--primary-yellow);
-        }
-
-        .timezone-info h3 {
-            color: var(--primary-black);
-            margin-bottom: 10px;
+            font-size: 0.75rem;
             font-weight: 600;
         }
 
-        .timezone-info p {
-            color: var(--medium-grey);
-            font-weight: 500;
-        }
-
-        .tab-navigation {
-            display: flex;
-            background: var(--white);
-            border-radius: 20px;
-            padding: 15px;
-            margin-bottom: 30px;
-            box-shadow: 0 15px 50px var(--shadow);
-            overflow-x: auto;
-            border: 2px solid var(--primary-yellow);
-        }
-
-        .tab-button {
-            flex: 1;
-            padding: 18px 30px;
-            border: none;
-            background: transparent;
-            border-radius: 15px;
-            cursor: pointer;
-            font-size: 16px;
-            font-weight: 600;
-            font-family: 'Poppins', sans-serif;
-            color: var(--medium-grey);
-            transition: all 0.3s ease;
-            white-space: nowrap;
-            min-width: 150px;
-        }
-
-        .tab-button.active {
-            background: var(--primary-yellow);
-            color: var(--primary-black);
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px rgba(247, 219, 5, 0.4);
-        }
-
-        .tab-button:hover:not(.active) {
-            background: var(--light-yellow);
-            color: var(--primary-black);
-        }
-
-        .tab-content {
-            display: none;
-            background: var(--white);
-            border-radius: 20px;
-            padding: 40px;
-            box-shadow: 0 20px 60px var(--shadow);
-            color: var(--primary-black);
-            border: 2px solid var(--primary-yellow);
-        }
-
-        .tab-content.active {
-            display: block;
-            animation: fadeInUp 0.6s ease;
-        }
-
-        @keyframes fadeInUp {
-            from { 
-                opacity: 0; 
-                transform: translateY(30px); 
-            }
-            to { 
-                opacity: 1; 
-                transform: translateY(0); 
-            }
-        }
-
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-            gap: 30px;
-            margin-bottom: 40px;
-        }
-
-        .stat-card {
-            background: linear-gradient(135deg, var(--light-yellow) 0%, var(--white) 100%);
-            padding: 30px;
-            border-radius: 20px;
-            text-align: center;
-            border: 2px solid var(--primary-yellow);
-            transition: all 0.3s ease;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .stat-card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 5px;
-            background: var(--primary-yellow);
-        }
-
-        .stat-card:hover {
-            transform: translateY(-8px);
-            box-shadow: 0 20px 60px var(--shadow-dark);
-        }
-
-        .stat-value {
-            font-size: 3em;
-            font-weight: 800;
-            color: var(--primary-black);
-            margin-bottom: 15px;
-            display: block;
-        }
-
-        .stat-label {
-            color: var(--medium-grey);
-            font-size: 1.1em;
-            font-weight: 600;
-        }
-
-        .protection-status {
-            background: linear-gradient(135deg, var(--primary-yellow) 0%, #ffd700 100%);
-            color: var(--primary-black);
-            padding: 20px 40px;
-            border-radius: 30px;
-            display: inline-block;
-            font-weight: 700;
-            font-size: 1.1em;
-            margin: 25px 0;
-            box-shadow: 0 8px 30px rgba(247, 219, 5, 0.4);
-            border: 2px solid var(--primary-black);
-        }
-
-        .protection-status.waiting {
-            background: linear-gradient(135deg, var(--medium-grey) 0%, var(--dark-grey) 100%);
-            color: var(--primary-yellow);
-            border: 2px solid var(--primary-yellow);
-        }
-
-        .bot-severity {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            gap: 20px;
-            margin-top: 30px;
-        }
-
-        .severity-card {
-            padding: 25px;
-            border-radius: 15px;
-            text-align: center;
-            font-weight: 700;
-            border: 2px solid var(--primary-black);
-            transition: all 0.3s ease;
-        }
-
-        .severity-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 15px 40px var(--shadow-dark);
-        }
-
-        .severity-critical { 
-            background: linear-gradient(135deg, #ff4757 0%, #ff3742 100%); 
-            color: var(--white);
-        }
-        .severity-high { 
-            background: linear-gradient(135deg, #ff6348 0%, #ff4757 100%); 
-            color: var(--white);
-        }
-        .severity-medium { 
-            background: linear-gradient(135deg, var(--primary-yellow) 0%, #ffd700 100%); 
-            color: var(--primary-black);
-        }
-        .severity-low { 
-            background: linear-gradient(135deg, #70a1ff 0%, #5352ed 100%); 
-            color: var(--white);
-        }
-        .severity-minimal { 
-            background: linear-gradient(135deg, #7bed9f 0%, #2ed573 100%); 
-            color: var(--white);
-        }
-
-        .live-visitors-grid {
-            display: grid;
-            gap: 25px;
-            margin-top: 30px;
-        }
-
-        .visitor-card {
-            background: var(--light-yellow);
-            padding: 25px;
-            border-radius: 15px;
-            border-left: 5px solid var(--primary-yellow);
-            transition: all 0.3s ease;
-            border: 1px solid var(--primary-yellow);
-        }
-
-        .visitor-card:hover {
-            transform: translateX(8px);
-            box-shadow: 0 8px 30px var(--shadow);
-        }
-
-        .visitor-info {
-            display: grid;
-            grid-template-columns: 1fr auto;
-            gap: 25px;
-            align-items: center;
-        }
-
-        .visitor-details h4 {
-            color: var(--primary-black);
-            margin-bottom: 10px;
-            font-weight: 600;
-        }
-
-        .visitor-meta {
-            display: flex;
-            gap: 20px;
-            flex-wrap: wrap;
-            font-size: 0.9em;
-            color: var(--medium-grey);
-            font-weight: 500;
-        }
-
-        .risk-badge {
-            padding: 8px 16px;
-            border-radius: 25px;
-            font-size: 0.85em;
-            font-weight: 700;
-            border: 2px solid var(--primary-black);
-        }
-
-        .risk-critical { 
-            background: #ff4757; 
-            color: var(--white); 
-        }
-        .risk-high { 
-            background: #ff6348; 
-            color: var(--white); 
-        }
-        .risk-medium { 
-            background: var(--primary-yellow); 
-            color: var(--primary-black); 
-        }
-        .risk-low { 
-            background: #70a1ff; 
-            color: var(--white); 
-        }
-        .risk-minimal { 
-            background: #7bed9f; 
-            color: var(--white); 
-        }
-
-        .activity-log {
-            background: var(--light-yellow);
-            border-radius: 15px;
-            padding: 30px;
-            margin-top: 30px;
-            border: 2px solid var(--primary-yellow);
-        }
-
-        .activity-filters {
-            display: flex;
-            gap: 15px;
-            margin-bottom: 25px;
-            flex-wrap: wrap;
-        }
-
-        .filter-button {
-            padding: 12px 24px;
-            border: 2px solid var(--primary-black);
-            background: var(--white);
-            color: var(--primary-black);
-            border-radius: 25px;
-            cursor: pointer;
-            font-weight: 600;
-            font-family: 'Poppins', sans-serif;
-            transition: all 0.3s ease;
-        }
-
-        .filter-button.active {
-            background: var(--primary-black);
-            color: var(--primary-yellow);
-        }
-
-        .filter-button:hover:not(.active) {
-            background: var(--primary-yellow);
-            color: var(--primary-black);
-        }
-
-        .activity-item {
-            background: var(--white);
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 15px;
-            border-left: 4px solid var(--primary-yellow);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            transition: all 0.3s ease;
-        }
-
-        .activity-item:hover {
-            transform: translateX(5px);
-            box-shadow: 0 5px 20px var(--shadow);
-        }
-
-        .activity-content {
-            flex: 1;
-        }
-
-        .activity-content strong {
-            color: var(--primary-black);
-            font-weight: 600;
-        }
-
-        .activity-content div {
-            color: var(--medium-grey);
-            font-size: 0.9em;
-            margin-top: 5px;
-        }
-
-        .activity-time {
-            color: var(--medium-grey);
-            font-size: 0.9em;
-            font-weight: 500;
-        }
-
-        .settings-section {
-            background: var(--light-yellow);
-            padding: 30px;
-            border-radius: 15px;
-            margin-bottom: 30px;
-            border: 2px solid var(--primary-yellow);
-        }
-
-        .settings-section h3 {
-            color: var(--primary-black);
-            margin-bottom: 25px;
-            padding-bottom: 15px;
-            border-bottom: 2px solid var(--primary-yellow);
-            font-weight: 700;
-        }
-
-        .form-group {
-            margin-bottom: 25px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 10px;
-            font-weight: 600;
-            color: var(--primary-black);
-        }
-
-        .form-group input,
-        .form-group select {
-            width: 100%;
-            padding: 15px;
-            border: 2px solid var(--primary-yellow);
-            border-radius: 10px;
-            font-size: 16px;
-            font-family: 'Poppins', sans-serif;
-            transition: all 0.3s ease;
-            background: var(--white);
-        }
-
-        .form-group input:focus,
-        .form-group select:focus {
-            outline: none;
-            border-color: var(--primary-black);
-            box-shadow: 0 0 0 3px rgba(247, 219, 5, 0.3);
-        }
-
-        .btn {
-            padding: 15px 30px;
-            border: none;
-            border-radius: 12px;
-            font-size: 16px;
-            font-weight: 600;
-            font-family: 'Poppins', sans-serif;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-block;
-            border: 2px solid transparent;
-        }
-
-        .btn-primary {
-            background: var(--primary-yellow);
-            color: var(--primary-black);
-            border: 2px solid var(--primary-black);
-        }
-
-        .btn-primary:hover {
-            background: var(--primary-black);
-            color: var(--primary-yellow);
-            transform: translateY(-3px);
-            box-shadow: 0 8px 25px var(--shadow-dark);
-        }
-
-        .btn-secondary {
-            background: var(--medium-grey);
-            color: var(--white);
-            border: 2px solid var(--medium-grey);
-        }
-
-        .btn-danger {
-            background: #ff4757;
-            color: var(--white);
-            border: 2px solid #ff4757;
-        }
-
-        .loading {
-            text-align: center;
-            padding: 60px;
-            color: var(--primary-yellow);
-            font-size: 1.3em;
-            font-weight: 600;
-        }
-
-        .loading::after {
-            content: '';
-            display: inline-block;
-            width: 25px;
-            height: 25px;
-            border: 4px solid var(--primary-yellow);
-            border-radius: 50%;
-            border-top-color: transparent;
-            animation: spin 1s linear infinite;
-            margin-left: 15px;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-        .error-message {
-            background: #ffe6e6;
-            color: #d63031;
-            padding: 20px;
-            border-radius: 12px;
-            margin: 25px 0;
-            border-left: 5px solid #d63031;
-            font-weight: 500;
-        }
-
-        .success-message {
-            background: #e6ffe6;
-            color: #00b894;
-            padding: 20px;
-            border-radius: 12px;
-            margin: 25px 0;
-            border-left: 5px solid #00b894;
-            font-weight: 500;
-        }
-
-        .geographic-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 30px;
-            margin-top: 30px;
-        }
-
-        .geo-card {
-            background: var(--light-yellow);
-            padding: 25px;
-            border-radius: 15px;
-            border: 2px solid var(--primary-yellow);
-        }
-
-        .geo-card h4 {
-            color: var(--primary-black);
-            margin-bottom: 20px;
-            font-weight: 700;
-        }
-
-        .geo-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 12px 0;
-            border-bottom: 1px solid var(--primary-yellow);
-            font-weight: 500;
-        }
-
-        .geo-item:last-child {
-            border-bottom: none;
-        }
-
-        .real-time-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
-            background: var(--primary-yellow);
-            color: var(--primary-black);
-            padding: 8px 20px;
-            border-radius: 20px;
-            font-size: 0.9em;
-            font-weight: 700;
-            border: 2px solid var(--primary-black);
-        }
-
-        .real-time-indicator::before {
-            content: '';
-            width: 10px;
-            height: 10px;
+        .live-dot {
+            width: 8px;
+            height: 8px;
             background: var(--primary-black);
             border-radius: 50%;
             animation: pulse 2s infinite;
         }
 
         @keyframes pulse {
-            0%, 100% { opacity: 1; transform: scale(1); }
-            50% { opacity: 0.7; transform: scale(1.2); }
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
 
-        /* Scrollbar Styling */
-        ::-webkit-scrollbar {
-            width: 8px;
+        /* Compact Info Bar */
+        .info-bar {
+            background: var(--card-bg);
+            padding: 8px 24px;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.75rem;
+            color: var(--text-muted);
         }
 
-        ::-webkit-scrollbar-track {
-            background: var(--light-grey);
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr auto auto;
+            gap: 20px;
+            align-items: center;
         }
 
-        ::-webkit-scrollbar-thumb {
+        .website-info {
+            font-weight: 500;
+        }
+
+        .timezone-info, .time-info {
+            font-weight: 500;
+        }
+
+        /* Content Container */
+        .content-container {
+            padding: 24px;
+            max-width: 1400px;
+        }
+
+        /* Loading State */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 400px;
+            color: var(--text-muted);
+            font-size: 1.1rem;
+            font-weight: 500;
+        }
+
+        .loading::after {
+            content: '';
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--primary-yellow);
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s linear infinite;
+            margin-left: 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Tab Content */
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+            animation: fadeIn 0.3s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Compact Stats Grid */
+        .stats-overview {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--white);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            transition: all 0.2s ease;
+        }
+
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .stat-icon {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--primary-black);
+            margin-bottom: 4px;
+        }
+
+        .stat-label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        /* Content Grid */
+        .content-grid {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 24px;
+            margin-bottom: 24px;
+        }
+
+        /* Chart Card */
+        .chart-card {
+            background: var(--white);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            overflow: hidden;
+        }
+
+        .chart-header {
+            padding: 20px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .chart-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--primary-black);
+            margin-bottom: 4px;
+        }
+
+        .chart-subtitle {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .chart-body {
+            padding: 20px;
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--card-bg);
+            color: var(--text-muted);
+        }
+
+        /* Threat Levels Grid */
+        .threat-levels {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .threat-card {
+            background: var(--white);
+            padding: 16px;
+            border-radius: 10px;
+            text-align: center;
+            border: 1px solid var(--border-color);
+            transition: all 0.2s ease;
+        }
+
+        .threat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .threat-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+
+        .threat-label {
+            font-size: 0.75rem;
+            font-weight: 500;
+        }
+
+        .threat-critical { border-left: 4px solid #dc3545; }
+        .threat-critical .threat-value { color: #dc3545; }
+
+        .threat-high { border-left: 4px solid #fd7e14; }
+        .threat-high .threat-value { color: #fd7e14; }
+
+        .threat-medium { border-left: 4px solid var(--primary-yellow); }
+        .threat-medium .threat-value { color: #e6a700; }
+
+        .threat-low { border-left: 4px solid #17a2b8; }
+        .threat-low .threat-value { color: #17a2b8; }
+
+        .threat-minimal { border-left: 4px solid #28a745; }
+        .threat-minimal .threat-value { color: #28a745; }
+
+        /* Activity Feed */
+        .activity-feed {
+            background: var(--white);
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .activity-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            background: var(--card-bg);
+        }
+
+        .activity-title {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--primary-black);
+        }
+
+        .activity-item {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            transition: background 0.2s ease;
+        }
+
+        .activity-item:hover {
+            background: var(--card-bg);
+        }
+
+        .activity-item:last-child {
+            border-bottom: none;
+        }
+
+        .activity-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .activity-text {
+            font-size: 0.85rem;
+            color: var(--primary-black);
+            font-weight: 500;
+        }
+
+        .activity-time {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        /* Protection Status */
+        .protection-status {
+            background: linear-gradient(135deg, var(--primary-yellow) 0%, #ffd700 100%);
+            color: var(--primary-black);
+            padding: 12px 20px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin: 16px 0;
+            border: 1px solid var(--primary-black);
+        }
+
+        .protection-status.waiting {
+            background: var(--card-bg);
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+        }
+
+        /* Settings Form Styles */
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 24px;
+        }
+
+        .settings-card {
+            background: var(--white);
+            padding: 24px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+        }
+
+        .settings-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: var(--primary-black);
+            margin-bottom: 16px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid var(--primary-yellow);
+        }
+
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--primary-black);
+            margin-bottom: 6px;
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            font-size: 0.9rem;
+            transition: border-color 0.2s ease;
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--primary-yellow);
+            box-shadow: 0 0 0 3px rgba(247, 219, 5, 0.1);
+        }
+
+        .btn-primary {
             background: var(--primary-yellow);
-            border-radius: 4px;
+            color: var(--primary-black);
+            border: 1px solid var(--primary-black);
+            padding: 10px 20px;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
         }
 
-        ::-webkit-scrollbar-thumb:hover {
+        .btn-primary:hover {
             background: var(--primary-black);
+            color: var(--primary-yellow);
+        }
+
+        /* Filter buttons */
+        .filter-buttons {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .filter-btn {
+            padding: 8px 16px;
+            border: 1px solid var(--border-color);
+            background: var(--white);
+            color: var(--primary-black);
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn.active {
+            background: var(--primary-yellow);
+            color: var(--primary-black);
+            border-color: var(--primary-yellow);
+        }
+
+        .filter-btn:hover:not(.active) {
+            background: var(--card-bg);
+        }
+
+        /* Live Visitors Styles */
+        .visitor-card {
+            background: var(--white);
+            padding: 20px;
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
+            box-shadow: var(--shadow-sm);
+            margin-bottom: 16px;
+            transition: all 0.2s ease;
+        }
+
+        .visitor-card:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .visitor-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .visitor-ip {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--primary-black);
+        }
+
+        .visitor-status {
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .status-safe {
+            background: rgba(72, 187, 120, 0.1);
+            color: #48bb78;
+        }
+
+        .status-warning {
+            background: rgba(237, 137, 54, 0.1);
+            color: #ed8936;
+        }
+
+        .status-danger {
+            background: rgba(245, 101, 101, 0.1);
+            color: #f56565;
+        }
+
+        .visitor-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 12px;
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .visitor-detail {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .detail-label {
+            font-weight: 600;
+            color: var(--primary-black);
+            margin-bottom: 2px;
+        }
+
+        /* Responsive Design */
+        @media (max-width: 1024px) {
+            .sidebar {
+                transform: translateX(-100%);
+                transition: transform 0.3s ease;
+            }
+
+            .sidebar.open {
+                transform: translateX(0);
+            }
+
+            .main-content {
+                margin-left: 0;
+            }
+
+            .content-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         @media (max-width: 768px) {
-            .dashboard-container {
-                padding: 15px;
+            .stats-overview {
+                grid-template-columns: repeat(2, 1fr);
             }
 
-            .header h1 {
-                font-size: 2.2em;
+            .threat-levels {
+                grid-template-columns: repeat(3, 1fr);
             }
 
-            .stats-grid {
+            .info-grid {
                 grid-template-columns: 1fr;
-            }
-
-            .tab-navigation {
-                flex-direction: column;
-            }
-
-            .tab-button {
-                min-width: auto;
-            }
-
-            .visitor-info {
-                grid-template-columns: 1fr;
-            }
-
-            .visitor-meta {
-                justify-content: center;
-            }
-
-            .dashboard-header {
-                flex-direction: column;
-                gap: 15px;
+                gap: 8px;
                 text-align: center;
             }
 
-            .geographic-stats {
-                grid-template-columns: 1fr;
+            .content-container {
+                padding: 16px;
             }
-        }
-
-        /* Additional modern touches */
-        .stat-card, .visitor-card, .activity-item, .settings-section, .geo-card {
-            backdrop-filter: blur(10px);
-        }
-
-        .tab-content h2, .tab-content h3 {
-            color: var(--primary-black);
-            font-weight: 700;
-            margin-bottom: 20px;
-        }
-
-        .tab-content p {
-            color: var(--medium-grey);
-            font-weight: 500;
-            margin-bottom: 25px;
         }
     </style>
 </head>
 <body>
-    <div class="dashboard-container">
-        <!-- Header with Logout -->
-        <div class="dashboard-header">
-            <div class="header-left">
-                <h1>🛡️ Traffic Cop Dashboard</h1>
+    <div class="dashboard-layout">
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-title">🛡️ Traffic Cop</div>
+                <div class="sidebar-subtitle">Publisher Dashboard</div>
             </div>
-            <div class="header-right">
-                <span id="user-info">Welcome, Publisher</span>
-                <button id="logout-btn" class="logout-button">
-                    🚪 Logout
-                </button>
-            </div>
-        </div>
-
-        <!-- Main Header -->
-        <div class="header">
-            <h1>🛡️ Traffic Cop Publisher Dashboard</h1>
-            <p class="subtitle">Real-time bot protection analytics for <span id="website-display">newsparrow.in</span></p>
-            <div class="real-time-indicator">
-                Live Dashboard
-            </div>
-            <div class="timezone-info">
-                <h3>🌍 Dashboard Timezone: <span id="timezone-display">Loading...</span></h3>
-                <p>Current Time: <span id="current-time">Loading...</span></p>
-            </div>
-        </div>
-
-        <!-- Loading State -->
-        <div id="loading" class="loading">
-            Loading your Traffic Cop dashboard...
-        </div>
-
-        <!-- Tab Navigation -->
-        <div id="tab-navigation" class="tab-navigation" style="display: none;">
-            <button class="tab-button active" onclick="showTab('overview')">📊 Overview</button>
-            <button class="tab-button" onclick="showTab('live-visitors')">👥 Live Visitors</button>
-            <button class="tab-button" onclick="showTab('activity-logs')">📋 Activity Logs</button>
-            <button class="tab-button" onclick="showTab('settings')">⚙️ Settings</button>
-        </div>
-
-        <!-- Overview Tab -->
-        <div id="overview-tab" class="tab-content active">
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <span class="stat-value" id="live-users">0</span>
-                    <div class="stat-label">Users Online in last 5 min</div>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-value" id="total-visitors">0</span>
-                    <div class="stat-label">Total Requests Today</div>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-value" id="bots-detected">0</span>
-                    <div class="stat-label">Bots Detected</div>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-value" id="blocked-bots">0</span>
-                    <div class="stat-label">Bots Blocked</div>
-                </div>
-                <div class="stat-card">
-                    <span class="stat-value" id="allowed-users">0</span>
-                    <div class="stat-label">Legitimate Requests</div>
-                </div>
-            </div>
-
-            <div class="protection-status" id="protection-status">
-                ACTIVE - Waiting for traffic
-            </div>
-
-            <!-- Bot Severity Breakdown -->
-            <h3>🤖 Bot Threat Levels</h3>
-            <div class="bot-severity">
-                <div class="severity-card severity-critical">
-                    <div class="stat-value" id="critical-bots">0</div>
-                    <div>Critical</div>
-                </div>
-                <div class="severity-card severity-high">
-                    <div class="stat-value" id="high-bots">0</div>
-                    <div>High</div>
-                </div>
-                <div class="severity-card severity-medium">
-                    <div class="stat-value" id="medium-bots">0</div>
-                    <div>Medium</div>
-                </div>
-                <div class="severity-card severity-low">
-                    <div class="stat-value" id="low-bots">0</div>
-                    <div>Low</div>
-                </div>
-                <div class="severity-card severity-minimal">
-                    <div class="stat-value" id="minimal-bots">0</div>
-                    <div>Minimal</div>
-                </div>
-            </div>
-
-            <!-- Geographic Stats -->
-            <div class="geographic-stats">
-                <div class="geo-card">
-                    <h4>🌍 Top Countries</h4>
-                    <div id="countries-list">
-                        <div class="geo-item">
-                            <span>No data available</span>
-                            <span>0</span>
-                        </div>
-                    </div>
-                </div>
-                <div class="geo-card">
-                    <h4>🏙️ Top Cities</h4>
-                    <div id="cities-list">
-                        <div class="geo-item">
-                            <span>No data available</span>
-                            <span>0</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Live Visitors Tab -->
-        <div id="live-visitors-tab" class="tab-content">
-            <h2>👥 Live Visitors</h2>
-            <p>Real-time visitor monitoring and bot detection</p>
             
-            <div id="live-visitors-list" class="live-visitors-grid">
-                <div class="visitor-card">
-                    <div class="visitor-info">
-                        <div class="visitor-details">
-                            <h4>No live visitors</h4>
-                            <div class="visitor-meta">
-                                <span>Waiting for traffic...</span>
+            <nav class="nav-menu">
+                <button class="nav-item active" onclick="showTab('overview')">
+                    📊<span>Overview</span>
+                </button>
+                <button class="nav-item" onclick="showTab('live-visitors')">
+                    👥<span>Live Visitors</span>
+                </button>
+                <button class="nav-item" onclick="showTab('activity-logs')">
+                    📋<span>Activity Logs</span>
+                </button>
+                <button class="nav-item" onclick="showTab('settings')">
+                    ⚙️<span>Settings</span>
+                </button>
+            </nav>
+
+            <div class="user-profile">
+                <div class="user-info">
+                    <div class="user-avatar">TC</div>
+                    <div class="user-details">
+                        <h4 id="user-name">Publisher</h4>
+                        <p>Traffic Cop User</p>
+                    </div>
+                </div>
+                <button class="logout-btn" id="logout-btn">🚪 Logout</button>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Top Header -->
+            <div class="top-header">
+                <div class="header-content">
+                    <h1 class="page-title">Dashboard Overview</h1>
+                    <div class="header-actions">
+                        <div class="live-indicator">
+                            <div class="live-dot"></div>
+                            Live Dashboard
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Compact Info Bar -->
+            <div class="info-bar">
+                <div class="info-grid">
+                    <div class="website-info">
+                        🌐 Real-time bot protection analytics for <strong id="website-display">https://home.newsparrow.in</strong>
+                    </div>
+                    <div class="timezone-info">
+                        🌍 <span id="timezone-display">Loading...</span>
+                    </div>
+                    <div class="time-info">
+                        🕒 <span id="current-time">Loading...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Loading State -->
+            <div id="loading" class="loading">
+                Loading your Traffic Cop dashboard...
+            </div>
+
+            <!-- Content Container -->
+            <div id="dashboard-content" class="content-container" style="display: none;">
+                <!-- Overview Tab -->
+                <div id="overview-tab" class="tab-content active">
+                    <!-- Stats Overview -->
+                    <div class="stats-overview">
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(102, 126, 234, 0.1); color: #667eea;">👥</div>
+                            <div class="stat-value" id="live-users">0</div>
+                            <div class="stat-label">Users Online</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(77, 209, 199, 0.1); color: #4fd1c7;">📊</div>
+                            <div class="stat-value" id="total-visitors">0</div>
+                            <div class="stat-label">Total Requests</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(245, 101, 101, 0.1); color: #f56565;">🤖</div>
+                            <div class="stat-value" id="bots-detected">0</div>
+                            <div class="stat-label">Bots Detected</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(247, 219, 5, 0.1); color: #f7db05;">🛡️</div>
+                            <div class="stat-value" id="blocked-bots">0</div>
+                            <div class="stat-label">Bots Blocked</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(72, 187, 120, 0.1); color: #48bb78;">✅</div>
+                            <div class="stat-value" id="allowed-users">0</div>
+                            <div class="stat-label">Legitimate Users</div>
+                        </div>
+                    </div>
+
+                    <!-- Protection Status -->
+                    <div class="protection-status" id="protection-status">
+                        ACTIVE - Waiting for traffic
+                    </div>
+
+                    <!-- Content Grid -->
+                    <div class="content-grid">
+                        <!-- Chart Area -->
+                        <div class="chart-card">
+                            <div class="chart-header">
+                                <div class="chart-title">📈 Traffic Analysis</div>
+                                <div class="chart-subtitle">Real-time traffic patterns and threat detection</div>
+                            </div>
+                            <div class="chart-body">
+                                <div style="text-align: center;">
+                                    <div style="font-size: 2rem; margin-bottom: 12px;">📊</div>
+                                    <div>Traffic analysis chart</div>
+                                    <div style="font-size: 0.8rem; margin-top: 8px;">Real-time data visualization</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Activity Feed -->
+                        <div class="activity-feed">
+                            <div class="activity-header">
+                                <div class="activity-title">🔔 Recent Activity</div>
+                            </div>
+                            <div id="activity-list">
+                                <div class="activity-item">
+                                    <div class="activity-content">
+                                        <div class="activity-text">No recent activity</div>
+                                        <div class="activity-time">--:--</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Threat Levels -->
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <div class="chart-title">🚨 Threat Levels</div>
+                            <div class="chart-subtitle">Bot threat classification breakdown</div>
+                        </div>
+                        <div style="padding: 20px;">
+                            <div class="threat-levels">
+                                <div class="threat-card threat-critical">
+                                    <div class="threat-value" id="critical-bots">0</div>
+                                    <div class="threat-label">Critical</div>
+                                </div>
+                                <div class="threat-card threat-high">
+                                    <div class="threat-value" id="high-bots">0</div>
+                                    <div class="threat-label">High</div>
+                                </div>
+                                <div class="threat-card threat-medium">
+                                    <div class="threat-value" id="medium-bots">0</div>
+                                    <div class="threat-label">Medium</div>
+                                </div>
+                                <div class="threat-card threat-low">
+                                    <div class="threat-value" id="low-bots">0</div>
+                                    <div class="threat-label">Low</div>
+                                </div>
+                                <div class="threat-card threat-minimal">
+                                    <div class="threat-value" id="minimal-bots">0</div>
+                                    <div class="threat-label">Minimal</div>
+                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- Activity Logs Tab -->
-        <div id="activity-logs-tab" class="tab-content">
-            <h2>📋 Activity Logs</h2>
-            <p>Detailed traffic analysis and bot detection history</p>
-
-            <div class="activity-filters">
-                <button class="filter-button active" onclick="filterActivity('today')">Today</button>
-                <button class="filter-button" onclick="filterActivity('week')">This Week</button>
-                <button class="filter-button" onclick="filterActivity('month')">This Month</button>
-                <button class="filter-button" onclick="filterActivity('all')">All Time</button>
-            </div>
-
-            <div class="activity-log">
-                <div id="activity-list">
-                    <div class="activity-item">
-                        <div class="activity-content">
-                            <strong>No activity logs available</strong>
-                            <div>Waiting for traffic to analyze...</div>
+                <!-- Live Visitors Tab -->
+                <div id="live-visitors-tab" class="tab-content">
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <div class="chart-title">👥 Live Visitors</div>
+                            <div class="chart-subtitle">Real-time visitor monitoring and bot detection</div>
                         </div>
-                        <div class="activity-time">--:--</div>
+                        <div style="padding: 20px;">
+                            <div id="live-visitors-list">
+                                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                    <div style="font-size: 2rem; margin-bottom: 12px;">👥</div>
+                                    <div>Loading live visitors...</div>
+                                    <div style="font-size: 0.8rem; margin-top: 8px;">Fetching real-time data...</div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
 
-        <!-- Settings Tab -->
-        <div id="settings-tab" class="tab-content">
-            <h2>⚙️ Settings</h2>
+                <!-- Activity Logs Tab -->
+                <div id="activity-logs-tab" class="tab-content">
+                    <div class="chart-card">
+                        <div class="chart-header">
+                            <div class="chart-title">📋 Activity Logs</div>
+                            <div class="chart-subtitle">Detailed traffic analysis and bot detection history</div>
+                        </div>
+                        <div style="padding: 20px;">
+                            <div class="filter-buttons">
+                                <button class="filter-btn active" onclick="filterActivity('today')">Today</button>
+                                <button class="filter-btn" onclick="filterActivity('week')">This Week</button>
+                                <button class="filter-btn" onclick="filterActivity('month')">This Month</button>
+                                <button class="filter-btn" onclick="filterActivity('all')">All Time</button>
+                            </div>
+                            <div id="activity-logs-list">
+                                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                                    <div style="font-size: 2rem; margin-bottom: 12px;">📋</div>
+                                    <div>Loading activity logs...</div>
+                                    <div style="font-size: 0.8rem; margin-top: 8px;">Fetching activity data...</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
-            <!-- API Configuration -->
-            <div class="settings-section">
-                <h3>🔑 API Configuration</h3>
-                <div class="form-group">
-                    <label>API Key</label>
-                    <input type="text" id="api-key-display" readonly>
-                </div>
-                <div class="form-group">
-                    <label>Website</label>
-                    <input type="text" id="website-name" readonly>
-                </div>
-                <div class="form-group">
-                    <label>Plan</label>
-                    <input type="text" id="plan-display" readonly>
-                </div>
-            </div>
+                <!-- Settings Tab -->
+                <div id="settings-tab" class="tab-content">
+                    <div class="settings-grid">
+                        <div class="settings-card">
+                            <div class="settings-title">🔑 API Configuration</div>
+                            <div class="form-group">
+                                <label class="form-label">API Key</label>
+                                <input type="text" class="form-input" id="api-key-display" readonly>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Website</label>
+                                <input type="text" class="form-input" id="website-name" readonly>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Plan</label>
+                                <input type="text" class="form-input" id="plan-display" readonly>
+                            </div>
+                        </div>
 
-            <!-- Bot Detection Settings -->
-            <div class="settings-section">
-                <h3>🤖 Bot Detection Settings</h3>
-                <div class="form-group">
-                    <label>Challenge Threshold (Risk Score)</label>
-                    <input type="range" id="challenge-threshold" min="1" max="100" value="40">
-                    <span id="challenge-value">40</span>
-                </div>
-                <div class="form-group">
-                    <label>Block Threshold (Risk Score)</label>
-                    <input type="range" id="block-threshold" min="1" max="100" value="75">
-                    <span id="block-value">75</span>
-                </div>
-                <button class="btn btn-primary" onclick="updateThresholds()">Update Thresholds</button>
-            </div>
+                        <div class="settings-card">
+                            <div class="settings-title">🤖 Bot Detection Settings</div>
+                            <div class="form-group">
+                                <label class="form-label">Challenge Threshold</label>
+                                <input type="range" class="form-input" id="challenge-threshold" min="1" max="100" value="40">
+                                <span id="challenge-value">40</span>
+                            </div>
+                            <div class="form-group">
+                                <label class="form-label">Block Threshold</label>
+                                <input type="range" class="form-input" id="block-threshold" min="1" max="100" value="75">
+                                <span id="block-value">75</span>
+                            </div>
+                            <button class="btn-primary" onclick="updateThresholds()">Update Thresholds</button>
+                        </div>
 
-            <!-- Dashboard Settings -->
-            <div class="settings-section">
-                <h3>📊 Dashboard Settings</h3>
-                <div class="form-group">
-                    <label>Auto Refresh Interval</label>
-                    <select id="refresh-interval">
-                        <option value="5000">5 seconds</option>
-                        <option value="10000" selected>10 seconds</option>
-                        <option value="30000">30 seconds</option>
-                        <option value="60000">1 minute</option>
-                    </select>
+                        <div class="settings-card">
+                            <div class="settings-title">📊 Dashboard Settings</div>
+                            <div class="form-group">
+                                <label class="form-label">Auto Refresh Interval</label>
+                                <select class="form-input" id="refresh-interval">
+                                    <option value="5000">5 seconds</option>
+                                    <option value="10000" selected>10 seconds</option>
+                                    <option value="30000">30 seconds</option>
+                                    <option value="60000">1 minute</option>
+                                </select>
+                            </div>
+                            <button class="btn-primary" onclick="updateDashboardSettings()">Update Settings</button>
+                        </div>
+                    </div>
                 </div>
-                <div class="form-group">
-                    <label>Timezone</label>
-                    <select id="timezone-select">
-                        <option value="auto" selected>Auto-detect</option>
-                        <option value="UTC">UTC</option>
-                        <option value="America/New_York">Eastern Time</option>
-                        <option value="America/Los_Angeles">Pacific Time</option>
-                        <option value="Europe/London">London</option>
-                        <option value="Asia/Kolkata">India</option>
-                    </select>
-                </div>
-                <button class="btn btn-primary" onclick="updateDashboardSettings()">Update Settings</button>
             </div>
         </div>
     </div>
@@ -975,26 +1019,19 @@
     <script>
         // Configuration
         let apiKey = 'tc_live_1750227021440_5787761ba26d1f372a6ce3b5e62b69d2a8e0a58a814d2ff9_4d254583';
-        let refreshInterval = 10000; // 10 seconds
-        let refreshTimer;
+        let refreshInterval = 10000;
         let currentFilter = 'today';
 
-        // Fixed authentication check
+        // Authentication check
         function checkAuthentication() {
             console.log('🔍 Checking authentication...');
             
-            // Check URL parameters first (session token from login)
             const urlParams = new URLSearchParams(window.location.search);
             const sessionToken = urlParams.get('session');
             
             if (sessionToken) {
-                console.log('📝 Session token found in URL, validating...');
                 try {
-                    // Decode and validate session token
                     const decodedSession = atob(sessionToken);
-                    console.log('🔓 Session validated successfully');
-                    
-                    // Store session data
                     localStorage.setItem('traffic_cop_auth', JSON.stringify({
                         sessionToken: sessionToken,
                         apiKey: decodedSession,
@@ -1002,14 +1039,9 @@
                         expires: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
                     }));
                     
-                    // Update API key for dashboard use
                     apiKey = decodedSession;
-                    
-                    // Clean URL without redirect
                     const cleanUrl = window.location.origin + window.location.pathname;
                     window.history.replaceState({}, document.title, cleanUrl);
-                    
-                    // Clear redirect count on successful auth
                     sessionStorage.removeItem('redirect_count');
                     return true;
                 } catch (error) {
@@ -1017,38 +1049,27 @@
                 }
             }
             
-            // Check stored authentication
             const authData = localStorage.getItem('traffic_cop_auth');
-            
             if (!authData) {
-                console.log('❌ No authentication data found');
                 redirectToLogin();
                 return false;
             }
             
             try {
                 const auth = JSON.parse(authData);
-                
-                // Check if session has expired
                 if (auth.expires && new Date() > new Date(auth.expires)) {
-                    console.log('⏰ Session expired');
                     localStorage.removeItem('traffic_cop_auth');
                     redirectToLogin();
                     return false;
                 }
                 
-                // Update API key from stored auth
                 if (auth.apiKey) {
                     apiKey = auth.apiKey;
                 }
                 
-                console.log('✅ Authentication valid');
-                // Clear redirect count on successful auth
                 sessionStorage.removeItem('redirect_count');
                 return true;
-                
             } catch (error) {
-                console.error('❌ Authentication parsing error:', error);
                 localStorage.removeItem('traffic_cop_auth');
                 redirectToLogin();
                 return false;
@@ -1056,22 +1077,10 @@
         }
         
         function redirectToLogin() {
-            // Prevent multiple redirects
-            if (window.location.href.includes('publisher-login.html')) {
-                console.log('⚠️ Already on login page, preventing loop');
-                return;
-            }
+            if (window.location.href.includes('publisher-login.html')) return;
+            if (sessionStorage.getItem('redirecting_to_login') === 'true') return;
             
-            // Prevent immediate redirect if just came from login
-            if (sessionStorage.getItem('redirecting_to_login') === 'true') {
-                console.log('⚠️ Already redirecting, preventing loop');
-                return;
-            }
-            
-            // Add flag to prevent immediate redirect back
             sessionStorage.setItem('redirecting_to_login', 'true');
-            
-            console.log('🔄 Redirecting to login page...');
             setTimeout(() => {
                 window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
             }, 100);
@@ -1079,38 +1088,23 @@
 
         // Dashboard initialization
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('🚀 Initializing Traffic Cop Dashboard...');
-            
-            // Clear any redirect flags
             sessionStorage.removeItem('redirecting_to_login');
             
-            // Check authentication before proceeding
             if (!checkAuthentication()) {
-                console.log('❌ Authentication failed, stopping initialization');
-                return; // IMPORTANT: Stop here if not authenticated
+                return;
             }
             
-            // Only initialize dashboard if authenticated
-            console.log('✅ Authentication passed, initializing dashboard...');
             initializeDashboard();
         });
         
         function initializeDashboard() {
-            console.log('🔄 Loading dashboard...');
-            
-            // Initialize timezone manager
             timezoneManager.init();
-            
-            // Load dashboard data
-            loadOverviewData();
+            loadDashboardData();
             setupLogoutButton();
             
-            // Clear redirect count after successful initialization
             setTimeout(() => {
                 sessionStorage.removeItem('redirect_count');
             }, 2000);
-            
-            console.log('✅ Dashboard initialized successfully');
         }
 
         // Timezone management
@@ -1135,58 +1129,23 @@
                 return `UTC${sign}${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
             },
             
-            formatTime(timestamp) {
-                return new Date(timestamp).toLocaleString('en-US', {
-                    timeZone: this.userTimezone,
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    second: '2-digit',
-                    hour12: true
-                });
-            },
-            
             startClock() {
                 const updateClock = () => {
                     document.getElementById('current-time').textContent = 
-                        this.formatTime(new Date());
+                        new Date().toLocaleTimeString();
                 };
                 updateClock();
                 setInterval(updateClock, 1000);
             }
         };
 
-        // MISSING FUNCTION - Now implemented
-        async function loadOverviewData() {
-            console.log('🔄 Loading overview data...');
-            
+        // Load dashboard data
+        async function loadDashboardData() {
             try {
-                // Update UI with API key info
                 document.getElementById('api-key-display').value = apiKey.substring(0, 20) + '...';
                 document.getElementById('website-name').value = 'newsparrow.in';
                 document.getElementById('website-display').textContent = 'https://home.newsparrow.in';
                 document.getElementById('plan-display').value = 'Professional';
-                
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('tab-navigation').style.display = 'block';
-                document.getElementById('overview-tab').style.display = 'block';
-                
-                // Load initial overview data
-                await loadOverview();
-
-            } catch (error) {
-                console.error('❌ Dashboard load error:', error);
-                document.getElementById('loading').style.display = 'none';
-                document.getElementById('tab-navigation').style.display = 'block';
-                document.getElementById('overview-tab').style.display = 'block';
-            }
-        }
-
-        async function loadOverview() {
-            try {
-                console.log('🔄 Loading overview data...');
                 
                 const response = await fetch('https://traffic-cop-apii.vercel.app/api/v1/real-time-dashboard', {
                     headers: {
@@ -1195,51 +1154,41 @@
                     }
                 });
                 
-                console.log('📊 Dashboard API response status:', response.status);
-                
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('📊 Dashboard data received:', data);
-                    updateOverviewStats(data);
+                    updateDashboard(data);
                 } else {
-                    console.error('❌ Dashboard API failed:', response.status);
-                    updateOverviewWithFallback();
+                    updateDashboardWithFallback();
                 }
+                
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('dashboard-content').style.display = 'block';
+                
             } catch (error) {
-                console.error('❌ Failed to load overview:', error);
-                updateOverviewWithFallback();
+                console.error('❌ Failed to load dashboard data:', error);
+                updateDashboardWithFallback();
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('dashboard-content').style.display = 'block';
             }
         }
 
-        function updateOverviewStats(data) {
-            console.log('📊 Updating overview with data:', data);
-            
+        function updateDashboard(data) {
             document.getElementById('live-users').textContent = data.liveStats?.onlineUsers || 0;
             document.getElementById('total-visitors').textContent = data.dailyStats?.totalRequests || 0;
             document.getElementById('bots-detected').textContent = data.liveStats?.botsDetected || 0;
             document.getElementById('blocked-bots').textContent = data.dailyStats?.blockedBots || 0;
             document.getElementById('allowed-users').textContent = data.dailyStats?.allowedUsers || 0;
             
-            console.log('📊 Updated dashboard values:', {
-                liveUsers: data.liveStats?.onlineUsers,
-                totalVisitors: data.dailyStats?.totalRequests,
-                botsDetected: data.liveStats?.botsDetected,
-                blockedBots: data.dailyStats?.blockedBots,
-                allowedUsers: data.dailyStats?.allowedUsers
-            });
-            
-            // Update protection status
             const totalRequests = data.dailyStats?.totalRequests || 0;
             const statusElement = document.getElementById('protection-status');
             if (totalRequests > 0) {
-                statusElement.textContent = `ACTIVE - Protecting ${data.dailyStats.totalRequests} requests today`;
+                statusElement.textContent = `ACTIVE - Protecting ${totalRequests} requests today`;
                 statusElement.className = 'protection-status';
             } else {
                 statusElement.textContent = 'ACTIVE - Waiting for traffic';
                 statusElement.className = 'protection-status waiting';
             }
             
-            // Update severity breakdown
             if (data.liveStats?.botSeverity) {
                 document.getElementById('critical-bots').textContent = data.liveStats.botSeverity.critical || 0;
                 document.getElementById('high-bots').textContent = data.liveStats.botSeverity.high || 0;
@@ -1247,59 +1196,23 @@
                 document.getElementById('low-bots').textContent = data.liveStats.botSeverity.low || 0;
                 document.getElementById('minimal-bots').textContent = data.liveStats.botSeverity.minimal || 0;
             }
-            
-            // Update geographic stats
-            updateGeographicStats(data.geographicStats);
         }
 
-        function updateOverviewWithFallback() {
-            console.log('📊 Using fallback data for overview');
-            
-            // Keep current values or show zeros
+        function updateDashboardWithFallback() {
             const elements = ['live-users', 'total-visitors', 'bots-detected', 'blocked-bots', 'allowed-users'];
             elements.forEach(id => {
-                const element = document.getElementById(id);
-                if (element.textContent === '0' || element.textContent === '') {
-                    element.textContent = '0';
-                }
+                document.getElementById(id).textContent = '0';
             });
             
             document.getElementById('protection-status').textContent = 'ACTIVE - Waiting for traffic';
             document.getElementById('protection-status').className = 'protection-status waiting';
         }
 
-        function updateGeographicStats(geoStats) {
-            // Update countries
-            const countriesList = document.getElementById('countries-list');
-            if (geoStats?.countries && geoStats.countries.length > 0) {
-                countriesList.innerHTML = geoStats.countries.map(country => `
-                    <div class="geo-item">
-                        <span>${country.country}</span>
-                        <span>${country.count}</span>
-                    </div>
-                `).join('');
-            } else {
-                countriesList.innerHTML = '<div class="geo-item"><span>No data available</span><span>0</span></div>';
-            }
-            
-            // Update cities
-            const citiesList = document.getElementById('cities-list');
-            if (geoStats?.cities && geoStats.cities.length > 0) {
-                citiesList.innerHTML = geoStats.cities.map(city => `
-                    <div class="geo-item">
-                        <span>${city.city}</span>
-                        <span>${city.count}</span>
-                    </div>
-                `).join('');
-            } else {
-                citiesList.innerHTML = '<div class="geo-item"><span>No data available</span><span>0</span></div>';
-            }
-        }
-
+        // NEW: Load Live Visitors Function
         async function loadLiveVisitors() {
+            console.log('👥 Loading live visitors...');
+            
             try {
-                console.log('🔄 Loading live visitors...');
-                
                 const response = await fetch('https://traffic-cop-apii.vercel.app/api/v1/real-time-dashboard', {
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
@@ -1309,7 +1222,7 @@
                 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('👥 Live visitors data:', data.onlineVisitors);
+                    console.log('👥 Live visitors data received:', data.onlineVisitors);
                     updateLiveVisitors(data.onlineVisitors || []);
                 } else {
                     console.error('❌ Live visitors API failed:', response.status);
@@ -1321,65 +1234,82 @@
             }
         }
 
+        // NEW: Update Live Visitors Display
         function updateLiveVisitors(visitors) {
             const container = document.getElementById('live-visitors-list');
             
             if (visitors.length === 0) {
                 container.innerHTML = `
-                    <div class="visitor-card">
-                        <div class="visitor-info">
-                            <div class="visitor-details">
-                                <h4>No live visitors</h4>
-                                <div class="visitor-meta">
-                                    <span>Waiting for traffic...</span>
-                                </div>
-                            </div>
-                        </div>
+                    <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        <div style="font-size: 2rem; margin-bottom: 12px;">👥</div>
+                        <div>No live visitors</div>
+                        <div style="font-size: 0.8rem; margin-top: 8px;">Waiting for traffic...</div>
                     </div>
                 `;
                 return;
             }
             
-            container.innerHTML = visitors.map(visitor => `
-                <div class="visitor-card">
-                    <div class="visitor-info">
+            container.innerHTML = visitors.map(visitor => {
+                const riskLevel = visitor.riskScore > 70 ? 'danger' : visitor.riskScore > 40 ? 'warning' : 'safe';
+                const statusText = visitor.action === 'block' ? 'Blocked' : visitor.action === 'challenge' ? 'Challenged' : 'Allowed';
+                
+                return `
+                    <div class="visitor-card">
+                        <div class="visitor-header">
+                            <div class="visitor-ip">${visitor.ipAddress || 'Unknown IP'}</div>
+                            <div class="visitor-status status-${riskLevel}">${statusText}</div>
+                        </div>
                         <div class="visitor-details">
-                            <h4>${visitor.ipAddress || 'Unknown IP'}</h4>
-                            <div class="visitor-meta">
-                                <span>🌍 ${visitor.geolocation?.city || 'Unknown'}, ${visitor.geolocation?.country || 'Unknown'}</span>
-                                <span>🕒 ${visitor.lastSeenFormatted || 'Unknown time'}</span>
-                                <span>🌐 ${visitor.website || 'Unknown website'}</span>
+                            <div class="visitor-detail">
+                                <div class="detail-label">Location</div>
+                                <div>🌍 ${visitor.location?.city || 'Unknown'}, ${visitor.location?.country || 'Unknown'}</div>
+                            </div>
+                            <div class="visitor-detail">
+                                <div class="detail-label">Risk Score</div>
+                                <div>⚠️ ${visitor.riskScore || 0}%</div>
+                            </div>
+                            <div class="visitor-detail">
+                                <div class="detail-label">Last Seen</div>
+                                <div>🕒 ${visitor.lastSeenFormatted || formatTime(visitor.timestamp)}</div>
+                            </div>
+                            <div class="visitor-detail">
+                                <div class="detail-label">VPN/Proxy</div>
+                                <div>${visitor.vpnProxy?.isVPN ? '🔍 VPN Detected' : '✅ Clean'}</div>
+                            </div>
+                            <div class="visitor-detail">
+                                <div class="detail-label">User Agent</div>
+                                <div style="font-size: 0.75rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                                    ${visitor.userAgent ? visitor.userAgent.substring(0, 50) + '...' : 'Unknown'}
+                                </div>
+                            </div>
+                            <div class="visitor-detail">
+                                <div class="detail-label">Threats</div>
+                                <div>${visitor.threats ? visitor.threats.join(', ') : 'None detected'}</div>
                             </div>
                         </div>
-                        <div class="risk-badge risk-${visitor.severity || 'minimal'}">
-                            Risk: ${visitor.riskScore || 0}%
-                        </div>
                     </div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function updateLiveVisitorsWithFallback() {
             const container = document.getElementById('live-visitors-list');
             container.innerHTML = `
-                <div class="visitor-card">
-                    <div class="visitor-info">
-                        <div class="visitor-details">
-                            <h4>No live visitors</h4>
-                            <div class="visitor-meta">
-                                <span>Waiting for traffic...</span>
-                            </div>
-                        </div>
-                    </div>
+                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                    <div style="font-size: 2rem; margin-bottom: 12px;">👥</div>
+                    <div>Unable to load live visitors</div>
+                    <div style="font-size: 0.8rem; margin-top: 8px;">Please check your connection and try again</div>
                 </div>
             `;
         }
 
+        // NEW: Load Activity Logs Function
         async function loadActivityLogs(filter = 'today') {
+            console.log('📋 Loading activity logs with filter:', filter);
+            
             try {
-                console.log('🔄 Loading activity logs...');
-                
-                const response = await fetch(`https://traffic-cop-apii.vercel.app/api/v1/activity-logs?filter=${filter}&limit=50`, {
+                // Use the real-time dashboard endpoint to get visitor data for activity logs
+                const response = await fetch('https://traffic-cop-apii.vercel.app/api/v1/real-time-dashboard', {
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
                         'X-User-Timezone': timezoneManager.userTimezone
@@ -1388,8 +1318,40 @@
                 
                 if (response.ok) {
                     const data = await response.json();
-                    console.log('📋 Activity logs data:', data);
-                    updateActivityLogs(data.activities || []);
+                    console.log('📋 Activity logs data received:', data.onlineVisitors);
+                    
+                    // Filter the visitors based on the selected filter
+                    let filteredActivities = data.onlineVisitors || [];
+                    const now = new Date();
+                    
+                    switch(filter) {
+                        case 'today':
+                            filteredActivities = filteredActivities.filter(activity => {
+                                const activityDate = new Date(activity.timestamp);
+                                return activityDate.toDateString() === now.toDateString();
+                            });
+                            break;
+                        case 'week':
+                            const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+                            filteredActivities = filteredActivities.filter(activity => {
+                                const activityDate = new Date(activity.timestamp);
+                                return activityDate >= weekAgo;
+                            });
+                            break;
+                        case 'month':
+                            const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+                            filteredActivities = filteredActivities.filter(activity => {
+                                const activityDate = new Date(activity.timestamp);
+                                return activityDate >= monthAgo;
+                            });
+                            break;
+                        case 'all':
+                        default:
+                            // Show all activities
+                            break;
+                    }
+                    
+                    updateActivityLogs(filteredActivities);
                 } else {
                     console.error('❌ Activity logs API failed:', response.status);
                     updateActivityLogsWithFallback();
@@ -1400,68 +1362,108 @@
             }
         }
 
+        // NEW: Update Activity Logs Display
         function updateActivityLogs(activities) {
-            const container = document.getElementById('activity-list');
+            const container = document.getElementById('activity-logs-list');
             
             if (activities.length === 0) {
                 container.innerHTML = `
-                    <div class="activity-item">
-                        <div class="activity-content">
-                            <strong>No activity logs available</strong>
-                            <div>Waiting for traffic to analyze...</div>
-                        </div>
-                        <div class="activity-time">--:--</div>
+                    <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                        <div style="font-size: 2rem; margin-bottom: 12px;">📋</div>
+                        <div>No activity logs for ${currentFilter}</div>
+                        <div style="font-size: 0.8rem; margin-top: 8px;">Try selecting a different time period</div>
                     </div>
                 `;
                 return;
             }
             
-            container.innerHTML = activities.map(activity => `
-                <div class="activity-item">
-                    <div class="activity-content">
-                        <strong>${activity.action === 'block' ? '🚫 Bot Blocked' : 
-                                 activity.action === 'challenge' ? '⚠️ User Challenged' : 
-                                 '✅ User Allowed'}</strong>
-                        <div>IP: ${activity.ipAddress || 'Unknown'} | Risk: ${activity.riskScore || 0}% | ${activity.geolocation?.country || 'Unknown location'}</div>
+            // Sort activities by timestamp (newest first)
+            activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
+            container.innerHTML = activities.map(activity => {
+                const actionIcon = activity.action === 'block' ? '🚫' : 
+                                 activity.action === 'challenge' ? '⚠️' : '✅';
+                const actionText = activity.action === 'block' ? 'Bot Blocked' : 
+                                 activity.action === 'challenge' ? 'User Challenged' : 'User Allowed';
+                const actionColor = activity.action === 'block' ? '#dc3545' : 
+                                  activity.action === 'challenge' ? '#fd7e14' : '#28a745';
+                
+                return `
+                    <div class="activity-item">
+                        <div class="activity-content">
+                            <div class="activity-text">
+                                <strong style="color: ${actionColor};">${actionIcon} ${actionText}</strong>
+                                <div style="margin-top: 4px; font-size: 0.8rem; color: var(--text-muted);">
+                                    IP: ${activity.ipAddress || 'Unknown'} | 
+                                    Risk: ${activity.riskScore || 0}% | 
+                                    Location: ${activity.location?.country || 'Unknown'} |
+                                    ${activity.vpnProxy?.isVPN ? 'VPN/Proxy' : 'Direct'}
+                                </div>
+                                ${activity.threats && activity.threats.length > 0 ? 
+                                    `<div style="margin-top: 4px; font-size: 0.75rem; color: var(--text-muted);">
+                                        Threats: ${activity.threats.join(', ')}
+                                    </div>` : ''}
+                            </div>
+                            <div class="activity-time">${formatTime(activity.timestamp)}</div>
+                        </div>
                     </div>
-                    <div class="activity-time">${activity.timestampFormatted || 'Unknown time'}</div>
-                </div>
-            `).join('');
+                `;
+            }).join('');
         }
 
         function updateActivityLogsWithFallback() {
-            const container = document.getElementById('activity-list');
+            const container = document.getElementById('activity-logs-list');
             container.innerHTML = `
-                <div class="activity-item">
-                    <div class="activity-content">
-                        <strong>No activity logs available</strong>
-                        <div>Waiting for traffic to analyze...</div>
-                    </div>
-                    <div class="activity-time">--:--</div>
+                <div style="text-align: center; padding: 40px; color: var(--text-muted);">
+                    <div style="font-size: 2rem; margin-bottom: 12px;">📋</div>
+                    <div>Unable to load activity logs</div>
+                    <div style="font-size: 0.8rem; margin-top: 8px;">Please check your connection and try again</div>
                 </div>
             `;
         }
 
-        // Tab management
+        // Utility function to format timestamps
+        function formatTime(timestamp) {
+            if (!timestamp) return 'Unknown time';
+            
+            const date = new Date(timestamp);
+            const now = new Date();
+            const diffInMinutes = Math.floor((now - date) / (1000 * 60));
+            
+            if (diffInMinutes < 1) return 'Just now';
+            if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+            if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
+            
+            return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
+        }
+
+        // UPDATED: Tab management with data loading
         function showTab(tabName) {
-            // Hide all tabs
+            // Update navigation
+            document.querySelectorAll('.nav-item').forEach(item => {
+                item.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            // Update page title
+            const titles = {
+                'overview': 'Dashboard Overview',
+                'live-visitors': 'Live Visitors',
+                'activity-logs': 'Activity Logs',
+                'settings': 'Settings'
+            };
+            document.querySelector('.page-title').textContent = titles[tabName] || 'Dashboard';
+            
+            // Show/hide content
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
-            
-            // Remove active class from all buttons
-            document.querySelectorAll('.tab-button').forEach(btn => {
-                btn.classList.remove('active');
-            });
-            
-            // Show selected tab
             document.getElementById(`${tabName}-tab`).classList.add('active');
-            event.target.classList.add('active');
             
             // Load data for the selected tab
             switch(tabName) {
                 case 'overview':
-                    loadOverview();
+                    loadDashboardData();
                     break;
                 case 'live-visitors':
                     loadLiveVisitors();
@@ -1469,72 +1471,34 @@
                 case 'activity-logs':
                     loadActivityLogs(currentFilter);
                     break;
+                case 'settings':
+                    // Settings don't need data loading
+                    break;
             }
         }
 
-        // Activity filter management
+        // UPDATED: Filter activity with actual functionality
         function filterActivity(filter) {
             currentFilter = filter;
             
-            // Update filter buttons
-            document.querySelectorAll('.filter-button').forEach(btn => {
+            document.querySelectorAll('.filter-btn').forEach(btn => {
                 btn.classList.remove('active');
             });
             event.target.classList.add('active');
+            
+            console.log('🔍 Filtering activity logs:', filter);
             
             // Load filtered activity logs
             loadActivityLogs(filter);
         }
 
-        // Settings management
+        // Settings functions
         function updateThresholds() {
-            const challengeThreshold = document.getElementById('challenge-threshold').value;
-            const blockThreshold = document.getElementById('block-threshold').value;
-            
-            console.log('🔧 Updating thresholds:', { challengeThreshold, blockThreshold });
-            
-            fetch('https://traffic-cop-apii.vercel.app/api/v1/config', {
-                method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify({
-                    thresholds: {
-                        challenge: parseInt(challengeThreshold),
-                        block: parseInt(blockThreshold)
-                    }
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showMessage('Thresholds updated successfully!', 'success');
-                } else {
-                    showMessage('Failed to update thresholds', 'error');
-                }
-            })
-            .catch(error => {
-                console.error('❌ Failed to update thresholds:', error);
-                showMessage('Failed to update thresholds', 'error');
-            });
+            console.log('Updating thresholds...');
         }
 
         function updateDashboardSettings() {
-            const newRefreshInterval = parseInt(document.getElementById('refresh-interval').value);
-            const newTimezone = document.getElementById('timezone-select').value;
-            
-            // Update refresh interval
-            refreshInterval = newRefreshInterval;
-            setupAutoRefresh();
-            
-            // Update timezone
-            if (newTimezone !== 'auto') {
-                timezoneManager.userTimezone = newTimezone;
-                timezoneManager.updateTimezoneDisplay();
-            }
-            
-            showMessage('Dashboard settings updated!', 'success');
+            console.log('Updating dashboard settings...');
         }
 
         // Logout functionality
@@ -1543,92 +1507,34 @@
             if (logoutBtn) {
                 logoutBtn.addEventListener('click', function(e) {
                     e.preventDefault();
-                    handleLogout();
-                });
-            }
-        }
-
-        function handleLogout() {
-            console.log('🚪 Logging out...');
-            
-            if (confirm('Are you sure you want to logout?')) {
-                // Clear all authentication data
-                localStorage.removeItem('traffic_cop_auth');
-                localStorage.removeItem('traffic_cop_api_key');
-                localStorage.removeItem('traffic_cop_publisher_id');
-                sessionStorage.clear();
-                
-                // Set logout flag
-                sessionStorage.setItem('logged_out', 'true');
-                
-                // Redirect to login
-                window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
-            }
-        }
-
-        // Utility functions
-        function showMessage(message, type) {
-            const messageDiv = document.createElement('div');
-            messageDiv.className = type === 'success' ? 'success-message' : 'error-message';
-            messageDiv.textContent = message;
-            
-            const container = document.querySelector('.tab-content.active');
-            container.insertBefore(messageDiv, container.firstChild);
-            
-            setTimeout(() => {
-                messageDiv.remove();
-            }, 5000);
-        }
-
-        function setupAutoRefresh() {
-            if (refreshTimer) {
-                clearInterval(refreshTimer);
-            }
-            
-            refreshTimer = setInterval(() => {
-                const activeTab = document.querySelector('.tab-content.active');
-                if (activeTab) {
-                    const tabId = activeTab.id;
-                    switch(tabId) {
-                        case 'overview-tab':
-                            loadOverview();
-                            break;
-                        case 'live-visitors-tab':
-                            loadLiveVisitors();
-                            break;
-                        case 'activity-logs-tab':
-                            loadActivityLogs(currentFilter);
-                            break;
+                    if (confirm('Are you sure you want to logout?')) {
+                        localStorage.removeItem('traffic_cop_auth');
+                        sessionStorage.clear();
+                        sessionStorage.setItem('logged_out', 'true');
+                        window.location.href = 'https://traffic-cop-apii.vercel.app/publisher-login.html';
                     }
-                }
-            }, refreshInterval);
+                });
+            }
         }
 
-        // Threshold slider updates
-        document.addEventListener('DOMContentLoaded', function() {
-            const challengeSlider = document.getElementById('challenge-threshold');
-            const blockSlider = document.getElementById('block-threshold');
-            const challengeValue = document.getElementById('challenge-value');
-            const blockValue = document.getElementById('block-value');
-            
-            if (challengeSlider && challengeValue) {
-                challengeSlider.addEventListener('input', function() {
-                    challengeValue.textContent = this.value;
-                });
+        // UPDATED: Auto-refresh with tab-specific loading
+        setInterval(() => {
+            const activeTab = document.querySelector('.tab-content.active');
+            if (activeTab) {
+                const tabId = activeTab.id;
+                switch(tabId) {
+                    case 'overview-tab':
+                        loadDashboardData();
+                        break;
+                    case 'live-visitors-tab':
+                        loadLiveVisitors();
+                        break;
+                    case 'activity-logs-tab':
+                        loadActivityLogs(currentFilter);
+                        break;
+                }
             }
-            
-            if (blockSlider && blockValue) {
-                blockSlider.addEventListener('input', function() {
-                    blockValue.textContent = this.value;
-                });
-            }
-        });
-
-        // Auto-refresh dashboard data every interval
-        setTimeout(() => {
-            setupAutoRefresh();
-        }, 5000);
-        
+        }, refreshInterval);
     </script>
 </body>
 </html>
