@@ -2494,6 +2494,31 @@ module.exports = async (req, res) => {
             }
         }
 
+        // Add to your server.js for enhanced security
+        if (req.url === '/api/v1/logout' && req.method === 'POST') {
+            try {
+                // Clear any server-side session data if you implement it
+                res.setHeader('Set-Cookie', [
+                    'traffic_cop_session=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/',
+                    'traffic_cop_auth=; HttpOnly; Secure; SameSite=Strict; Max-Age=0; Path=/'
+                ]);
+                
+                res.status(200).json({
+                    success: true,
+                    message: 'Logged out successfully',
+                    redirectUrl: '/publisher-login.html'
+                });
+                
+            } catch (error) {
+                res.status(500).json({
+                    success: false,
+                    error: 'Logout failed'
+                });
+            }
+            return;
+        }
+
+
         // 404 for unknown routes
         res.status(404).json({ 
             error: 'Not found',
