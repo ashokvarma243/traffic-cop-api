@@ -331,15 +331,13 @@ class TrafficCopStorage {
         }
     }
     
-    // FIXED: Enhanced updateDailyStats with comprehensive bot counting
+    // FIXED: updateDailyStats function around line 400-450 in server.js
     async updateDailyStats(visitorData) {
         try {
             await this.ensureKVReady();
             
             const today = new Date().toISOString().split('T')[0];
             const statsKey = `${this.kvPrefix}daily:${today}`;
-            
-            console.log('🔄 Updating daily stats for key:', statsKey);
             
             let currentStats;
             try {
@@ -361,6 +359,7 @@ class TrafficCopStorage {
                 currentStats = null;
             }
             
+            // FIXED: Ensure riskDistribution object exists
             if (!currentStats) {
                 currentStats = {
                     date: today,
@@ -368,45 +367,52 @@ class TrafficCopStorage {
                     blockedBots: 0,
                     allowedUsers: 0,
                     challengedUsers: 0,
-                    botsDetected: 0, // Total bots detected
-                    vpnUsers: 0,     // NEW: VPN users count
-                    legitimateBots: 0, // NEW: Legitimate bots count
+                    botsDetected: 0,
+                    vpnUsers: 0,
+                    legitimateBots: 0,
                     threats: [],
                     countries: {},
                     cities: {},
-                    userAgents: {},  // NEW: Track user agent patterns
-                    riskDistribution: { // NEW: Risk score distribution
-                        low: 0,      // 0-30%
-                        medium: 0,   // 30-60%
-                        high: 0,     // 60-80%
-                        critical: 0  // 80%+
+                    userAgents: {},
+                    riskDistribution: {  // CRITICAL: This was missing
+                        low: 0,
+                        medium: 0,
+                        high: 0,
+                        critical: 0
                     }
+                };
+            }
+            
+            // CRITICAL: Ensure riskDistribution exists even if stats exist
+            if (!currentStats.riskDistribution) {
+                currentStats.riskDistribution = {
+                    low: 0,
+                    medium: 0,
+                    high: 0,
+                    critical: 0
                 };
             }
             
             // Update counters
             currentStats.totalRequests++;
             
-            // Enhanced bot counting logic
             const riskScore = visitorData.riskScore || 0;
             const action = visitorData.action || 'allow';
             const userAgent = visitorData.userAgent || '';
             const isVPN = visitorData.vpnProxy?.isVPN || false;
             const botType = visitorData.analysis?.legitimateBot?.type || null;
             
-            // Multiple criteria for bot detection
+            // Bot detection logic
             const isBot = this.isTrafficBot(riskScore, action, userAgent, isVPN, botType);
             
             if (isBot) {
                 currentStats.botsDetected++;
                 
-                // Categorize bot types
                 if (botType && ['google', 'bing', 'facebook', 'twitter'].includes(botType)) {
                     currentStats.legitimateBots++;
                 }
             }
             
-            // Count VPN users separately
             if (isVPN) {
                 currentStats.vpnUsers++;
             }
@@ -420,7 +426,7 @@ class TrafficCopStorage {
                 currentStats.allowedUsers++;
             }
             
-            // Update risk distribution
+            // FIXED: Safe risk distribution update
             if (riskScore >= 80) {
                 currentStats.riskDistribution.critical++;
             } else if (riskScore >= 60) {
@@ -429,12 +435,6 @@ class TrafficCopStorage {
                 currentStats.riskDistribution.medium++;
             } else {
                 currentStats.riskDistribution.low++;
-            }
-            
-            // Track user agent patterns
-            if (userAgent) {
-                const uaKey = this.categorizeUserAgent(userAgent);
-                currentStats.userAgents[uaKey] = (currentStats.userAgents[uaKey] || 0) + 1;
             }
             
             // Update geographic data
@@ -446,31 +446,25 @@ class TrafficCopStorage {
                 currentStats.cities[city] = (currentStats.cities[city] || 0) + 1;
             }
             
-            // Add threats with deduplication
+            // Add threats
             if (visitorData.threats && visitorData.threats.length > 0) {
                 const existingThreats = new Set(currentStats.threats);
                 visitorData.threats.forEach(threat => existingThreats.add(threat));
                 currentStats.threats = Array.from(existingThreats);
                 
-                // Limit threats array to prevent excessive growth
                 if (currentStats.threats.length > 100) {
                     currentStats.threats = currentStats.threats.slice(-100);
                 }
             }
             
-            // Add timestamp for last update
             currentStats.lastUpdated = new Date().toISOString();
             
-            // CRITICAL: Always store as JSON string
             const statsToStore = JSON.stringify(currentStats);
-            await kv.setex(statsKey, 604800, statsToStore); // 7 days expiry
+            await kv.setex(statsKey, 604800, statsToStore);
             
-            console.log('✅ Enhanced daily stats updated:', {
+            console.log('✅ Daily stats updated successfully:', {
                 totalRequests: currentStats.totalRequests,
                 botsDetected: currentStats.botsDetected,
-                blockedBots: currentStats.blockedBots,
-                vpnUsers: currentStats.vpnUsers,
-                legitimateBots: currentStats.legitimateBots,
                 riskDistribution: currentStats.riskDistribution
             });
             
@@ -479,6 +473,7 @@ class TrafficCopStorage {
             throw error;
         }
     }
+
 
     // Helper function: Enhanced bot detection logic
     isTrafficBot(riskScore, action, userAgent, isVPN, botType) {
@@ -581,7 +576,6 @@ class TrafficCopStorage {
             lastUpdated: new Date().toISOString()
         };
     }
-
     
     // Get daily statistics (KV only) - FIXED JSON PARSING
     async getDailyStats(date = null) {
@@ -631,21 +625,6 @@ class TrafficCopStorage {
             console.error('❌ getDailyStats error:', error);
             return this.getEmptyStats(date);
         }
-    }
-
-    // Add this helper method
-    getEmptyStats(date = null) {
-        return {
-            date: date || new Date().toISOString().split('T')[0],
-            totalRequests: 0,
-            blockedBots: 0,
-            allowedUsers: 0,
-            challengedUsers: 0,
-            botsDetected: 0, // NEW: Include botsDetected
-            threats: [],
-            countries: {},
-            cities: {}
-        };
     }
 
     // Enhanced getLiveVisitors with unique IP counting
@@ -858,7 +837,7 @@ class DynamicBotDetector {
         // FIXED: Updated thresholds
         this.actionThresholds = global.trafficCopConfig?.thresholds || {
             challenge: 45,
-            block: 80  // Lowered from 85
+            block: 75  // Lowered from 85
         };
         
         // proxycheck.io configuration
@@ -869,6 +848,29 @@ class DynamicBotDetector {
         };
         
         console.log('🤖 Enhanced DynamicBotDetector with legitimate bot detection initialized');
+    }
+
+    // FIXED: Calculate bot severity function
+    calculateBotSeverity(riskScore) {
+        try {
+            const score = riskScore || 0;
+            return {
+                critical: score >= 80 ? 1 : 0,
+                high: (score >= 60 && score < 80) ? 1 : 0,
+                medium: (score >= 40 && score < 60) ? 1 : 0,
+                low: (score >= 20 && score < 40) ? 1 : 0,
+                minimal: score < 20 ? 1 : 0
+            };
+        } catch (error) {
+            console.error('❌ calculateBotSeverity error:', error);
+            return {
+                critical: 0,
+                high: 0,
+                medium: 0,
+                low: 0,
+                minimal: 1
+            };
+        }
     }
     
     // NEW: Legitimate bot checker function
@@ -908,17 +910,6 @@ class DynamicBotDetector {
         
         return { isLegit: false, type: null, verified: false };
     }
-    // Add this helper method to your DynamicBotDetector class
-    calculateBotSeverity(riskScore) {
-        return {
-            critical: riskScore >= 80 ? 1 : 0,
-            high: (riskScore >= 60 && riskScore < 80) ? 1 : 0,
-            medium: (riskScore >= 40 && riskScore < 60) ? 1 : 0,
-            low: (riskScore >= 20 && riskScore < 40) ? 1 : 0,
-            minimal: riskScore < 20 ? 1 : 0
-        };
-    }
-
     
     // Enhanced VPN/Proxy Detection with proxycheck.io API
     async detectVPNProxy(ipAddress, userAgent, headers) {
@@ -1210,120 +1201,143 @@ class DynamicBotDetector {
         const sessionId = requestData.sessionId || 'unknown';
         const timestamp = Date.now();
         
-        // CHECK LEGITIMATE BOTS FIRST
-        const isLegitimateBot = this.checkLegitimateBot(
-            requestData.userAgent, 
-            requestData.ipAddress || requestData.realTimeData?.ipAddress
-        );
-        
-        // If legitimate bot, give very low risk score
-        if (isLegitimateBot.isLegit) {
-            console.log(`✅ Legitimate ${isLegitimateBot.type} bot detected: ${requestData.ipAddress}`);
+        try {
+            // CHECK LEGITIMATE BOTS FIRST
+            const isLegitimateBot = this.checkLegitimateBot(
+                requestData.userAgent, 
+                requestData.ipAddress || requestData.realTimeData?.ipAddress
+            );
+            
+            // If legitimate bot, give very low risk score
+            if (isLegitimateBot.isLegit) {
+                console.log(`✅ Legitimate ${isLegitimateBot.type} bot detected: ${requestData.ipAddress}`);
+                return {
+                    riskScore: 5,
+                    action: 'allow',
+                    confidence: 95,
+                    threats: [],
+                    blockAds: false,
+                    isBot: true,
+                    botType: isLegitimateBot.type,
+                    vpnProxy: { isVPN: false, confidence: 0 },
+                    analysis: {
+                        legitimateBot: isLegitimateBot,
+                        requestPattern: { frequency: 0, isRhythmic: false, totalRequests: 1 },
+                        userAgentAnalysis: { score: 0.05, anomalies: [`Legitimate ${isLegitimateBot.type} bot`] },
+                        behaviorAnalysis: { score: 1.0, signals: [] },
+                        vpnProxyAnalysis: { isVPNProxy: false, confidence: 0, signals: [] },
+                        botSeverity: this.calculateBotSeverity(5)
+                    }
+                };
+            }
+            
+            // Continue with original bot detection for non-legitimate bots
+            const requestAnalysis = this.analyzeRequestPatterns(sessionId, timestamp);
+            const userAgentAnalysis = this.analyzeUserAgentAnomalies(requestData.userAgent);
+            const behaviorAnalysis = this.analyzeBehaviorSignals(requestData.behaviorData || {});
+            
+            // Enhanced VPN/Proxy Detection with proxycheck.io
+            const vpnProxyAnalysis = await this.detectVPNProxy(
+                requestData.ipAddress || requestData.realTimeData?.ipAddress, 
+                requestData.userAgent, 
+                requestData.headers || {}
+            );
+            
+            // Calculate composite risk score
+            let riskScore = 0;
+            const factors = [];
+            
+            if (requestAnalysis.frequency > this.anomalyThresholds.requestFrequency.malicious) {
+                riskScore += 40;
+                factors.push(`High request frequency: ${requestAnalysis.frequency.toFixed(1)}/sec`);
+            }
+            
+            if (requestAnalysis.isRhythmic && requestAnalysis.totalRequests > 5) {
+                riskScore += 30;
+                factors.push(`Mechanical request timing pattern`);
+            }
+            
+            riskScore += userAgentAnalysis.score * 25;
+            if (userAgentAnalysis.anomalies.length > 0) {
+                factors.push(`User agent anomalies: ${userAgentAnalysis.anomalies.join(', ')}`);
+            }
+            
+            const behaviorRisk = (1 - behaviorAnalysis.score) * 30;
+            riskScore += behaviorRisk;
+            if (behaviorAnalysis.signals.length > 0) {
+                factors.push(`Behavioral signals: ${behaviorAnalysis.signals.join(', ')}`);
+            }
+            
+            // Enhanced VPN/Proxy risk scoring
+            riskScore += vpnProxyAnalysis.score;
+            if (vpnProxyAnalysis.signals.length > 0) {
+                factors.push(`VPN/Proxy signals: ${vpnProxyAnalysis.signals.join(', ')}`);
+            }
+            
+            // Determine action with UPDATED THRESHOLDS
+            let action = 'allow';
+            let confidence = 0.6;
+            let blockAds = false;
+            
+            const currentThresholds = global.trafficCopConfig?.thresholds || this.actionThresholds;
+            
+            if (riskScore >= currentThresholds.block) {
+                action = 'block';
+                confidence = 0.9;
+                blockAds = true;
+            } else if (riskScore >= currentThresholds.challenge) {
+                action = 'challenge';
+                confidence = 0.8;
+            }
+            
+            // Enhanced ad blocking logic for VPN/Proxy users
+            if (vpnProxyAnalysis.isVPNProxy) {
+                blockAds = true;
+                factors.push('Ad blocking enabled for VPN/Proxy user');
+                
+                console.log(`🔍 VPN/Proxy user detected: IP=${requestData.ipAddress}, Confidence=${vpnProxyAnalysis.confidence}%, Signals=[${vpnProxyAnalysis.signals.join(', ')}]`);
+            }
+            
+            console.log(`🎯 Enhanced Detection Complete: SessionId=${sessionId}, Risk=${Math.round(riskScore)}, VPN/Proxy=${vpnProxyAnalysis.isVPNProxy}, BlockAds=${blockAds}, Action=${action}`);
+            
+            // FIXED: Return with proper botSeverity
             return {
-                riskScore: 5,
-                action: 'allow',
-                confidence: 95,
-                threats: [],
-                blockAds: false,
-                isBot: true,
-                botType: isLegitimateBot.type,
-                vpnProxy: { isVPN: false, confidence: 0 },
+                riskScore: Math.round(riskScore),
+                action: action,
+                confidence: Math.round(confidence * 100),
+                threats: factors,
+                blockAds: blockAds,
+                vpnProxy: vpnProxyAnalysis,
                 analysis: {
                     legitimateBot: isLegitimateBot,
+                    requestPattern: requestAnalysis,
+                    userAgentAnalysis: userAgentAnalysis,
+                    behaviorAnalysis: behaviorAnalysis,
+                    vpnProxyAnalysis: vpnProxyAnalysis,
+                    botSeverity: this.calculateBotSeverity(riskScore)
+                }
+            };
+
+        } catch (error) {
+            console.error('❌ detectBot error:', error);
+            // Return safe fallback
+            return {
+                riskScore: 50,
+                action: 'challenge',
+                confidence: 50,
+                threats: ['analysis_error'],
+                blockAds: false,
+                vpnProxy: { isVPN: false, confidence: 0 },
+                analysis: {
+                    legitimateBot: { isLegit: false, type: null, verified: false },
                     requestPattern: { frequency: 0, isRhythmic: false, totalRequests: 1 },
-                    userAgentAnalysis: { score: 0.05, anomalies: [`Legitimate ${isLegitimateBot.type} bot`] },
-                    behaviorAnalysis: { score: 1.0, signals: [] },
-                    vpnProxyAnalysis: { isVPNProxy: false, confidence: 0, signals: [] }
+                    userAgentAnalysis: { score: 0.5, anomalies: ['analysis_failed'] },
+                    behaviorAnalysis: { score: 0.5, signals: ['analysis_failed'] },
+                    vpnProxyAnalysis: { isVPNProxy: false, confidence: 0, signals: [] },
+                    botSeverity: this.calculateBotSeverity(50)
                 }
             };
         }
-        
-        // Continue with original bot detection for non-legitimate bots
-        const requestAnalysis = this.analyzeRequestPatterns(sessionId, timestamp);
-        const userAgentAnalysis = this.analyzeUserAgentAnomalies(requestData.userAgent);
-        const behaviorAnalysis = this.analyzeBehaviorSignals(requestData.behaviorData || {});
-        
-        // Enhanced VPN/Proxy Detection with proxycheck.io
-        const vpnProxyAnalysis = await this.detectVPNProxy(
-            requestData.ipAddress || requestData.realTimeData?.ipAddress, 
-            requestData.userAgent, 
-            requestData.headers || {}
-        );
-        
-        // Calculate composite risk score
-        let riskScore = 0;
-        const factors = [];
-        
-        if (requestAnalysis.frequency > this.anomalyThresholds.requestFrequency.malicious) {
-            riskScore += 40;
-            factors.push(`High request frequency: ${requestAnalysis.frequency.toFixed(1)}/sec`);
-        }
-        
-        if (requestAnalysis.isRhythmic && requestAnalysis.totalRequests > 5) {
-            riskScore += 30;
-            factors.push(`Mechanical request timing pattern`);
-        }
-        
-        riskScore += userAgentAnalysis.score * 25; // REDUCED from 35
-        if (userAgentAnalysis.anomalies.length > 0) {
-            factors.push(`User agent anomalies: ${userAgentAnalysis.anomalies.join(', ')}`);
-        }
-        
-        const behaviorRisk = (1 - behaviorAnalysis.score) * 30; // REDUCED from 40
-        riskScore += behaviorRisk;
-        if (behaviorAnalysis.signals.length > 0) {
-            factors.push(`Behavioral signals: ${behaviorAnalysis.signals.join(', ')}`);
-        }
-        
-        // Enhanced VPN/Proxy risk scoring
-        riskScore += vpnProxyAnalysis.score;
-        if (vpnProxyAnalysis.signals.length > 0) {
-            factors.push(`VPN/Proxy signals: ${vpnProxyAnalysis.signals.join(', ')}`);
-        }
-        
-        // Determine action with UPDATED THRESHOLDS
-        let action = 'allow';
-        let confidence = 0.6;
-        let blockAds = false;
-        
-        const currentThresholds = global.trafficCopConfig?.thresholds || this.actionThresholds;
-        
-        if (riskScore >= currentThresholds.block) {
-            action = 'block';
-            confidence = 0.9;
-            blockAds = true;
-        } else if (riskScore >= currentThresholds.challenge) {
-            action = 'challenge';
-            confidence = 0.8;
-        }
-        
-        // Enhanced ad blocking logic for VPN/Proxy users
-        if (vpnProxyAnalysis.isVPNProxy) {
-            blockAds = true;
-            factors.push('Ad blocking enabled for VPN/Proxy user');
-            
-            console.log(`🔍 VPN/Proxy user detected: IP=${requestData.ipAddress}, Confidence=${vpnProxyAnalysis.confidence}%, Signals=[${vpnProxyAnalysis.signals.join(', ')}]`);
-        }
-        
-        console.log(`🎯 Enhanced Detection Complete: SessionId=${sessionId}, Risk=${Math.round(riskScore)}, VPN/Proxy=${vpnProxyAnalysis.isVPNProxy}, BlockAds=${blockAds}, Action=${action}`);
-        
-        return {
-            riskScore: Math.round(riskScore),
-            action: action,
-            confidence: Math.round(confidence * 100),
-            threats: factors,
-            blockAds: blockAds,
-            vpnProxy: vpnProxyAnalysis,
-            analysis: {
-                legitimateBot: isLegitimateBot,
-                requestPattern: requestAnalysis,
-                userAgentAnalysis: userAgentAnalysis,
-                behaviorAnalysis: behaviorAnalysis,
-                vpnProxyAnalysis: vpnProxyAnalysis,
-                // FIXED: Always include botSeverity
-                botSeverity: this.calculateBotSeverity(riskScore)
-            }
-        };
     }
     
     // Existing methods (keep unchanged)
@@ -1576,7 +1590,7 @@ module.exports = async (req, res) => {
                 status: 'healthy',
                 timestamp: new Date().toISOString(),
                 message: 'Traffic Cop API with KV Storage is running!',
-                version: '5.1.0',
+                version: '5.2.0',
                 features: ['Dynamic Bot Detection', 'KV Persistent Storage', 'Dynamic API Keys', 'Real-Time Analytics', 'Global Timezone Support', 'Geolocation Tracking', 'Legitimate Bot Detection']
             });
             return;
@@ -1598,10 +1612,10 @@ module.exports = async (req, res) => {
                 config: {
                     thresholds: {
                         challenge: detector.actionThresholds?.challenge || 45,
-                        block: detector.actionThresholds?.block || 80
+                        block: detector.actionThresholds?.block || 75
                     },
                     anomalyThresholds: detector.anomalyThresholds,
-                    version: '5.1.0',
+                    version: '5.2.0',
                     lastUpdated: new Date().toISOString()
                 },
                 message: 'Current bot detection configuration'
@@ -1628,7 +1642,7 @@ module.exports = async (req, res) => {
                         global.trafficCopConfig = global.trafficCopConfig || {};
                         global.trafficCopConfig.thresholds = {
                             challenge: newConfig.thresholds.challenge || 45,
-                            block: newConfig.thresholds.block || 80
+                            block: newConfig.thresholds.block || 75
                         };
                         
                         console.log('🔧 Configuration updated:', global.trafficCopConfig.thresholds);
@@ -1638,7 +1652,7 @@ module.exports = async (req, res) => {
                         success: true,
                         message: 'Configuration updated successfully',
                         updatedConfig: {
-                            thresholds: global.trafficCopConfig?.thresholds || { challenge: 45, block: 80 },
+                            thresholds: global.trafficCopConfig?.thresholds || { challenge: 45, block: 75 },
                             timestamp: new Date().toISOString()
                         }
                     });
@@ -1669,6 +1683,8 @@ module.exports = async (req, res) => {
             req.on('data', chunk => body += chunk);
             req.on('end', async () => {
                 try {
+                    console.log('🔄 Starting analyze request processing...');
+                    
                     const requestData = JSON.parse(body);
                     const { userAgent, website } = requestData;
                     
@@ -1679,6 +1695,8 @@ module.exports = async (req, res) => {
                                 req.connection.remoteAddress || 
                                 'unknown';
                     
+                    console.log('📊 Processing request for IP:', realIP);
+                    
                     const allHeaders = req.headers;
                     
                     const enhancedRequestData = {
@@ -1687,13 +1705,16 @@ module.exports = async (req, res) => {
                         headers: allHeaders
                     };
                     
+                    console.log('🤖 Creating bot detector...');
                     const detector = new DynamicBotDetector();
+                    
+                    console.log('🔍 Running bot detection...');
                     const analysis = await detector.detectBot(enhancedRequestData);
                     
-                    // Get geolocation data
+                    console.log('🌍 Getting geolocation...');
                     const geolocation = await getGeolocationFromIP(realIP);
                     
-                    // Store visitor data in KV
+                    console.log('💾 Storing visitor data...');
                     const visitorData = {
                         sessionId: requestData.sessionId || `sess_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         userAgent: userAgent,
@@ -1706,35 +1727,46 @@ module.exports = async (req, res) => {
                         vpnProxy: analysis.vpnProxy,
                         publisherId: auth.publisherId,
                         geolocation: geolocation,
+                        analysis: analysis.analysis,
                         timestamp: new Date().toISOString()
                     };
                     
                     await storage.storeVisitorSession(visitorData);
                     
+                    console.log('✅ Analysis complete, sending response...');
+                    
                     // Enhanced response with all analysis data
                     res.status(200).json({
-                        riskScore: analysis.riskScore,
-                        action: analysis.action,
-                        confidence: analysis.confidence,
-                        threats: analysis.threats,
-                        blockAds: analysis.blockAds,
-                        vpnProxy: analysis.vpnProxy,
-                        severity: calculateSeverity(analysis.riskScore),
+                        riskScore: analysis.riskScore || 0,
+                        action: analysis.action || 'allow',
+                        confidence: analysis.confidence || 50,
+                        threats: analysis.threats || [],
+                        blockAds: analysis.blockAds || false,
+                        vpnProxy: analysis.vpnProxy || { isVPN: false, confidence: 0 },
+                        severity: calculateSeverity(analysis.riskScore || 0),
                         sessionId: visitorData.sessionId,
                         ipAddress: realIP,
                         geolocation: geolocation,
                         timestamp: new Date().toISOString(),
-                        analysis: analysis.analysis,
+                        analysis: analysis.analysis || {},
                         isBot: analysis.isBot || false,
                         botType: analysis.botType || null
                     });
                     
                 } catch (error) {
-                    console.error('❌ Analysis endpoint error:', error);
+                    console.error('❌ CRITICAL ANALYZE ERROR:', error);
+                    console.error('Error stack:', error.stack);
+                    
+                    // Return detailed error for debugging
                     res.status(500).json({
                         error: 'Analysis failed',
                         details: error.message,
-                        timestamp: new Date().toISOString()
+                        stack: error.stack,
+                        timestamp: new Date().toISOString(),
+                        debugInfo: {
+                            step: 'analyze_endpoint',
+                            requestBody: body.substring(0, 200) + '...'
+                        }
                     });
                 }
             });
@@ -1757,25 +1789,25 @@ module.exports = async (req, res) => {
                 // Get live visitors (last 30 minutes)
                 const liveVisitors = await storage.getLiveVisitors();
                 
-                // FIXED: Calculate live stats with proper bot counting
+                // FIXED: Use dailyStats.botsDetected instead of calculating from live visitors
                 const liveStats = {
-                    onlineUsers: liveVisitors.length,
-                    botsDetected: dailyStats.botsDetected || 0, // Use the new botsDetected field
+                    onlineUsers: Array.isArray(liveVisitors) ? liveVisitors.length : 0,
+                    botsDetected: dailyStats.botsDetected || (dailyStats.blockedBots + dailyStats.challengedUsers),
                     botSeverity: {
-                        critical: liveVisitors.filter(v => (v.riskScore || 0) >= 80).length,
-                        high: liveVisitors.filter(v => (v.riskScore || 0) >= 60 && (v.riskScore || 0) < 80).length,
-                                                medium: liveVisitors.filter(v => (v.riskScore || 0) >= 40 && (v.riskScore || 0) < 60).length,
-                        low: liveVisitors.filter(v => (v.riskScore || 0) >= 20 && (v.riskScore || 0) < 40).length,
-                        minimal: liveVisitors.filter(v => (v.riskScore || 0) < 20).length
+                        critical: Array.isArray(liveVisitors) ? liveVisitors.filter(v => (v.riskScore || 0) >= 80).length : 0,
+                        high: Array.isArray(liveVisitors) ? liveVisitors.filter(v => (v.riskScore || 0) >= 60 && (v.riskScore || 0) < 80).length : 0,
+                        medium: Array.isArray(liveVisitors) ? liveVisitors.filter(v => (v.riskScore || 0) >= 40 && (v.riskScore || 0) < 60).length : 0,
+                        low: Array.isArray(liveVisitors) ? liveVisitors.filter(v => (v.riskScore || 0) >= 20 && (v.riskScore || 0) < 40).length : 0,
+                        minimal: Array.isArray(liveVisitors) ? liveVisitors.filter(v => (v.riskScore || 0) < 20).length : 0
                     }
                 };
                 
                 // Format live visitors for dashboard
-                const formattedVisitors = liveVisitors.map(visitor => ({
+                const formattedVisitors = Array.isArray(liveVisitors) ? liveVisitors.map(visitor => ({
                     ...visitor,
                     lastSeenFormatted: formatTimeAgo(visitor.timestamp),
                     severity: calculateSeverity(visitor.riskScore || 0)
-                }));
+                })) : [];
                 
                 // Geographic stats
                 const geographicStats = {

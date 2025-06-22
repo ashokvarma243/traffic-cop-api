@@ -535,6 +535,43 @@
             border: 1px solid var(--border-color);
         }
 
+        /* Challenge Rate Indicator */
+        .challenge-rate-indicator {
+            margin: 16px 0;
+        }
+
+        .challenge-rate-card {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 20px;
+            background: var(--light-yellow);
+            border-radius: 8px;
+            border-left: 4px solid #ffc107;
+        }
+
+        .challenge-rate-info {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .challenge-rate-title {
+            font-weight: 600;
+            color: var(--primary-black);
+            font-size: 0.9rem;
+        }
+
+        .challenge-rate-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+        }
+
+        .challenge-rate-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #ffc107;
+        }
+
         /* Settings Form Styles */
         .settings-grid {
             display: grid;
@@ -773,7 +810,7 @@
                     <div class="user-avatar">TC</div>
                     <div class="user-details">
                         <h4 id="user-name">Publisher</h4>
-                        <p> User</p>
+                        <p>Professional User</p>
                     </div>
                 </div>
                 <button class="logout-btn" id="logout-btn">🚪 Logout</button>
@@ -836,6 +873,7 @@
                             <div class="stat-value" id="bots-detected">0</div>
                             <div class="stat-label">Bots Detected</div>
                         </div>
+                        <!-- NEW: Challenged Requests Stat -->
                         <div class="stat-card">
                             <div class="stat-icon" style="background: rgba(255, 193, 7, 0.1); color: #ffc107;">⚠️</div>
                             <div class="stat-value" id="challenged-requests">0</div>
@@ -856,6 +894,17 @@
                     <!-- Protection Status -->
                     <div class="protection-status" id="protection-status">
                         ACTIVE - Waiting for traffic
+                    </div>
+
+                    <!-- NEW: Challenge Rate Indicator -->
+                    <div class="challenge-rate-indicator">
+                        <div class="challenge-rate-card">
+                            <div class="challenge-rate-info">
+                                <div class="challenge-rate-title">Challenge Rate</div>
+                                <div class="challenge-rate-subtitle">Percentage of requests challenged</div>
+                            </div>
+                            <div class="challenge-rate-value" id="challenge-rate">0%</div>
+                        </div>
                     </div>
 
                     <!-- Content Grid -->
@@ -991,8 +1040,8 @@
                             <div class="settings-title">🤖 Bot Detection Settings</div>
                             <div class="form-group">
                                 <label class="form-label">Challenge Threshold</label>
-                                <input type="range" class="form-input" id="challenge-threshold" min="1" max="100" value="40">
-                                <span id="challenge-value">40</span>
+                                <input type="range" class="form-input" id="challenge-threshold" min="1" max="100" value="45">
+                                <span id="challenge-value">45</span>
                             </div>
                             <div class="form-group">
                                 <label class="form-label">Block Threshold</label>
@@ -1177,28 +1226,24 @@
             }
         }
 
+        // UPDATED: Enhanced updateDashboard function with challenged requests
         function updateDashboard(data) {
             document.getElementById('live-users').textContent = data.liveStats?.onlineUsers || 0;
             document.getElementById('total-visitors').textContent = data.dailyStats?.totalRequests || 0;
             document.getElementById('bots-detected').textContent = data.liveStats?.botsDetected || 0;
+            
+            // NEW: Update challenged requests stat
             document.getElementById('challenged-requests').textContent = data.dailyStats?.challengedUsers || 0;
+            
             document.getElementById('blocked-bots').textContent = data.dailyStats?.blockedBots || 0;
             document.getElementById('allowed-users').textContent = data.dailyStats?.allowedUsers || 0;
-
-            // Call the new protection status function
-            updateProtectionStatus(data); // NEW LINE
             
-            const totalRequests = data.dailyStats?.totalRequests || 0;
-            const statusElement = document.getElementById('protection-status');
-            if (totalRequests > 0) {
-                statusElement.textContent = `ACTIVE - Protecting ${totalRequests} requests today`;
-                statusElement.className = 'protection-status';
-            } else {
-                statusElement.textContent = 'ACTIVE - Waiting for traffic';
-                statusElement.className = 'protection-status waiting';
-            }
+            // Update protection status with challenge info
+            updateProtectionStatus(data);
             
-            // Update threat levels
+            // Update challenge rate indicator
+            updateChallengeRate(data);
+            
             if (data.liveStats?.botSeverity) {
                 document.getElementById('critical-bots').textContent = data.liveStats.botSeverity.critical || 0;
                 document.getElementById('high-bots').textContent = data.liveStats.botSeverity.high || 0;
@@ -1208,22 +1253,11 @@
             }
         }
 
-        function updateDashboardWithFallback() {
-            const elements = ['live-users', 'total-visitors', 'bots-detected','challenged-requests', 'blocked-bots', 'allowed-users'];
-            elements.forEach(id => {
-                document.getElementById(id).textContent = '0';
-            });
-            
-            document.getElementById('protection-status').textContent = 'ACTIVE - Waiting for traffic';
-            document.getElementById('protection-status').className = 'protection-status waiting';
-        }
-
-        // Add this NEW function after your existing updateDashboard function
+        // NEW: Update protection status with challenge information
         function updateProtectionStatus(data) {
             const totalRequests = data.dailyStats?.totalRequests || 0;
             const challengedUsers = data.dailyStats?.challengedUsers || 0;
             const blockedBots = data.dailyStats?.blockedBots || 0;
-            
             const statusElement = document.getElementById('protection-status');
             
             if (totalRequests > 0) {
@@ -1243,8 +1277,41 @@
             }
         }
 
+        // NEW: Update challenge rate indicator
+        function updateChallengeRate(data) {
+            const totalRequests = data.dailyStats?.totalRequests || 0;
+            const challengedUsers = data.dailyStats?.challengedUsers || 0;
+            
+            if (totalRequests > 0) {
+                const challengeRate = ((challengedUsers / totalRequests) * 100).toFixed(1);
+                document.getElementById('challenge-rate').textContent = `${challengeRate}%`;
+                
+                // Color coding based on rate
+                const rateElement = document.getElementById('challenge-rate');
+                if (challengeRate > 20) {
+                    rateElement.style.color = '#dc3545'; // Red for high rate
+                } else if (challengeRate > 10) {
+                    rateElement.style.color = '#ffc107'; // Yellow for medium rate
+                } else {
+                    rateElement.style.color = '#28a745'; // Green for low rate
+                }
+            } else {
+                document.getElementById('challenge-rate').textContent = '0%';
+            }
+        }
 
-        // NEW: Load Live Visitors Function
+        function updateDashboardWithFallback() {
+            const elements = ['live-users', 'total-visitors', 'bots-detected', 'challenged-requests', 'blocked-bots', 'allowed-users'];
+            elements.forEach(id => {
+                document.getElementById(id).textContent = '0';
+            });
+            
+            document.getElementById('protection-status').textContent = 'ACTIVE - Waiting for traffic';
+            document.getElementById('protection-status').className = 'protection-status waiting';
+            document.getElementById('challenge-rate').textContent = '0%';
+        }
+
+        // Load Live Visitors Function
         async function loadLiveVisitors() {
             console.log('👥 Loading live visitors...');
             
@@ -1270,7 +1337,7 @@
             }
         }
 
-        // NEW: Update Live Visitors Display
+        // Update Live Visitors Display
         function updateLiveVisitors(visitors) {
             const container = document.getElementById('live-visitors-list');
             
@@ -1339,12 +1406,11 @@
             `;
         }
 
-        // NEW: Load Activity Logs Function
+        // Load Activity Logs Function
         async function loadActivityLogs(filter = 'today') {
             console.log('📋 Loading activity logs with filter:', filter);
             
             try {
-                // Use the real-time dashboard endpoint to get visitor data for activity logs
                 const response = await fetch('https://traffic-cop-apii.vercel.app/api/v1/real-time-dashboard', {
                     headers: {
                         'Authorization': `Bearer ${apiKey}`,
@@ -1356,7 +1422,6 @@
                     const data = await response.json();
                     console.log('📋 Activity logs data received:', data.onlineVisitors);
                     
-                    // Filter the visitors based on the selected filter
                     let filteredActivities = data.onlineVisitors || [];
                     const now = new Date();
                     
@@ -1383,7 +1448,6 @@
                             break;
                         case 'all':
                         default:
-                            // Show all activities
                             break;
                     }
                     
@@ -1398,7 +1462,7 @@
             }
         }
 
-        // NEW: Update Activity Logs Display
+        // Update Activity Logs Display
         function updateActivityLogs(activities) {
             const container = document.getElementById('activity-logs-list');
             
@@ -1413,7 +1477,6 @@
                 return;
             }
             
-            // Sort activities by timestamp (newest first)
             activities.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
             
             container.innerHTML = activities.map(activity => {
@@ -1473,15 +1536,13 @@
             return date.toLocaleDateString() + ' ' + date.toLocaleTimeString();
         }
 
-        // UPDATED: Tab management with data loading
+        // Tab management with data loading
         function showTab(tabName) {
-            // Update navigation
             document.querySelectorAll('.nav-item').forEach(item => {
                 item.classList.remove('active');
             });
             event.target.classList.add('active');
             
-            // Update page title
             const titles = {
                 'overview': 'Dashboard Overview',
                 'live-visitors': 'Live Visitors',
@@ -1490,13 +1551,11 @@
             };
             document.querySelector('.page-title').textContent = titles[tabName] || 'Dashboard';
             
-            // Show/hide content
             document.querySelectorAll('.tab-content').forEach(tab => {
                 tab.classList.remove('active');
             });
             document.getElementById(`${tabName}-tab`).classList.add('active');
             
-            // Load data for the selected tab
             switch(tabName) {
                 case 'overview':
                     loadDashboardData();
@@ -1508,12 +1567,11 @@
                     loadActivityLogs(currentFilter);
                     break;
                 case 'settings':
-                    // Settings don't need data loading
                     break;
             }
         }
 
-        // UPDATED: Filter activity with actual functionality
+        // Filter activity with actual functionality
         function filterActivity(filter) {
             currentFilter = filter;
             
@@ -1523,8 +1581,6 @@
             event.target.classList.add('active');
             
             console.log('🔍 Filtering activity logs:', filter);
-            
-            // Load filtered activity logs
             loadActivityLogs(filter);
         }
 
@@ -1553,24 +1609,239 @@
             }
         }
 
-        // UPDATED: Auto-refresh with tab-specific loading
-        setInterval(() => {
-            const activeTab = document.querySelector('.tab-content.active');
-            if (activeTab) {
-                const tabId = activeTab.id;
-                switch(tabId) {
-                    case 'overview-tab':
-                        loadDashboardData();
-                        break;
-                    case 'live-visitors-tab':
-                        loadLiveVisitors();
-                        break;
-                    case 'activity-logs-tab':
-                        loadActivityLogs(currentFilter);
-                        break;
+                // Auto-refresh with tab-specific loading
+                setInterval(() => {
+                    const activeTab = document.querySelector('.tab-content.active');
+                    if (activeTab) {
+                        const tabId = activeTab.id;
+                        switch(tabId) {
+                            case 'overview-tab':
+                                loadDashboardData();
+                                break;
+                            case 'live-visitors-tab':
+                                loadLiveVisitors();
+                                break;
+                            case 'activity-logs-tab':
+                                loadActivityLogs(currentFilter);
+                                break;
+                            case 'settings-tab':
+                                // Settings don't need auto-refresh
+                                break;
+                        }
+                    }
+                }, refreshInterval);
+
+                // Threshold slider updates
+                document.getElementById('challenge-threshold').addEventListener('input', function() {
+                    document.getElementById('challenge-value').textContent = this.value;
+                });
+
+                document.getElementById('block-threshold').addEventListener('input', function() {
+                    document.getElementById('block-value').textContent = this.value;
+                });
+
+                // Update thresholds function
+                async function updateThresholds() {
+                    const challengeThreshold = document.getElementById('challenge-threshold').value;
+                    const blockThreshold = document.getElementById('block-threshold').value;
+                    
+                    try {
+                        const response = await fetch('https://traffic-cop-apii.vercel.app/api/v1/config', {
+                            method: 'POST',
+                            headers: {
+                                'Authorization': `Bearer ${apiKey}`,
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                thresholds: {
+                                    challenge: parseInt(challengeThreshold),
+                                    block: parseInt(blockThreshold)
+                                }
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            const result = await response.json();
+                            alert('✅ Thresholds updated successfully!');
+                            console.log('Thresholds updated:', result);
+                        } else {
+                            alert('❌ Failed to update thresholds');
+                        }
+                    } catch (error) {
+                        console.error('Error updating thresholds:', error);
+                        alert('❌ Error updating thresholds: ' + error.message);
+                    }
                 }
-            }
-        }, refreshInterval);
-    </script>
-</body>
-</html>
+
+                // Update dashboard settings function
+                function updateDashboardSettings() {
+                    const newInterval = parseInt(document.getElementById('refresh-interval').value);
+                    refreshInterval = newInterval;
+                    
+                    // Clear existing interval and set new one
+                    clearInterval(window.dashboardRefreshInterval);
+                    window.dashboardRefreshInterval = setInterval(() => {
+                        const activeTab = document.querySelector('.tab-content.active');
+                        if (activeTab) {
+                            const tabId = activeTab.id;
+                            switch(tabId) {
+                                case 'overview-tab':
+                                    loadDashboardData();
+                                    break;
+                                case 'live-visitors-tab':
+                                    loadLiveVisitors();
+                                    break;
+                                case 'activity-logs-tab':
+                                    loadActivityLogs(currentFilter);
+                                    break;
+                            }
+                        }
+                    }, refreshInterval);
+                    
+                    alert(`✅ Dashboard refresh interval updated to ${newInterval/1000} seconds`);
+                    console.log('Dashboard settings updated:', { refreshInterval: newInterval });
+                }
+
+                // Enhanced error handling for API calls
+                function handleAPIError(error, context) {
+                    console.error(`❌ ${context} error:`, error);
+                    
+                    if (error.message.includes('401') || error.message.includes('Unauthorized')) {
+                        console.log('🔄 Authentication error, redirecting to login...');
+                        localStorage.removeItem('traffic_cop_auth');
+                        redirectToLogin();
+                    }
+                }
+
+                // Initialize refresh interval tracking
+                window.dashboardRefreshInterval = setInterval(() => {
+                    const activeTab = document.querySelector('.tab-content.active');
+                    if (activeTab) {
+                        const tabId = activeTab.id;
+                        switch(tabId) {
+                            case 'overview-tab':
+                                loadDashboardData();
+                                break;
+                            case 'live-visitors-tab':
+                                loadLiveVisitors();
+                                break;
+                            case 'activity-logs-tab':
+                                loadActivityLogs(currentFilter);
+                                break;
+                        }
+                    }
+                }, refreshInterval);
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', function(e) {
+                    // Ctrl/Cmd + R to refresh current tab data
+                    if ((e.ctrlKey || e.metaKey) && e.key === 'r') {
+                        e.preventDefault();
+                        const activeTab = document.querySelector('.tab-content.active');
+                        if (activeTab) {
+                            const tabId = activeTab.id;
+                            switch(tabId) {
+                                case 'overview-tab':
+                                    loadDashboardData();
+                                    break;
+                                case 'live-visitors-tab':
+                                    loadLiveVisitors();
+                                    break;
+                                case 'activity-logs-tab':
+                                    loadActivityLogs(currentFilter);
+                                    break;
+                            }
+                        }
+                    }
+                    
+                    // Number keys 1-4 to switch tabs
+                    if (e.key >= '1' && e.key <= '4') {
+                        const tabs = ['overview', 'live-visitors', 'activity-logs', 'settings'];
+                        const tabIndex = parseInt(e.key) - 1;
+                        if (tabs[tabIndex]) {
+                            const tabButton = document.querySelector(`[onclick="showTab('${tabs[tabIndex]}')"]`);
+                            if (tabButton) {
+                                tabButton.click();
+                            }
+                        }
+                    }
+                });
+
+                // Page visibility API to pause/resume auto-refresh
+                document.addEventListener('visibilitychange', function() {
+                    if (document.hidden) {
+                        // Page is hidden, clear interval to save resources
+                        if (window.dashboardRefreshInterval) {
+                            clearInterval(window.dashboardRefreshInterval);
+                            console.log('🔄 Dashboard auto-refresh paused (page hidden)');
+                        }
+                    } else {
+                        // Page is visible again, restart interval
+                        window.dashboardRefreshInterval = setInterval(() => {
+                            const activeTab = document.querySelector('.tab-content.active');
+                            if (activeTab) {
+                                const tabId = activeTab.id;
+                                switch(tabId) {
+                                    case 'overview-tab':
+                                        loadDashboardData();
+                                        break;
+                                    case 'live-visitors-tab':
+                                        loadLiveVisitors();
+                                        break;
+                                    case 'activity-logs-tab':
+                                        loadActivityLogs(currentFilter);
+                                        break;
+                                }
+                            }
+                        }, refreshInterval);
+                        console.log('🔄 Dashboard auto-refresh resumed (page visible)');
+                    }
+                });
+
+                // Add connection status indicator
+                function updateConnectionStatus(isOnline) {
+                    const indicator = document.querySelector('.live-indicator');
+                    if (isOnline) {
+                        indicator.style.background = 'var(--primary-yellow)';
+                        indicator.querySelector('.live-dot').style.background = 'var(--primary-black)';
+                    } else {
+                        indicator.style.background = '#dc3545';
+                        indicator.querySelector('.live-dot').style.background = '#ffffff';
+                    }
+                }
+
+                // Monitor connection status
+                window.addEventListener('online', () => {
+                    updateConnectionStatus(true);
+                    console.log('🌐 Connection restored');
+                    // Immediately refresh current tab data
+                    const activeTab = document.querySelector('.tab-content.active');
+                    if (activeTab) {
+                        const tabId = activeTab.id;
+                        switch(tabId) {
+                            case 'overview-tab':
+                                loadDashboardData();
+                                break;
+                            case 'live-visitors-tab':
+                                loadLiveVisitors();
+                                break;
+                            case 'activity-logs-tab':
+                                loadActivityLogs(currentFilter);
+                                break;
+                        }
+                    }
+                });
+
+                window.addEventListener('offline', () => {
+                    updateConnectionStatus(false);
+                    console.log('🌐 Connection lost');
+                });
+
+                // Initialize connection status
+                updateConnectionStatus(navigator.onLine);
+
+                console.log('🎉 Traffic Cop Publisher Dashboard fully loaded and initialized!');
+            </script>
+        </body>
+        </html>
+
