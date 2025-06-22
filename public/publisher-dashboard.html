@@ -837,6 +837,11 @@
                             <div class="stat-label">Bots Detected</div>
                         </div>
                         <div class="stat-card">
+                            <div class="stat-icon" style="background: rgba(255, 193, 7, 0.1); color: #ffc107;">⚠️</div>
+                            <div class="stat-value" id="challenged-requests">0</div>
+                            <div class="stat-label">Challenged Requests</div>
+                        </div>
+                        <div class="stat-card">
                             <div class="stat-icon" style="background: rgba(247, 219, 5, 0.1); color: #f7db05;">🛡️</div>
                             <div class="stat-value" id="blocked-bots">0</div>
                             <div class="stat-label">Bots Blocked</div>
@@ -1176,8 +1181,12 @@
             document.getElementById('live-users').textContent = data.liveStats?.onlineUsers || 0;
             document.getElementById('total-visitors').textContent = data.dailyStats?.totalRequests || 0;
             document.getElementById('bots-detected').textContent = data.liveStats?.botsDetected || 0;
+            document.getElementById('challenged-requests').textContent = data.dailyStats?.challengedUsers || 0;
             document.getElementById('blocked-bots').textContent = data.dailyStats?.blockedBots || 0;
             document.getElementById('allowed-users').textContent = data.dailyStats?.allowedUsers || 0;
+
+            // Call the new protection status function
+            updateProtectionStatus(data); // NEW LINE
             
             const totalRequests = data.dailyStats?.totalRequests || 0;
             const statusElement = document.getElementById('protection-status');
@@ -1189,6 +1198,7 @@
                 statusElement.className = 'protection-status waiting';
             }
             
+            // Update threat levels
             if (data.liveStats?.botSeverity) {
                 document.getElementById('critical-bots').textContent = data.liveStats.botSeverity.critical || 0;
                 document.getElementById('high-bots').textContent = data.liveStats.botSeverity.high || 0;
@@ -1199,7 +1209,7 @@
         }
 
         function updateDashboardWithFallback() {
-            const elements = ['live-users', 'total-visitors', 'bots-detected', 'blocked-bots', 'allowed-users'];
+            const elements = ['live-users', 'total-visitors', 'bots-detected','challenged-requests', 'blocked-bots', 'allowed-users'];
             elements.forEach(id => {
                 document.getElementById(id).textContent = '0';
             });
@@ -1207,6 +1217,32 @@
             document.getElementById('protection-status').textContent = 'ACTIVE - Waiting for traffic';
             document.getElementById('protection-status').className = 'protection-status waiting';
         }
+
+        // Add this NEW function after your existing updateDashboard function
+        function updateProtectionStatus(data) {
+            const totalRequests = data.dailyStats?.totalRequests || 0;
+            const challengedUsers = data.dailyStats?.challengedUsers || 0;
+            const blockedBots = data.dailyStats?.blockedBots || 0;
+            
+            const statusElement = document.getElementById('protection-status');
+            
+            if (totalRequests > 0) {
+                const challengeRate = ((challengedUsers / totalRequests) * 100).toFixed(1);
+                const blockRate = ((blockedBots / totalRequests) * 100).toFixed(1);
+                
+                statusElement.innerHTML = `
+                    ACTIVE - Protecting ${totalRequests} requests today<br>
+                    <small style="font-size: 0.8em; opacity: 0.8;">
+                        ${challengeRate}% challenged • ${blockRate}% blocked
+                    </small>
+                `;
+                statusElement.className = 'protection-status';
+            } else {
+                statusElement.textContent = 'ACTIVE - Waiting for traffic';
+                statusElement.className = 'protection-status waiting';
+            }
+        }
+
 
         // NEW: Load Live Visitors Function
         async function loadLiveVisitors() {
