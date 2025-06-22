@@ -516,6 +516,60 @@
             <button class="tab-button" onclick="showTab('activity-logs')">📋 Activity Logs</button>
             <button class="tab-button" onclick="showTab('settings')">⚙️ Settings</button>
         </div>
+        <!-- Add this to your publisher-dashboard.html -->
+        <div class="dashboard-header">
+            <div class="header-left">
+                <h1>Traffic Cop Dashboard</h1>
+            </div>
+            <div class="header-right">
+                <span id="user-info">Welcome, Publisher</span>
+                <button id="logout-btn" class="logout-button">
+                    <i class="fas fa-sign-out-alt"></i> Logout
+                </button>
+            </div>
+        </div>
+
+        <style>
+        .dashboard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px 20px;
+            background: #fff;
+            border-bottom: 1px solid #e0e0e0;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .logout-button {
+            background: #f44336;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            transition: background-color 0.3s ease;
+        }
+
+        .logout-button:hover {
+            background: #d32f2f;
+        }
+
+        #user-info {
+            color: #666;
+            font-size: 14px;
+        }
+        </style>
+
 
         <!-- Overview Tab -->
         <div id="overview-tab" class="tab-content active">
